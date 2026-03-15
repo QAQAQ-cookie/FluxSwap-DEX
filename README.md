@@ -1,12 +1,12 @@
 <p align="center">
-  <h1>FluxSwap</h1>
+# FluxSwap
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
-  <img src="https://img.shields.io/badge/language-Solidity-blue" alt="Language">
-  <img src="https://img.shields.io/badge/build-Hardhat-yellow" alt="Build">
-  <img src="https://img.shields.io/badge/status-Development-orange" alt="Status">
+![License](https://img.shields.io/badge/license-MIT-green) 
+![Solidity](https://img.shields.io/badge/language-Solidity-blue) 
+![Hardhat](https://img.shields.io/badge/build-Hardhat-yellow) 
+![Status](https://img.shields.io/badge/status-Development-orange)
 </p>
 
 **FluxSwap** 是一个去中心化交易所（DEX），基于 Uniswap V3 核心合约构建，支持流动性提供（LP Token）和代币兑换。  
