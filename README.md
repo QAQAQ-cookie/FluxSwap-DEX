@@ -1,6 +1,6 @@
-<p align="center">
+<div align="center">
   <h1>FluxSwap</h1>
-</p>
+</div>
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
