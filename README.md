@@ -1,5 +1,5 @@
 <p align="center">
-  <strong>FluxSwap</strong>
+  # FluxSwap
 </p>
 
 <p align="center">
