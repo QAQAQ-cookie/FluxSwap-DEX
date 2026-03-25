@@ -26,7 +26,8 @@ contract MockWETH {
         require(balanceOf[msg.sender] >= wad, "Insufficient balance");
         balanceOf[msg.sender] -= wad;
         totalSupply -= wad;
-        payable(msg.sender).call{value: wad}("");
+        (bool success, ) = payable(msg.sender).call{value: wad}("");
+        require(success, "Transfer failed");
         emit Withdrawal(msg.sender, wad);
     }
 
