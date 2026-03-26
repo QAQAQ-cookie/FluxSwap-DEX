@@ -3,12 +3,15 @@ pragma solidity ^0.8.28;
 
 import "../interfaces/IFluxSwapPair.sol";
 import "../interfaces/IFluxSwapFactory.sol";
+import "../interfaces/IFlashSwapReceiver.sol";
 import "../libraries/SafeMath.sol";
+import "../libraries/UQ112x112.sol";
 
 /**
  * @title FluxSwapPair - AMM 交易对合约
- * @notice 实现 Uniswap V2 风格的自动做市商核心逻辑
+ * @notice 实现 Uniswap V2 风格的自动做市商核心逻辑，支持 TWAP 价格预言机和闪电贷
  * @dev 继承 ERC20 功能（mint/burn/transfer），每个交易对就是一个 LP 代币
+ *      使用 UQ112x112 定点数格式计算 TWAP 价格
  */
 contract FluxSwapPair is IFluxSwapPair {
     using SafeMath for uint256;
@@ -30,10 +33,10 @@ contract FluxSwapPair is IFluxSwapPair {
     address public token1;
 
     /** @notice 储备量0 */
-    uint256 private reserve0;
+    uint112 private reserve0;
 
     /** @notice 储备量1 */
-    uint256 private reserve1;
+    uint112 private reserve1;
 
     /** @notice 上次更新价格累计值的时间戳 */
     uint256 private blockTimestampLast;
@@ -101,6 +104,35 @@ contract FluxSwapPair is IFluxSwapPair {
         return (reserve0, reserve1);
     }
 
+    /**
+     * @notice 获取 TWAP 价格
+     * @param token 代币地址（token0 或 token1）
+     * @param timeframeSeconds 时间范围（秒）
+     * @return priceOut TWAP 价格（UQ112.112 格式，需要除以 2^112 得到实际价格）
+     */
+    function price(address token, uint256 timeframeSeconds) external view override returns (uint256 priceOut) {
+        require(token == token0 || token == token1, "FluxSwap: INVALID_TOKEN");
+        require(timeframeSeconds > 0, "FluxSwap: ZERO_TIMEFRAME");
+
+        uint256 blockTimestamp = block.timestamp;
+        uint256 timeElapsed = blockTimestamp - blockTimestampLast;
+
+        if (timeElapsed < timeframeSeconds) {
+            return 0;
+        }
+
+        uint256 priceAccumulated = token == token0 ? price0CumulativeLast : price1CumulativeLast;
+
+        if (reserve0 != 0 && reserve1 != 0) {
+            uint256 price0Cumulative = price0CumulativeLast + (uint256(reserve1) * 1e18 / reserve0) * timeElapsed;
+            uint256 price1Cumulative = price1CumulativeLast + (uint256(reserve0) * 1e18 / reserve1) * timeElapsed;
+
+            priceAccumulated = token == token0 ? price0Cumulative : price1Cumulative;
+        }
+
+        return priceAccumulated / timeElapsed;
+    }
+
     // ==================== 初始化 ====================
     /**
      * @notice 初始化交易对，由 factory 调用设置 token 地址
@@ -127,11 +159,8 @@ contract FluxSwapPair is IFluxSwapPair {
     }
 
     // ==================== 流动性相关 ====================
-    /**
-     * @notice 添加流动性 - 铸造 LP 代币
-     * @param to 流动性代币接收地址
-     * @return liquidity 铸造的流动性代币数量
-     */
+    event DebugMint(uint256 amount0, uint256 amount1, uint256 liquidity, uint256 ts, uint256 balance0, uint256 balance1);
+
     function mint(address to) external override lock returns (uint256 liquidity) {
         // 1. 获取当前储备量
         (uint256 r0, uint256 r1) = getReserves();
@@ -161,6 +190,8 @@ contract FluxSwapPair is IFluxSwapPair {
                 (amount1 * ts) / r1
             );
         }
+
+        emit DebugMint(amount0, amount1, liquidity, ts, balance0, balance1);
 
         // 6. 检查铸造数量
         require(liquidity > 0, "FluxSwap: INSUFFICIENT_LIQUIDITY_MINTED");
@@ -193,7 +224,7 @@ contract FluxSwapPair is IFluxSwapPair {
         uint256 balance0 = IFluxSwapPair(t0).balanceOf(address(this));
         uint256 balance1 = IFluxSwapPair(t1).balanceOf(address(this));
 
-        // 3. 获取调用者的 LP 数量
+        // 3. 获取 Pair 合约自身的 LP 数量（由 transferFrom 从调用者转入）
         uint256 liquidity = balanceOf[address(this)];
 
         // 4. 获取 LP 总供应量
@@ -206,7 +237,7 @@ contract FluxSwapPair is IFluxSwapPair {
         // 6. 检查取回数量
         require(amount0 > 0 && amount1 > 0, "FluxSwap: INSUFFICIENT_LIQUIDITY_BURNED");
 
-        // 7. 销毁调用者的 LP 代币
+        // 7. 销毁 Pair 合约自己的 LP 代币（这些 LP 是调用者通过 transferFrom 转入的）
         _burn(address(this), liquidity);
 
         // 8. 安全转近代币给接收者
@@ -288,10 +319,85 @@ contract FluxSwapPair is IFluxSwapPair {
         emit Swap(msg.sender, amount0In, amount1In, amount0Out, amount1Out, to);
     }
 
+    // ==================== Flash Swap ====================
+    /**
+     * @notice 闪电贷 / 闪电交换
+     * @param recipient 代币接收地址
+     * @param amount0Out 期望收到的代币0数量
+     * @param amount1Out 期望收到的代币1数量
+     * @param data 传递给接收者的任意数据（用于回调）
+     * @dev 允许无抵押借款，只要在同一交易中归还（带 0.3% 手续费）即可
+     */
+    function flashSwap(
+        address recipient,
+        uint256 amount0Out,
+        uint256 amount1Out,
+        bytes calldata data
+    ) external override {
+        // 1. 检查输出数量大于 0
+        require(amount0Out > 0 || amount1Out > 0, "FluxSwap: INSUFFICIENT_OUTPUT_AMOUNT");
+
+        // 2. 获取当前储备量
+        (uint256 r0, uint256 r1) = getReserves();
+
+        // 3. 检查输出不超过储备量
+        require(amount0Out < r0 && amount1Out < r1, "FluxSwap: INSUFFICIENT_LIQUIDITY");
+
+        // 4. 获取当前余额
+        uint256 balance0 = IFluxSwapPair(token0).balanceOf(address(this));
+        uint256 balance1 = IFluxSwapPair(token1).balanceOf(address(this));
+
+        // 5. 计算需要还款的最小数量（带 0.3% 手续费）
+        uint256 amount0In;
+        uint256 amount1In;
+        if (amount0Out > 0) {
+            amount0In = (amount0Out * 1000) / 997;
+        }
+        if (amount1Out > 0) {
+            amount1In = (amount1Out * 1000) / 997;
+        }
+
+        // 6. 转出代币给接收者
+        if (amount0Out > 0) _safeTransfer(token0, recipient, amount0Out);
+        if (amount1Out > 0) _safeTransfer(token1, recipient, amount1Out);
+
+        // 7. 调用接收者的回调函数，让用户可以做任何事（套利、套现等）
+        if (data.length > 0 || recipient.code.length > 0) {
+            IFlashSwapReceiver(recipient).onFlashSwap(msg.sender, amount0Out, amount1Out, data);
+        }
+
+        // 8. 检查还款后的余额是否满足 K 值公式
+        balance0 = IFluxSwapPair(token0).balanceOf(address(this));
+        balance1 = IFluxSwapPair(token1).balanceOf(address(this));
+
+        // 计算实际输入（还款后余额 - (初始储备 - 转出量) = 实际输入量）
+        uint256 actualAmount0In = balance0 > r0 - amount0Out ? balance0 - (r0 - amount0Out) : 0;
+        uint256 actualAmount1In = balance1 > r1 - amount1Out ? balance1 - (r1 - amount1Out) : 0;
+
+        // 9. 验证 K 值（考虑手续费）
+        {
+            uint256 balance0Adjusted = balance0 * 1000;
+            uint256 balance1Adjusted = balance1 * 1000;
+            if (actualAmount0In > 0) {
+                balance0Adjusted = balance0Adjusted - actualAmount0In * 3;
+            }
+            if (actualAmount1In > 0) {
+                balance1Adjusted = balance1Adjusted - actualAmount1In * 3;
+            }
+            require(balance0Adjusted * balance1Adjusted >= r0 * r1 * (1000 ** 2), "FluxSwap: K");
+        }
+
+        // 10. 更新储备量
+        _update(balance0, balance1);
+
+        // 11. 触发 FlashSwap 事件
+        emit FlashSwap(msg.sender, amount0Out, amount1Out, actualAmount0In, actualAmount1In);
+    }
+
     /**
      * @notice 提取池子中多余的代币（处理灰尘）
      * @param to 多余代币的接收地址
-     * @dev 用于提取由于四舍五入多出的少量代币
+     * @dev 用于提取由于四舍五入多出的少量代币，保持储备量不变
      */
     function skim(address to) external override lock {
         address t0 = token0;
@@ -421,33 +527,27 @@ contract FluxSwapPair is IFluxSwapPair {
 
     // ==================== 储备更新 ====================
     /**
-     * @notice 更新储备量和价格累计值
+     * @notice 更新储备量和价格累计值（用于 TWAP 计算）
      * @param balance0 新的代币0余额
      * @param balance1 新的代币1余额
+     * @dev 使用 UQ112x112 定点数格式：(reserve1/reserve0) * Q112 * timeElapsed
+     *      价格累计值需要除以 2^112 才能得到实际价格比率
      */
     function _update(uint256 balance0, uint256 balance1) private {
-        // 1. 检查余额不超过最大值
-        require(balance0 <= type(uint256).max && balance1 <= type(uint256).max, "FluxSwap: OVERFLOW");
+        require(balance0 <= type(uint112).max && balance1 <= type(uint112).max, "FluxSwap: OVERFLOW");
 
-        // 2. 计算时间差
         uint256 blockTimestamp = block.timestamp;
         uint256 timeElapsed = blockTimestamp - blockTimestampLast;
 
-        // 3. 如果时间差大于 0 且储备量大于 0，更新价格累计值
-        // 价格累计值 = 储备量 * 时间差（用于 TWAP）
         if (timeElapsed > 0 && reserve0 != 0 && reserve1 != 0) {
-            price0CumulativeLast += reserve1 * timeElapsed;
-            price1CumulativeLast += reserve0 * timeElapsed;
+            price0CumulativeLast += UQ112x112.uqdiv(reserve1, reserve0) * timeElapsed;
+            price1CumulativeLast += UQ112x112.uqdiv(reserve0, reserve1) * timeElapsed;
         }
 
-        // 4. 更新储备量
-        reserve0 = balance0;
-        reserve1 = balance1;
-
-        // 5. 更新时间戳
+        reserve0 = uint112(balance0);
+        reserve1 = uint112(balance1);
         blockTimestampLast = blockTimestamp;
 
-        // 6. 触发同步事件
         emit Sync(reserve0, reserve1);
     }
 

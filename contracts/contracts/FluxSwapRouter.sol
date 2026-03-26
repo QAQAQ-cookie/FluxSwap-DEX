@@ -246,7 +246,8 @@ contract FluxSwapRouter is IFluxSwapRouter {
         // 2. 转近代币给用户
         TransferHelper.safeTransfer(token, to, amountToken);
 
-        // 3. 转出 ETH 给用户
+        // 3. 将 WETH 转换为 ETH 后转给用户
+        IWETH(WETH).withdraw(amountETH);
         TransferHelper.safeTransferETH(to, amountETH);
     }
 
@@ -452,7 +453,8 @@ contract FluxSwapRouter is IFluxSwapRouter {
         require(path[0] == WETH, "FluxSwapRouter: INVALID_PATH");
         amounts = getAmountsIn(amountOut, path);
         require(amounts[0] <= msg.value, "FluxSwapRouter: EXCESSIVE_INPUT_AMOUNT");
-        TransferHelper.safeTransferETH(IFluxSwapFactory(factory).getPair(path[0], path[1]), amounts[0]);
+        IWETH(WETH).deposit{value: amounts[0]}();
+        assert(IWETH(WETH).transfer(IFluxSwapFactory(factory).getPair(path[0], path[1]), amounts[0]));
         _swap(amounts, path, to);
         if (msg.value > amounts[0]) TransferHelper.safeTransferETH(msg.sender, msg.value - amounts[0]);
     }
