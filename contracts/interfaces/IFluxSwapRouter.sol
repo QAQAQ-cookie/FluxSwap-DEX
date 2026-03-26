@@ -61,7 +61,6 @@ interface IFluxSwapRouter {
     ) external returns (uint256 amountToken, uint256 amountETH);
     function swapExactTokensForTokens(
         uint256 amountIn,
-        uint256 amountOutMin,
         address[] calldata path,
         address to
     ) external returns (uint256[] memory amounts);
@@ -72,7 +71,6 @@ interface IFluxSwapRouter {
         address to
     ) external returns (uint256[] memory amounts);
     function swapExactETHForTokens(
-        uint256 amountOutMin,
         address[] calldata path,
         address to
     ) external payable returns (uint256[] memory amounts);
@@ -84,7 +82,6 @@ interface IFluxSwapRouter {
     ) external returns (uint256[] memory amounts);
     function swapExactTokensForETH(
         uint256 amountIn,
-        uint256 amountOutMin,
         address[] calldata path,
         address to
     ) external returns (uint256[] memory amounts);

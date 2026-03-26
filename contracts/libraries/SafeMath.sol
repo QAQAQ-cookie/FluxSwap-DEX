@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+/**
+ * @title SafeMath - 安全数学库
+ * @notice 提供安全的三元运算符和平方根计算
+ */
 library SafeMath {
     function min(uint256 x, uint256 y) internal pure returns (uint256) {
         return x < y ? x : y;
@@ -18,6 +22,5 @@ library SafeMath {
         for (uint256 i = 0; i < 256; i++) {
             z = (z + y / z) / 2;
         }
-        return z;
     }
 }

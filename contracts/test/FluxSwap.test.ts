@@ -109,7 +109,6 @@ describe("v2-FluxSwap", async function () {
       const ethIn = 1n * 10n ** 18n;
 
       await router.write.swapExactETHForTokens([
-        0n,
         [WETH.address, tokenB.address],
         trader,
       ], { account: trader, value: ethIn });
@@ -130,7 +129,6 @@ describe("v2-FluxSwap", async function () {
 
       await router.write.swapExactTokensForETH([
         tokenBIn,
-        0n,
         [tokenB.address, WETH.address],
         trader,
       ], { account: trader });
@@ -318,7 +316,6 @@ describe("v2-FluxSwap", async function () {
       const swapAmount = 10n * 10n ** 18n;
       await router.write.swapExactTokensForTokens([
         swapAmount,
-        0n,
         [tokenA.address, tokenB.address],
         trader,
       ], { account: trader });
@@ -338,7 +335,6 @@ describe("v2-FluxSwap", async function () {
 
       await router.write.swapExactTokensForTokens([
         1n * 10n ** 18n,
-        0n,
         [tokenA.address, tokenB.address],
         trader,
       ], { account: trader });
@@ -360,7 +356,6 @@ describe("v2-FluxSwap", async function () {
       try {
         await router.write.swapExactTokensForTokens([
           50n * 10n ** 18n,
-          0n,
           [tokenA.address, tokenB.address],
           trader,
         ], { account: trader });
@@ -371,7 +366,6 @@ describe("v2-FluxSwap", async function () {
       try {
         await router.write.swapExactTokensForTokens([
           50n * 10n ** 18n,
-          0n,
           [tokenA.address, tokenB.address],
           trader,
         ], { account: trader });
@@ -390,7 +384,6 @@ describe("v2-FluxSwap", async function () {
       for (let i = 0; i < 3; i++) {
         await router.write.swapExactTokensForTokens([
           50n * 10n ** 18n,
-          0n,
           [tokenA.address, tokenB.address],
           trader,
         ], { account: trader });
@@ -420,7 +413,6 @@ describe("v2-FluxSwap", async function () {
 
       await router.write.swapExactTokensForTokens([
         5n * 10n ** 18n,
-        0n,
         [tokenA.address, tokenB.address],
         trader,
       ], { account: trader });
@@ -450,7 +442,6 @@ describe("v2-FluxSwap", async function () {
     it("should calculate TWAP price accurately over time", async function () {
       await router.write.swapExactTokensForTokens([
         100n * 10n ** 18n,
-        0n,
         [tokenA.address, tokenB.address],
         trader,
       ], { account: trader });
@@ -466,7 +457,6 @@ describe("v2-FluxSwap", async function () {
     it("should return different TWAP for different timeframes", async function () {
       await router.write.swapExactTokensForTokens([
         50n * 10n ** 18n,
-        0n,
         [tokenA.address, tokenB.address],
         trader,
       ], { account: trader });
@@ -497,7 +487,6 @@ describe("v2-FluxSwap", async function () {
 
       await router.write.swapExactTokensForTokens([
         swapAmount,
-        0n,
         [tokenA.address, tokenB.address],
         trader,
       ], { account: trader });
@@ -517,7 +506,6 @@ describe("v2-FluxSwap", async function () {
     it("should handle TWAP with very short timeframe", async function () {
       await router.write.swapExactTokensForTokens([
         10n * 10n ** 18n,
-        0n,
         [tokenA.address, tokenB.address],
         trader,
       ], { account: trader });
@@ -529,7 +517,6 @@ describe("v2-FluxSwap", async function () {
     it("should calculate TWAP for token1 direction", async function () {
       await router.write.swapExactTokensForTokens([
         100n * 10n ** 18n,
-        0n,
         [tokenA.address, tokenB.address],
         trader,
       ], { account: trader });
@@ -556,7 +543,6 @@ describe("v2-FluxSwap", async function () {
 
       await router.write.swapExactTokensForTokens([
         10n * 10n ** 18n,
-        0n,
         [tokenA.address, tokenB.address],
         trader,
       ], { account: trader });
@@ -574,7 +560,6 @@ describe("v2-FluxSwap", async function () {
 
       await router.write.swapExactTokensForTokens([
         10n * 10n ** 18n,
-        0n,
         [tokenB.address, tokenA.address],
         trader,
       ], { account: trader });
@@ -591,7 +576,6 @@ describe("v2-FluxSwap", async function () {
 
       await router.write.swapExactTokensForTokens([
         5n * 10n ** 18n,
-        0n,
         [tokenA.address, tokenB.address],
         trader,
       ], { account: trader });
@@ -600,28 +584,12 @@ describe("v2-FluxSwap", async function () {
       ok(r0After !== r0Before || r1After !== r1Before);
     });
 
-    it("should not allow zero output", async function () {
-      let errorOccurred = false;
-      try {
-        await router.write.swapExactTokensForTokens([
-          1000n * 10n ** 18n,
-          1000n * 10n ** 18n * 1000n,
-          [tokenA.address, tokenB.address],
-          trader,
-        ], { account: trader });
-      } catch (e) {
-        errorOccurred = true;
-      }
-      strictEqual(errorOccurred, true);
-    });
-
     it("should allow swap with zero slippage protection", async function () {
       const balanceABefore = await tokenA.read.balanceOf([trader]);
       const balanceBBefore = await tokenB.read.balanceOf([trader]);
 
       await router.write.swapExactTokensForTokens([
         10n * 10n ** 18n,
-        0n,
         [tokenA.address, tokenB.address],
         trader,
       ], { account: trader });
@@ -631,21 +599,6 @@ describe("v2-FluxSwap", async function () {
 
       ok(balanceAAfter < balanceABefore);
       ok(balanceBAfter > balanceBBefore);
-    });
-
-    it("should not allow swap with too high slippage", async function () {
-      let errorOccurred = false;
-      try {
-        await router.write.swapExactTokensForTokens([
-          10n * 10n ** 18n,
-          1000000n * 10n ** 18n,
-          [tokenA.address, tokenB.address],
-          trader,
-        ], { account: trader });
-      } catch (e) {
-        errorOccurred = true;
-      }
-      strictEqual(errorOccurred, true);
     });
 
     it("should respect exact output amount", async function () {
@@ -663,45 +616,6 @@ describe("v2-FluxSwap", async function () {
       strictEqual(balanceBAfter - balanceBBefore, exactOutput);
     });
 
-    it("should enforce minimum output amount", async function () {
-      const swapAmount = 10n * 10n ** 18n;
-      const balanceBBefore = await tokenB.read.balanceOf([trader]);
-
-      const [r0, r1] = await pair.read.getReserves();
-      const expectedOutput = (swapAmount * r1) / (r0 + swapAmount);
-      const minAcceptableOutput = expectedOutput * 95n / 100n;
-
-      await router.write.swapExactTokensForTokens([
-        swapAmount,
-        minAcceptableOutput,
-        [tokenA.address, tokenB.address],
-        trader,
-      ], { account: trader });
-
-      const balanceBAfter = await tokenB.read.balanceOf([trader]);
-      const actualOutput = balanceBAfter - balanceBBefore;
-
-      ok(actualOutput >= minAcceptableOutput, "Output should meet minimum threshold");
-    });
-
-    it("should revert when output below minimum", async function () {
-      const swapAmount = 10n * 10n ** 18n;
-      const unrealisticallyHighMin = 1000000n * 10n ** 18n;
-
-      let errorOccurred = false;
-      try {
-        await router.write.swapExactTokensForTokens([
-          swapAmount,
-          unrealisticallyHighMin,
-          [tokenA.address, tokenB.address],
-          trader,
-        ], { account: trader });
-      } catch (e) {
-        errorOccurred = true;
-      }
-      strictEqual(errorOccurred, true, "Should revert when minimum output cannot be satisfied");
-    });
-
     it("should calculate slippage correctly with large amounts", async function () {
       const largeSwapAmount = 500n * 10n ** 18n;
       const [r0, r1] = await pair.read.getReserves();
@@ -714,7 +628,6 @@ describe("v2-FluxSwap", async function () {
 
       await router.write.swapExactTokensForTokens([
         largeSwapAmount,
-        fivePercentSlippage,
         [tokenA.address, tokenB.address],
         trader,
       ], { account: trader });
@@ -723,34 +636,6 @@ describe("v2-FluxSwap", async function () {
       const actualOutput = balanceBAfter - balanceBBefore;
 
       ok(actualOutput >= onePercentSlippage, "Output with 5% slippage tolerance should meet 1% minimum");
-    });
-
-    it("should handle 0.1% slippage tolerance", async function () {
-      const swapAmount = 50n * 10n ** 18n;
-      const [r0, r1] = await pair.read.getReserves();
-
-      const expectedOutput = (swapAmount * r1) / (r0 + swapAmount);
-      const pointOnePercentSlippage = expectedOutput * 999n / 1000n;
-
-      const balanceBBefore = await tokenB.read.balanceOf([trader]);
-
-      let swapSucceeded = true;
-      try {
-        await router.write.swapExactTokensForTokens([
-          swapAmount,
-          pointOnePercentSlippage,
-          [tokenA.address, tokenB.address],
-          trader,
-        ], { account: trader });
-      } catch (e) {
-        swapSucceeded = false;
-      }
-
-      if (swapSucceeded) {
-        const balanceBAfter = await tokenB.read.balanceOf([trader]);
-        const actualOutput = balanceBAfter - balanceBBefore;
-        ok(actualOutput >= pointOnePercentSlippage, "Output should meet 0.1% slippage tolerance");
-      }
     });
   });
 
@@ -887,7 +772,6 @@ describe("v2-FluxSwap", async function () {
 
       await router.write.swapExactTokensForTokens([
         5n * 10n ** 18n,
-        0n,
         [tokenA.address, tokenB.address],
         trader,
       ], { account: trader });
@@ -1003,7 +887,6 @@ describe("v2-FluxSwap", async function () {
 
       await router.write.swapExactTokensForTokens([
         100n * 10n ** 18n,
-        0n,
         [tokenA.address, tokenB.address],
         trader,
       ], { account: trader });
@@ -1027,7 +910,6 @@ describe("v2-FluxSwap", async function () {
       try {
         await router.write.swapExactTokensForTokens([
           10n * 10n ** 18n,
-          0n,
           [tokenA.address, tokenB.address],
           trader,
         ], { account: trader });
@@ -1038,7 +920,6 @@ describe("v2-FluxSwap", async function () {
       try {
         await router.write.swapExactTokensForTokens([
           10n * 10n ** 18n,
-          0n,
           [tokenA.address, tokenB.address],
           trader2,
         ], { account: trader });
@@ -1059,7 +940,6 @@ describe("v2-FluxSwap", async function () {
       try {
         await router.write.swapExactTokensForTokens([
           tinyAmount,
-          0n,
           [tokenA.address, tokenB.address],
           trader,
         ], { account: trader });
@@ -1089,7 +969,6 @@ describe("v2-FluxSwap", async function () {
       try {
         await router.write.swapExactTokensForTokens([
           largeSwapAmount,
-          0n,
           [tokenA.address, tokenB.address],
           trader,
         ], { account: trader });
@@ -1116,7 +995,6 @@ describe("v2-FluxSwap", async function () {
         try {
           await router.write.swapExactTokensForTokens([
             5n * 10n ** 18n,
-            0n,
             [tokenA.address, tokenB.address],
             trader,
           ], { account: trader });
@@ -1129,7 +1007,6 @@ describe("v2-FluxSwap", async function () {
         try {
           await router.write.swapExactTokensForTokens([
             5n * 10n ** 18n,
-            0n,
             [tokenB.address, tokenA.address],
             trader,
           ], { account: trader });
@@ -1187,7 +1064,6 @@ describe("v2-FluxSwap", async function () {
         try {
           await router.write.swapExactTokensForTokens([
             swapAmount,
-            0n,
             [tokenA.address, tokenB.address],
             trader,
           ], { account: trader });
@@ -1250,7 +1126,6 @@ describe("v2-FluxSwap", async function () {
         try {
           await router.write.swapExactTokensForTokens([
             1n * 10n ** 18n,
-            0n,
             isAToB ? [tokenA.address, tokenB.address] : [tokenB.address, tokenA.address],
             trader,
           ], { account: trader });

@@ -134,7 +134,7 @@ describe("Gas Report", async function () {
       ], { account: lp, value: 1000n * 10n ** 18n });
 
       const hash = await router.write.swapExactTokensForETH([
-        100n * 10n ** 18n, 0n, [tokenA.address, WETH.address], trader,
+        100n * 10n ** 18n, [tokenA.address, WETH.address], trader,
       ], { account: trader });
       const gasUsed = await getGasUsed(hash);
       console.log(`\n  router.swapExactTokensForETH: ${gasUsed.toString()} gas`);
@@ -159,7 +159,7 @@ describe("Gas Report", async function () {
       ], { account: lp, value: 1000n * 10n ** 18n });
 
       const hash = await router.write.swapExactETHForTokens([
-        0n, [WETH.address, tokenA.address], trader,
+        [WETH.address, tokenA.address], trader,
       ], { account: trader, value: 10n * 10n ** 18n });
       const gasUsed = await getGasUsed(hash);
       console.log(`\n  router.swapExactETHForTokens: ${gasUsed.toString()} gas`);
@@ -257,7 +257,7 @@ describe("Gas Report", async function () {
       ], { account: lp });
 
       const hash = await router.write.swapExactTokensForTokens([
-        100n * 10n ** 18n, 0n, [tokenA.address, tokenB.address], trader,
+        100n * 10n ** 18n, [tokenA.address, tokenB.address], trader,
       ], { account: trader });
       const gasUsed = await getGasUsed(hash);
       console.log(`\n  router.swapExactTokensForTokens: ${gasUsed.toString()} gas`);

@@ -318,29 +318,24 @@ contract FluxSwapRouter is IFluxSwapRouter {
     /**
      * @notice 用代币换取指定数量的另一种代币（精确输入）
      * @param amountIn 输入的代币数量
-     * @param amountOutMin 最小输出的代币数量（滑点保护）
      * @param path 交易路径，如 [USDT, WETH, BTC]
      * @param to 最终接收地址
      * @return amounts 每个步骤的交易数量
      */
     function swapExactTokensForTokens(
         uint256 amountIn,
-        uint256 amountOutMin,
         address[] calldata path,
         address to
     ) external override returns (uint256[] memory amounts) {
         // 1. 计算路径上每个交易的数量
         amounts = getAmountsOut(amountIn, path);
 
-        // 2. 检查输出数量满足最小要求
-        require(amounts[amounts.length - 1] >= amountOutMin, "FluxSwapRouter: INSUFFICIENT_OUTPUT_AMOUNT");
-
-        // 3. 将输入代币转账到第一个交易对
+        // 2. 将输入代币转账到第一个交易对
         TransferHelper.safeTransferFrom(
             path[0], msg.sender, IFluxSwapFactory(factory).getPair(path[0], path[1]), amounts[0]
         );
 
-        // 4. 执行 swap
+        // 3. 执行 swap
         _swap(amounts, path, to);
     }
 
@@ -375,13 +370,11 @@ contract FluxSwapRouter is IFluxSwapRouter {
 
     /**
      * @notice 用 ETH 换取代币（精确输入）
-     * @param amountOutMin 最小获得的代币数量
      * @param path 交易路径（必须是 WETH 开头）
      * @param to 最终接收地址
      * @return amounts 每个步骤的交易数量
      */
     function swapExactETHForTokens(
-        uint256 amountOutMin,
         address[] calldata path,
         address to
     ) external override payable returns (uint256[] memory amounts) {
@@ -391,14 +384,11 @@ contract FluxSwapRouter is IFluxSwapRouter {
         // 2. 计算数量
         amounts = getAmountsOut(msg.value, path);
 
-        // 3. 检查输出
-        require(amounts[amounts.length - 1] >= amountOutMin, "FluxSwapRouter: INSUFFICIENT_OUTPUT_AMOUNT");
-
-        // 4. 将 ETH 包裹成 WETH，然后转账到第一个交易对
+        // 3. 将 ETH 包裹成 WETH，然后转账到第一个交易对
         IWETH(WETH).deposit{value: amounts[0]}();
         TransferHelper.safeTransfer(WETH, IFluxSwapFactory(factory).getPair(path[0], path[1]), amounts[0]);
 
-        // 5. 执行 swap
+        // 4. 执行 swap
         _swap(amounts, path, to);
     }
 
@@ -427,13 +417,11 @@ contract FluxSwapRouter is IFluxSwapRouter {
      */
     function swapExactTokensForETH(
         uint256 amountIn,
-        uint256 amountOutMin,
         address[] calldata path,
         address to
     ) external override returns (uint256[] memory amounts) {
         require(path[path.length - 1] == WETH, "FluxSwapRouter: INVALID_PATH");
         amounts = getAmountsOut(amountIn, path);
-        require(amounts[amounts.length - 1] >= amountOutMin, "FluxSwapRouter: INSUFFICIENT_OUTPUT_AMOUNT");
         TransferHelper.safeTransferFrom(
             path[0], msg.sender, IFluxSwapFactory(factory).getPair(path[0], path[1]), amounts[0]
         );
