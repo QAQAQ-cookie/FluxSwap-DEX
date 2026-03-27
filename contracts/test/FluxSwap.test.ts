@@ -403,13 +403,12 @@ describe("v2-FluxSwap", async function () {
   });
 
   /**
-   * TWAP 时间加权平均价格测试
-   * 场景：验证价格预言机功能、累计价格计算
+   * 价格累计值测试
+   * 场景：验证 price0CumulativeLast 和 price1CumulativeLast 在交易后正确更新
    */
-  describe("TWAP", function () {
-    it("should track cumulative prices after swaps", async function () {
+  describe("Cumulative Price", function () {
+    it("should track price0CumulativeLast after swaps", async function () {
       const price0Before = await pair.read.price0CumulativeLast();
-      const price1Before = await pair.read.price1CumulativeLast();
 
       await router.write.swapExactTokensForTokens([
         5n * 10n ** 18n,
@@ -418,117 +417,25 @@ describe("v2-FluxSwap", async function () {
       ], { account: trader });
 
       const price0After = await pair.read.price0CumulativeLast();
-      const price1After = await pair.read.price1CumulativeLast();
-
-      ok(price0After > price0Before || price1After > price1Before);
+      ok(price0After > price0Before, "price0CumulativeLast should increase after swap");
     });
 
-    it("should return 0 for timeframe larger than elapsed", async function () {
-      const twapPrice = await pair.read.price([tokenA.address, 3600n]);
-      strictEqual(twapPrice, 0n);
+    it("should track price1CumulativeLast after swaps", async function () {
+      const price1Before = await pair.read.price1CumulativeLast();
+
+      await router.write.swapExactTokensForTokens([
+        5n * 10n ** 18n,
+        [tokenB.address, tokenA.address],
+        trader,
+      ], { account: trader });
+
+      const price1After = await pair.read.price1CumulativeLast();
+      ok(price1After > price1Before, "price1CumulativeLast should increase after swap");
     });
 
     it("should get reserves correctly", async function () {
       const [r0, r1] = await pair.read.getReserves();
       ok(r0 > 0n && r1 > 0n);
-    });
-  });
-
-  /**
-   * TWAP 价格验证测试
-   * 场景：验证不同时间窗口的 TWAP 计算准确性
-   */
-  describe("TWAP Price Verification", function () {
-    it("should calculate TWAP price accurately over time", async function () {
-      await router.write.swapExactTokensForTokens([
-        100n * 10n ** 18n,
-        [tokenA.address, tokenB.address],
-        trader,
-      ], { account: trader });
-
-      await hardhatNetwork.provider.request({ method: "evm_mine" });
-      await hardhatNetwork.provider.request({ method: "evm_increaseTime", params: [3600] });
-      await hardhatNetwork.provider.request({ method: "evm_mine" });
-
-      const twapPrice = await pair.read.price([tokenA.address, 3600n]);
-      ok(twapPrice >= 0n, "TWAP price should be non-negative");
-    });
-
-    it("should return different TWAP for different timeframes", async function () {
-      await router.write.swapExactTokensForTokens([
-        50n * 10n ** 18n,
-        [tokenA.address, tokenB.address],
-        trader,
-      ], { account: trader });
-
-      await hardhatNetwork.provider.request({ method: "evm_mine" });
-      await hardhatNetwork.provider.request({ method: "evm_increaseTime", params: [1800] });
-      await hardhatNetwork.provider.request({ method: "evm_mine" });
-
-      const twap15m = await pair.read.price([tokenA.address, 900n]);
-      const twap30m = await pair.read.price([tokenA.address, 1800n]);
-
-      ok(twap15m > 0n || twap30m > 0n, "At least one TWAP should be calculable");
-    });
-
-    it("should accumulate prices correctly after multiple swaps", async function () {
-      const [r0] = await pair.read.getReserves();
-      const minReserve = 10n ** 19n;
-
-      if (r0 < minReserve) {
-        const price0Before = await pair.read.price0CumulativeLast();
-        strictEqual(price0Before, price0Before, "Reserves too low for swap test");
-        return;
-      }
-
-      const price0Before = await pair.read.price0CumulativeLast();
-      const price1Before = await pair.read.price1CumulativeLast();
-      const swapAmount = 10n ** 15n;
-
-      await router.write.swapExactTokensForTokens([
-        swapAmount,
-        [tokenA.address, tokenB.address],
-        trader,
-      ], { account: trader });
-
-      for (let i = 0; i < 3; i++) {
-        await hardhatNetwork.provider.request({ method: "evm_mine" });
-        await hardhatNetwork.provider.request({ method: "evm_increaseTime", params: [300] });
-        await hardhatNetwork.provider.request({ method: "evm_mine" });
-      }
-
-      const price0After = await pair.read.price0CumulativeLast();
-      const price1After = await pair.read.price1CumulativeLast();
-
-      ok(price0After > price0Before || price1After > price1Before, "Cumulative prices should increase after time passes");
-    });
-
-    it("should handle TWAP with very short timeframe", async function () {
-      await router.write.swapExactTokensForTokens([
-        10n * 10n ** 18n,
-        [tokenA.address, tokenB.address],
-        trader,
-      ], { account: trader });
-
-      const twapPrice = await pair.read.price([tokenA.address, 1n]);
-      ok(twapPrice >= 0n, "TWAP should return 0 or valid price for short timeframe");
-    });
-
-    it("should calculate TWAP for token1 direction", async function () {
-      await router.write.swapExactTokensForTokens([
-        100n * 10n ** 18n,
-        [tokenA.address, tokenB.address],
-        trader,
-      ], { account: trader });
-
-      await hardhatNetwork.provider.request({ method: "evm_mine" });
-      await hardhatNetwork.provider.request({ method: "evm_increaseTime", params: [1800] });
-      await hardhatNetwork.provider.request({ method: "evm_mine" });
-
-      const twapPriceToken1 = await pair.read.price([tokenB.address, 1800n]);
-      const twapPriceToken0 = await pair.read.price([tokenA.address, 1800n]);
-
-      ok(twapPriceToken0 >= 0n && twapPriceToken1 >= 0n, "TWAP prices should be non-negative");
     });
   });
 

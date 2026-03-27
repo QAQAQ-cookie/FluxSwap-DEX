@@ -25,7 +25,6 @@ interface IFluxSwapPair {
     function token0() external view returns (address);
     function token1() external view returns (address);
     function getReserves() external view returns (uint256 reserve0, uint256 reserve1);
-    function price(address token, uint256 timeframeSeconds) external view returns (uint256);
     function price0CumulativeLast() external view returns (uint256);
     function price1CumulativeLast() external view returns (uint256);
     function kLast() external view returns (uint256);

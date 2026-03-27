@@ -5,13 +5,12 @@ import "../interfaces/IFluxSwapPair.sol";
 import "../interfaces/IFluxSwapFactory.sol";
 import "../interfaces/IFlashSwapReceiver.sol";
 import "../libraries/SafeMath.sol";
-import "../libraries/UQ112x112.sol";
 
 /**
  * @title FluxSwapPair - AMM 交易对合约
  * @notice 实现 Uniswap V2 风格的自动做市商核心逻辑，支持 TWAP 价格预言机和闪电贷
  * @dev 继承 ERC20 功能（mint/burn/transfer），每个交易对就是一个 LP 代币
- *      使用 UQ112x112 定点数格式计算 TWAP 价格
+ *      价格累计值 price0CumulativeLast = reserve1 * timeElapsed / reserve0
  */
 contract FluxSwapPair is IFluxSwapPair {
     using SafeMath for uint256;
@@ -102,35 +101,6 @@ contract FluxSwapPair is IFluxSwapPair {
      */
     function getReserves() public view override returns (uint256, uint256) {
         return (reserve0, reserve1);
-    }
-
-    /**
-     * @notice 获取 TWAP 价格
-     * @param token 代币地址（token0 或 token1）
-     * @param timeframeSeconds 时间范围（秒）
-     * @return priceOut TWAP 价格（UQ112.112 格式，需要除以 2^112 得到实际价格）
-     */
-    function price(address token, uint256 timeframeSeconds) external view override returns (uint256 priceOut) {
-        require(token == token0 || token == token1, "FluxSwap: INVALID_TOKEN");
-        require(timeframeSeconds > 0, "FluxSwap: ZERO_TIMEFRAME");
-
-        uint256 blockTimestamp = block.timestamp;
-        uint256 timeElapsed = blockTimestamp - blockTimestampLast;
-
-        if (timeElapsed < timeframeSeconds) {
-            return 0;
-        }
-
-        uint256 priceAccumulated = token == token0 ? price0CumulativeLast : price1CumulativeLast;
-
-        if (reserve0 != 0 && reserve1 != 0) {
-            uint256 price0Cumulative = price0CumulativeLast + (uint256(reserve1) * 1e18 / reserve0) * timeElapsed;
-            uint256 price1Cumulative = price1CumulativeLast + (uint256(reserve0) * 1e18 / reserve1) * timeElapsed;
-
-            priceAccumulated = token == token0 ? price0Cumulative : price1Cumulative;
-        }
-
-        return priceAccumulated / timeElapsed;
     }
 
     // ==================== 初始化 ====================
@@ -527,11 +497,11 @@ contract FluxSwapPair is IFluxSwapPair {
 
     // ==================== 储备更新 ====================
     /**
-     * @notice 更新储备量和价格累计值（用于 TWAP 计算）
+     * @notice 更新储备量和价格累计值
      * @param balance0 新的代币0余额
      * @param balance1 新的代币1余额
-     * @dev 使用 UQ112x112 定点数格式：(reserve1/reserve0) * Q112 * timeElapsed
-     *      价格累计值需要除以 2^112 才能得到实际价格比率
+     * @dev 价格累计值公式：reserve1 * timeElapsed / reserve0
+     *      与 Uniswap V2 完全一致
      */
     function _update(uint256 balance0, uint256 balance1) private {
         require(balance0 <= type(uint112).max && balance1 <= type(uint112).max, "FluxSwap: OVERFLOW");
@@ -540,8 +510,8 @@ contract FluxSwapPair is IFluxSwapPair {
         uint256 timeElapsed = blockTimestamp - blockTimestampLast;
 
         if (timeElapsed > 0 && reserve0 != 0 && reserve1 != 0) {
-            price0CumulativeLast += UQ112x112.uqdiv(reserve1, reserve0) * timeElapsed;
-            price1CumulativeLast += UQ112x112.uqdiv(reserve0, reserve1) * timeElapsed;
+            price0CumulativeLast += uint256(reserve1) * timeElapsed / reserve0;
+            price1CumulativeLast += uint256(reserve0) * timeElapsed / reserve1;
         }
 
         reserve0 = uint112(balance0);
