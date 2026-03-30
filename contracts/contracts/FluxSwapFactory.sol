@@ -11,6 +11,7 @@ contract FluxSwapFactory is IFluxSwapFactory {
     address[] public override allPairs;
 
     constructor(address _feeToSetter) {
+        require(_feeToSetter != address(0), "FluxSwap: ZERO_ADDRESS");
         feeToSetter = _feeToSetter;
     }
 

@@ -68,6 +68,8 @@ contract FluxSwapRouter is IFluxSwapRouter {
     }
 
     constructor(address _factory, address _WETH) {
+        require(_factory != address(0), "FluxSwapRouter: ZERO_ADDRESS");
+        require(_WETH != address(0), "FluxSwapRouter: ZERO_ADDRESS");
         factory = _factory;
         WETH = _WETH;
     }
@@ -197,7 +199,7 @@ contract FluxSwapRouter is IFluxSwapRouter {
     ) external override ensure(deadline) returns (uint256[] memory amounts) {
         amounts = getAmountsOut(amountIn, path);
         require(amounts[amounts.length - 1] >= amountOutMin, "FluxSwapRouter: INSUFFICIENT_OUTPUT_AMOUNT");
-        address pair = IFluxSwapFactory(factory).getPair(path[0], path[1]);
+        address pair = _getPairOrRevert(path[0], path[1]);
         TransferHelper.safeTransferFrom(path[0], msg.sender, pair, amounts[0]);
         _swap(amounts, path, to);
     }
@@ -211,7 +213,7 @@ contract FluxSwapRouter is IFluxSwapRouter {
     ) external override ensure(deadline) returns (uint256[] memory amounts) {
         amounts = getAmountsIn(amountOut, path);
         require(amounts[0] <= amountInMax, "FluxSwapRouter: EXCESSIVE_INPUT_AMOUNT");
-        address pair = IFluxSwapFactory(factory).getPair(path[0], path[1]);
+        address pair = _getPairOrRevert(path[0], path[1]);
         TransferHelper.safeTransferFrom(path[0], msg.sender, pair, amounts[0]);
         _swap(amounts, path, to);
     }
@@ -226,7 +228,7 @@ contract FluxSwapRouter is IFluxSwapRouter {
         amounts = getAmountsOut(msg.value, path);
         require(amounts[amounts.length - 1] >= amountOutMin, "FluxSwapRouter: INSUFFICIENT_OUTPUT_AMOUNT");
         IWETH(WETH).deposit{value: amounts[0]}();
-        assert(IWETH(WETH).transfer(IFluxSwapFactory(factory).getPair(path[0], path[1]), amounts[0]));
+        assert(IWETH(WETH).transfer(_getPairOrRevert(path[0], path[1]), amounts[0]));
         _swap(amounts, path, to);
     }
 
@@ -240,7 +242,7 @@ contract FluxSwapRouter is IFluxSwapRouter {
         require(path[path.length - 1] == WETH, "FluxSwapRouter: INVALID_PATH");
         amounts = getAmountsIn(amountOut, path);
         require(amounts[0] <= amountInMax, "FluxSwapRouter: EXCESSIVE_INPUT_AMOUNT");
-        address pair = IFluxSwapFactory(factory).getPair(path[0], path[1]);
+        address pair = _getPairOrRevert(path[0], path[1]);
         TransferHelper.safeTransferFrom(path[0], msg.sender, pair, amounts[0]);
         _swap(amounts, path, address(this));
         IWETH(WETH).withdraw(amounts[amounts.length - 1]);
@@ -257,7 +259,7 @@ contract FluxSwapRouter is IFluxSwapRouter {
         require(path[path.length - 1] == WETH, "FluxSwapRouter: INVALID_PATH");
         amounts = getAmountsOut(amountIn, path);
         require(amounts[amounts.length - 1] >= amountOutMin, "FluxSwapRouter: INSUFFICIENT_OUTPUT_AMOUNT");
-        address pair = IFluxSwapFactory(factory).getPair(path[0], path[1]);
+        address pair = _getPairOrRevert(path[0], path[1]);
         TransferHelper.safeTransferFrom(path[0], msg.sender, pair, amounts[0]);
         _swap(amounts, path, address(this));
         IWETH(WETH).withdraw(amounts[amounts.length - 1]);
@@ -274,7 +276,7 @@ contract FluxSwapRouter is IFluxSwapRouter {
         amounts = getAmountsIn(amountOut, path);
         require(amounts[0] <= msg.value, "FluxSwapRouter: EXCESSIVE_INPUT_AMOUNT");
         IWETH(WETH).deposit{value: amounts[0]}();
-        assert(IWETH(WETH).transfer(IFluxSwapFactory(factory).getPair(path[0], path[1]), amounts[0]));
+        assert(IWETH(WETH).transfer(_getPairOrRevert(path[0], path[1]), amounts[0]));
         _swap(amounts, path, to);
 
         if (msg.value > amounts[0]) {
@@ -289,7 +291,7 @@ contract FluxSwapRouter is IFluxSwapRouter {
         address to,
         uint256 deadline
     ) external override ensure(deadline) {
-        address pair = IFluxSwapFactory(factory).getPair(path[0], path[1]);
+        address pair = _getPairOrRevert(path[0], path[1]);
         TransferHelper.safeTransferFrom(path[0], msg.sender, pair, amountIn);
         uint256 balanceBefore = IERC20(path[path.length - 1]).balanceOf(to);
         _swapSupportingFeeOnTransferTokens(path, to);
@@ -308,7 +310,7 @@ contract FluxSwapRouter is IFluxSwapRouter {
         require(path[0] == WETH, "FluxSwapRouter: INVALID_PATH");
         uint256 balanceBefore = IERC20(path[path.length - 1]).balanceOf(to);
         IWETH(WETH).deposit{value: msg.value}();
-        assert(IWETH(WETH).transfer(IFluxSwapFactory(factory).getPair(path[0], path[1]), msg.value));
+        assert(IWETH(WETH).transfer(_getPairOrRevert(path[0], path[1]), msg.value));
         _swapSupportingFeeOnTransferTokens(path, to);
         require(
             IERC20(path[path.length - 1]).balanceOf(to) - balanceBefore >= amountOutMin,
@@ -324,7 +326,7 @@ contract FluxSwapRouter is IFluxSwapRouter {
         uint256 deadline
     ) external override ensure(deadline) {
         require(path[path.length - 1] == WETH, "FluxSwapRouter: INVALID_PATH");
-        address pair = IFluxSwapFactory(factory).getPair(path[0], path[1]);
+        address pair = _getPairOrRevert(path[0], path[1]);
         TransferHelper.safeTransferFrom(path[0], msg.sender, pair, amountIn);
         _swapSupportingFeeOnTransferTokens(path, address(this));
         uint256 amountOut = IERC20(WETH).balanceOf(address(this));
@@ -396,8 +398,8 @@ contract FluxSwapRouter is IFluxSwapRouter {
             (address token0, ) = sortTokens(input, output);
             uint256 amountOut = amounts[i + 1];
             (uint256 amount0Out, uint256 amount1Out) = input == token0 ? (uint256(0), amountOut) : (amountOut, uint256(0));
-            address to = i < path.length - 2 ? IFluxSwapFactory(factory).getPair(output, path[i + 2]) : _to;
-            IFluxSwapPair(IFluxSwapFactory(factory).getPair(input, output)).swap(
+            address to = i < path.length - 2 ? _getPairOrRevert(output, path[i + 2]) : _to;
+            IFluxSwapPair(_getPairOrRevert(input, output)).swap(
                 amount0Out,
                 amount1Out,
                 to,
@@ -409,7 +411,7 @@ contract FluxSwapRouter is IFluxSwapRouter {
     function _swapSupportingFeeOnTransferTokens(address[] memory path, address _to) internal {
         for (uint256 i = 0; i < path.length - 1; i++) {
             (address input, address output) = (path[i], path[i + 1]);
-            address pairAddress = IFluxSwapFactory(factory).getPair(input, output);
+            address pairAddress = _getPairOrRevert(input, output);
             IFluxSwapPair pair = IFluxSwapPair(pairAddress);
             uint256 amountOutput;
             uint256 amount0Out;
@@ -424,7 +426,7 @@ contract FluxSwapRouter is IFluxSwapRouter {
                 (amount0Out, amount1Out) =
                     input == token0 ? (uint256(0), amountOutput) : (amountOutput, uint256(0));
             }
-            address to = i < path.length - 2 ? IFluxSwapFactory(factory).getPair(output, path[i + 2]) : _to;
+            address to = i < path.length - 2 ? _getPairOrRevert(output, path[i + 2]) : _to;
             pair.swap(amount0Out, amount1Out, to, new bytes(0));
         }
     }
@@ -502,9 +504,14 @@ contract FluxSwapRouter is IFluxSwapRouter {
 
     function _getReserves(address tokenA, address tokenB) internal view returns (uint256 reserveA, uint256 reserveB) {
         (address token0, ) = sortTokens(tokenA, tokenB);
-        address pair = IFluxSwapFactory(factory).getPair(tokenA, tokenB);
+        address pair = _getPairOrRevert(tokenA, tokenB);
         (uint256 reserve0, uint256 reserve1, ) = IFluxSwapPair(pair).getReserves();
         (reserveA, reserveB) = tokenA == token0 ? (reserve0, reserve1) : (reserve1, reserve0);
+    }
+
+    function _getPairOrRevert(address tokenA, address tokenB) internal view returns (address pair) {
+        pair = IFluxSwapFactory(factory).getPair(tokenA, tokenB);
+        require(pair != address(0), "FluxSwapRouter: PAIR_NOT_FOUND");
     }
 
     function _removeLiquidity(
