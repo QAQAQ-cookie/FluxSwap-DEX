@@ -15,6 +15,7 @@ describe("v2-FluxSwap", async function () {
   const hardhatNetwork = await network.connect();
   const { viem } = hardhatNetwork;
   const [walletClient, walletClient2, walletClient3] = await viem.getWalletClients();
+  const getDeadline = () => BigInt(Math.floor(Date.now() / 1000) + 3600);
 
   let factory: any;
   let router: any;
@@ -73,6 +74,7 @@ describe("v2-FluxSwap", async function () {
       0n,
       0n,
       lp,
+      getDeadline(),
     ], { account: lp });
 
     const wethToken0 = WETH.address < tokenB.address ? WETH.address : tokenB.address;
@@ -94,6 +96,7 @@ describe("v2-FluxSwap", async function () {
       0n,
       0n,
       lp,
+      getDeadline(),
     ], { account: lp });
   });
 
@@ -109,8 +112,10 @@ describe("v2-FluxSwap", async function () {
       const ethIn = 1n * 10n ** 18n;
 
       await router.write.swapExactETHForTokens([
+        0n,
         [WETH.address, tokenB.address],
         trader,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
       ], { account: trader, value: ethIn });
 
       const traderWethBalanceAfter = await WETH.read.balanceOf([trader]);
@@ -129,8 +134,10 @@ describe("v2-FluxSwap", async function () {
 
       await router.write.swapExactTokensForETH([
         tokenBIn,
+        0n,
         [tokenB.address, WETH.address],
         trader,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
       ], { account: trader });
 
       const traderTokenBBalanceAfter = await tokenB.read.balanceOf([trader]);
@@ -236,6 +243,7 @@ describe("v2-FluxSwap", async function () {
         0n,
         0n,
         lp,
+        getDeadline(),
       ], { account: lp });
 
       const tokenABalanceAfter = await tokenA.read.balanceOf([lp]);
@@ -254,6 +262,7 @@ describe("v2-FluxSwap", async function () {
           0n,
           0n,
           lp,
+          getDeadline(),
         ], { account: lp });
       } catch (e) {
         errorOccurred = true;
@@ -271,6 +280,7 @@ describe("v2-FluxSwap", async function () {
           0n,
           0n,
           lp,
+          getDeadline(),
         ], { account: lp });
       } catch (e) {
         errorOccurred = true;
@@ -295,6 +305,7 @@ describe("v2-FluxSwap", async function () {
           0n,
           0n,
           lp,
+          getDeadline(),
         ], { account: lp, value: 100n * 10n ** 18n });
       } catch (e) {
         testSucceeded = false;
@@ -316,8 +327,10 @@ describe("v2-FluxSwap", async function () {
       const swapAmount = 10n * 10n ** 18n;
       await router.write.swapExactTokensForTokens([
         swapAmount,
+        0n,
         [tokenA.address, tokenB.address],
         trader,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
       ], { account: trader });
 
       const traderBalanceAAfter = await tokenA.read.balanceOf([trader]);
@@ -335,8 +348,10 @@ describe("v2-FluxSwap", async function () {
 
       await router.write.swapExactTokensForTokens([
         1n * 10n ** 18n,
+        0n,
         [tokenA.address, tokenB.address],
         trader,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
       ], { account: trader });
 
       const lpLpBalanceAfter = await pair.read.balanceOf([lp]);
@@ -355,20 +370,24 @@ describe("v2-FluxSwap", async function () {
       let successCount = 0;
       try {
         await router.write.swapExactTokensForTokens([
-          50n * 10n ** 18n,
-          [tokenA.address, tokenB.address],
-          trader,
-        ], { account: trader });
+        50n * 10n ** 18n,
+        0n,
+        [tokenA.address, tokenB.address],
+        trader,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
+      ], { account: trader });
         successCount++;
       } catch (e) {
       }
 
       try {
         await router.write.swapExactTokensForTokens([
-          50n * 10n ** 18n,
-          [tokenA.address, tokenB.address],
-          trader,
-        ], { account: trader });
+        50n * 10n ** 18n,
+        0n,
+        [tokenA.address, tokenB.address],
+        trader,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
+      ], { account: trader });
         successCount++;
       } catch (e) {
       }
@@ -383,10 +402,12 @@ describe("v2-FluxSwap", async function () {
 
       for (let i = 0; i < 3; i++) {
         await router.write.swapExactTokensForTokens([
-          50n * 10n ** 18n,
-          [tokenA.address, tokenB.address],
-          trader,
-        ], { account: trader });
+        50n * 10n ** 18n,
+        0n,
+        [tokenA.address, tokenB.address],
+        trader,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
+      ], { account: trader });
       }
 
       const reservesAfter = await pair.read.getReserves();
@@ -412,8 +433,10 @@ describe("v2-FluxSwap", async function () {
 
       await router.write.swapExactTokensForTokens([
         5n * 10n ** 18n,
+        0n,
         [tokenA.address, tokenB.address],
         trader,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
       ], { account: trader });
 
       const price0After = await pair.read.price0CumulativeLast();
@@ -425,8 +448,10 @@ describe("v2-FluxSwap", async function () {
 
       await router.write.swapExactTokensForTokens([
         5n * 10n ** 18n,
+        0n,
         [tokenB.address, tokenA.address],
         trader,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
       ], { account: trader });
 
       const price1After = await pair.read.price1CumulativeLast();
@@ -450,8 +475,10 @@ describe("v2-FluxSwap", async function () {
 
       await router.write.swapExactTokensForTokens([
         10n * 10n ** 18n,
+        0n,
         [tokenA.address, tokenB.address],
         trader,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
       ], { account: trader });
 
       const balanceAAfter = await tokenA.read.balanceOf([trader]);
@@ -467,8 +494,10 @@ describe("v2-FluxSwap", async function () {
 
       await router.write.swapExactTokensForTokens([
         10n * 10n ** 18n,
+        0n,
         [tokenB.address, tokenA.address],
         trader,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
       ], { account: trader });
 
       const balanceAAfter = await tokenA.read.balanceOf([trader]);
@@ -483,8 +512,10 @@ describe("v2-FluxSwap", async function () {
 
       await router.write.swapExactTokensForTokens([
         5n * 10n ** 18n,
+        0n,
         [tokenA.address, tokenB.address],
         trader,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
       ], { account: trader });
 
       const [r0After, r1After] = await pair.read.getReserves();
@@ -497,8 +528,10 @@ describe("v2-FluxSwap", async function () {
 
       await router.write.swapExactTokensForTokens([
         10n * 10n ** 18n,
+        0n,
         [tokenA.address, tokenB.address],
         trader,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
       ], { account: trader });
 
       const balanceAAfter = await tokenA.read.balanceOf([trader]);
@@ -517,6 +550,7 @@ describe("v2-FluxSwap", async function () {
         100n * 10n ** 18n,
         [tokenA.address, tokenB.address],
         trader,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
       ], { account: trader });
 
       const balanceBAfter = await tokenB.read.balanceOf([trader]);
@@ -535,8 +569,10 @@ describe("v2-FluxSwap", async function () {
 
       await router.write.swapExactTokensForTokens([
         largeSwapAmount,
+        0n,
         [tokenA.address, tokenB.address],
         trader,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
       ], { account: trader });
 
       const balanceBAfter = await tokenB.read.balanceOf([trader]);
@@ -568,7 +604,7 @@ describe("v2-FluxSwap", async function () {
     it("should not allow swap with zero output", async function () {
       let errorOccurred = false;
       try {
-        await pair.write.swap([0n, 0n, trader], { account: trader });
+        await pair.write.swap([0n, 0n, trader, "0x"], { account: trader });
       } catch (e) {
         errorOccurred = true;
       }
@@ -578,7 +614,7 @@ describe("v2-FluxSwap", async function () {
     it("should not allow swap to zero address", async function () {
       let errorOccurred = false;
       try {
-        await pair.write.swap([1n, 0n, "0x0000000000000000000000000000000000000000"], { account: trader });
+        await pair.write.swap([1n, 0n, "0x0000000000000000000000000000000000000000", "0x"], { account: trader });
       } catch (e) {
         errorOccurred = true;
       }
@@ -679,8 +715,10 @@ describe("v2-FluxSwap", async function () {
 
       await router.write.swapExactTokensForTokens([
         5n * 10n ** 18n,
+        0n,
         [tokenA.address, tokenB.address],
         trader,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
       ], { account: trader });
 
       const [r0After, r1After] = await pair.read.getReserves();
@@ -772,6 +810,7 @@ describe("v2-FluxSwap", async function () {
         0n,
         0n,
         lp,
+        getDeadline(),
       ], { account: lp });
 
       const totalSupply = await newPair.read.totalSupply();
@@ -794,8 +833,10 @@ describe("v2-FluxSwap", async function () {
 
       await router.write.swapExactTokensForTokens([
         100n * 10n ** 18n,
+        0n,
         [tokenA.address, tokenB.address],
         trader,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
       ], { account: trader });
 
       const reservesAfter = await pair.read.getReserves();
@@ -816,20 +857,24 @@ describe("v2-FluxSwap", async function () {
       let successCount = 0;
       try {
         await router.write.swapExactTokensForTokens([
-          10n * 10n ** 18n,
-          [tokenA.address, tokenB.address],
-          trader,
-        ], { account: trader });
+        10n * 10n ** 18n,
+        0n,
+        [tokenA.address, tokenB.address],
+        trader,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
+      ], { account: trader });
         successCount++;
       } catch (e) {
       }
 
       try {
         await router.write.swapExactTokensForTokens([
-          10n * 10n ** 18n,
-          [tokenA.address, tokenB.address],
-          trader2,
-        ], { account: trader });
+        10n * 10n ** 18n,
+        0n,
+        [tokenA.address, tokenB.address],
+        trader2,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
+      ], { account: trader });
         successCount++;
       } catch (e) {
       }
@@ -846,10 +891,12 @@ describe("v2-FluxSwap", async function () {
       let swapSucceeded = true;
       try {
         await router.write.swapExactTokensForTokens([
-          tinyAmount,
-          [tokenA.address, tokenB.address],
-          trader,
-        ], { account: trader });
+        tinyAmount,
+        0n,
+        [tokenA.address, tokenB.address],
+        trader,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
+      ], { account: trader });
       } catch (e) {
         swapSucceeded = false;
       }
@@ -875,10 +922,12 @@ describe("v2-FluxSwap", async function () {
       let swapSucceeded = true;
       try {
         await router.write.swapExactTokensForTokens([
-          largeSwapAmount,
-          [tokenA.address, tokenB.address],
-          trader,
-        ], { account: trader });
+        largeSwapAmount,
+        0n,
+        [tokenA.address, tokenB.address],
+        trader,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
+      ], { account: trader });
       } catch (e) {
         swapSucceeded = false;
       }
@@ -901,10 +950,12 @@ describe("v2-FluxSwap", async function () {
       for (let i = 0; i < 3; i++) {
         try {
           await router.write.swapExactTokensForTokens([
-            5n * 10n ** 18n,
-            [tokenA.address, tokenB.address],
-            trader,
-          ], { account: trader });
+        5n * 10n ** 18n,
+        0n,
+        [tokenA.address, tokenB.address],
+        trader,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
+      ], { account: trader });
           successCount++;
         } catch (e) {
         }
@@ -913,10 +964,12 @@ describe("v2-FluxSwap", async function () {
       for (let i = 0; i < 2; i++) {
         try {
           await router.write.swapExactTokensForTokens([
-            5n * 10n ** 18n,
-            [tokenB.address, tokenA.address],
-            trader,
-          ], { account: trader });
+        5n * 10n ** 18n,
+        0n,
+        [tokenB.address, tokenA.address],
+        trader,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
+      ], { account: trader });
           successCount++;
         } catch (e) {
         }
@@ -953,6 +1006,7 @@ describe("v2-FluxSwap", async function () {
         0n,
         0n,
         lp,
+        getDeadline(),
       ], { account: lp });
 
       const [r0, r1] = await newPair.read.getReserves();
@@ -970,10 +1024,12 @@ describe("v2-FluxSwap", async function () {
       for (let i = 0; i < 5; i++) {
         try {
           await router.write.swapExactTokensForTokens([
-            swapAmount,
-            [tokenA.address, tokenB.address],
-            trader,
-          ], { account: trader });
+        swapAmount,
+        0n,
+        [tokenA.address, tokenB.address],
+        trader,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
+      ], { account: trader });
           successCount++;
         } catch (e) {
         }
@@ -994,6 +1050,7 @@ describe("v2-FluxSwap", async function () {
         0n,
         0n,
         lp,
+        getDeadline(),
       ], { account: lp });
 
       const tokenABalanceAfter = await tokenA.read.balanceOf([lp]);
@@ -1017,6 +1074,7 @@ describe("v2-FluxSwap", async function () {
         0n,
         0n,
         lp,
+        getDeadline(),
       ], { account: lp });
 
       const lpBalanceAfter = await pair.read.balanceOf([lp]);
@@ -1033,8 +1091,10 @@ describe("v2-FluxSwap", async function () {
         try {
           await router.write.swapExactTokensForTokens([
             1n * 10n ** 18n,
+            0n,
             isAToB ? [tokenA.address, tokenB.address] : [tokenB.address, tokenA.address],
             trader,
+            BigInt(Math.floor(Date.now() / 1000) + 3600)
           ], { account: trader });
           successCount++;
         } catch (e) {
@@ -1074,6 +1134,7 @@ describe("v2-FluxSwap", async function () {
           0n,
           0n,
           lp,
+          getDeadline(),
         ], { account: lp });
       } catch (e) {
         addLiquiditySucceeded = false;
@@ -1103,6 +1164,7 @@ describe("v2-FluxSwap", async function () {
         1000n * 10n ** 18n,
         [tokenA.address, tokenB.address],
         trader,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
       ], { account: trader });
 
       const tokenBBalanceAfter = await tokenB.read.balanceOf([trader]);
@@ -1115,11 +1177,12 @@ describe("v2-FluxSwap", async function () {
       let errorOccurred = false;
       try {
         await router.write.swapTokensForExactTokens([
-          1000n * 10n ** 18n,
-          1n * 10n ** 18n,
-          [tokenA.address, tokenB.address],
-          trader,
-        ], { account: trader });
+        1000n * 10n ** 18n,
+        1n * 10n ** 18n,
+        [tokenA.address, tokenB.address],
+        trader,
+        BigInt(Math.floor(Date.now() / 1000) + 3600)
+      ], { account: trader });
       } catch (e) {
         errorOccurred = true;
       }

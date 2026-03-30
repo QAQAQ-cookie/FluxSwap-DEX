@@ -11,6 +11,7 @@ describe("Gas Report", async function () {
   const { viem } = hardhatNetwork;
   const publicClient = await viem.getPublicClient();
   const [walletClient, walletClient2, walletClient3] = await viem.getWalletClients();
+  const getDeadline = () => BigInt(Math.floor(Date.now() / 1000) + 3600);
 
   let deployer: `0x${string}`;
   let lp: `0x${string}`;
@@ -71,7 +72,7 @@ describe("Gas Report", async function () {
       await tokenA.write.approve([await router.address, amount], { account: lp });
 
       const hash = await router.write.addLiquidityETH([
-        tokenA.address, 1000n * 10n ** 18n, 0n, 0n, lp,
+        tokenA.address, 1000n * 10n ** 18n, 0n, 0n, lp, getDeadline(),
       ], { account: lp, value: 1000n * 10n ** 18n });
       const gasUsed = await getGasUsed(hash);
       console.log(`\n  router.addLiquidityETH: ${gasUsed.toString()} gas`);
@@ -95,14 +96,14 @@ describe("Gas Report", async function () {
       await tokenA.write.approve([await router.address, amount], { account: lp });
 
       await router.write.addLiquidityETH([
-        tokenA.address, 1000n * 10n ** 18n, 0n, 0n, lp,
+        tokenA.address, 1000n * 10n ** 18n, 0n, 0n, lp, getDeadline(),
       ], { account: lp, value: 1000n * 10n ** 18n });
 
       const lpBalance = await pair.read.balanceOf([lp]);
       await pair.write.approve([await router.address, lpBalance], { account: lp });
 
       const hash = await router.write.removeLiquidityETH([
-        tokenA.address, 100n * 10n ** 18n, 0n, 0n, lp,
+        tokenA.address, 100n * 10n ** 18n, 0n, 0n, lp, getDeadline(),
       ], { account: lp });
       const gasUsed = await getGasUsed(hash);
       console.log(`\n  router.removeLiquidityETH: ${gasUsed.toString()} gas`);
@@ -130,11 +131,11 @@ describe("Gas Report", async function () {
       await tokenA.write.approve([await router.address, amount], { account: trader });
 
       await router.write.addLiquidityETH([
-        tokenA.address, 1000n * 10n ** 18n, 0n, 0n, lp,
+        tokenA.address, 1000n * 10n ** 18n, 0n, 0n, lp, getDeadline(),
       ], { account: lp, value: 1000n * 10n ** 18n });
 
       const hash = await router.write.swapExactTokensForETH([
-        100n * 10n ** 18n, [tokenA.address, WETH.address], trader,
+        100n * 10n ** 18n, 0n, [tokenA.address, WETH.address], trader, BigInt(Math.floor(Date.now() / 1000) + 3600),
       ], { account: trader });
       const gasUsed = await getGasUsed(hash);
       console.log(`\n  router.swapExactTokensForETH: ${gasUsed.toString()} gas`);
@@ -155,11 +156,11 @@ describe("Gas Report", async function () {
       await tokenA.write.approve([await router.address, amount], { account: lp });
 
       await router.write.addLiquidityETH([
-        tokenA.address, 1000n * 10n ** 18n, 0n, 0n, lp,
+        tokenA.address, 1000n * 10n ** 18n, 0n, 0n, lp, getDeadline(),
       ], { account: lp, value: 1000n * 10n ** 18n });
 
       const hash = await router.write.swapExactETHForTokens([
-        [WETH.address, tokenA.address], trader,
+        0n, [WETH.address, tokenA.address], trader, BigInt(Math.floor(Date.now() / 1000) + 3600),
       ], { account: trader, value: 10n * 10n ** 18n });
       const gasUsed = await getGasUsed(hash);
       console.log(`\n  router.swapExactETHForTokens: ${gasUsed.toString()} gas`);
@@ -188,7 +189,7 @@ describe("Gas Report", async function () {
       await tokenB.write.approve([await router.address, amount], { account: lp });
 
       const hash = await router.write.addLiquidity([
-        tokenA.address, tokenB.address, 10000n * 10n ** 18n, 10000n * 10n ** 18n, 0n, 0n, lp,
+        tokenA.address, tokenB.address, 10000n * 10n ** 18n, 10000n * 10n ** 18n, 0n, 0n, lp, getDeadline(),
       ], { account: lp });
       const gasUsed = await getGasUsed(hash);
       console.log(`\n  router.addLiquidity: ${gasUsed.toString()} gas`);
@@ -215,14 +216,14 @@ describe("Gas Report", async function () {
       await tokenB.write.approve([await router.address, amount], { account: lp });
 
       await router.write.addLiquidity([
-        tokenA.address, tokenB.address, 10000n * 10n ** 18n, 10000n * 10n ** 18n, 0n, 0n, lp,
+        tokenA.address, tokenB.address, 10000n * 10n ** 18n, 10000n * 10n ** 18n, 0n, 0n, lp, getDeadline(),
       ], { account: lp });
 
       const lpBalance = await pair.read.balanceOf([lp]);
       await pair.write.approve([await router.address, lpBalance], { account: lp });
 
       const hash = await router.write.removeLiquidity([
-        tokenA.address, tokenB.address, 100n * 10n ** 18n, 0n, 0n, lp,
+        tokenA.address, tokenB.address, 100n * 10n ** 18n, 0n, 0n, lp, getDeadline(),
       ], { account: lp });
       const gasUsed = await getGasUsed(hash);
       console.log(`\n  router.removeLiquidity: ${gasUsed.toString()} gas`);
@@ -253,11 +254,11 @@ describe("Gas Report", async function () {
       await tokenA.write.approve([await router.address, amount], { account: trader });
 
       await router.write.addLiquidity([
-        tokenA.address, tokenB.address, 10000n * 10n ** 18n, 10000n * 10n ** 18n, 0n, 0n, lp,
+        tokenA.address, tokenB.address, 10000n * 10n ** 18n, 10000n * 10n ** 18n, 0n, 0n, lp, getDeadline(),
       ], { account: lp });
 
       const hash = await router.write.swapExactTokensForTokens([
-        100n * 10n ** 18n, [tokenA.address, tokenB.address], trader,
+        100n * 10n ** 18n, 0n, [tokenA.address, tokenB.address], trader, BigInt(Math.floor(Date.now() / 1000) + 3600),
       ], { account: trader });
       const gasUsed = await getGasUsed(hash);
       console.log(`\n  router.swapExactTokensForTokens: ${gasUsed.toString()} gas`);
@@ -312,7 +313,7 @@ describe("Gas Report", async function () {
       await tokenB.write.approve([await router.address, amount], { account: lp });
 
       await router.write.addLiquidity([
-        tokenA.address, tokenB.address, 1000n * 10n ** 18n, 1000n * 10n ** 18n, 0n, 0n, lp,
+        tokenA.address, tokenB.address, 1000n * 10n ** 18n, 1000n * 10n ** 18n, 0n, 0n, lp, getDeadline(),
       ], { account: lp });
 
       const lpBalance = await pair.read.balanceOf([lp]);
@@ -349,7 +350,7 @@ describe("Gas Report", async function () {
       await tokenB.write.approve([await router.address, amount], { account: lp });
 
       await router.write.addLiquidity([
-        tokenA.address, tokenB.address, 10000n * 10n ** 18n, 10000n * 10n ** 18n, 0n, 0n, lp,
+        tokenA.address, tokenB.address, 10000n * 10n ** 18n, 10000n * 10n ** 18n, 0n, 0n, lp, getDeadline(),
       ], { account: lp });
 
       await tokenA.write.mint([deployer, 1000n * 10n ** 18n]);
@@ -381,7 +382,7 @@ describe("Gas Report", async function () {
       await tokenB.write.approve([await router.address, amount], { account: lp });
 
       await router.write.addLiquidity([
-        tokenA.address, tokenB.address, 10000n * 10n ** 18n, 10000n * 10n ** 18n, 0n, 0n, lp,
+        tokenA.address, tokenB.address, 10000n * 10n ** 18n, 10000n * 10n ** 18n, 0n, 0n, lp, getDeadline(),
       ], { account: lp });
 
       await tokenA.write.mint([deployer, 1000n * 10n ** 18n]);
@@ -411,7 +412,7 @@ describe("Gas Report", async function () {
       const pairAddress = await factory.read.getPair([token0, token1]);
       const pair = await viem.getContractAt("FluxSwapPair", pairAddress);
 
-      const flashReceiver = await viem.deployContract("MockFlashSwapReceiver", [await factory.address, await WETH.address]);
+      const flashReceiver = await viem.deployContract("MockFlashSwapReceiver", []);
 
       const amount = 1000000n * 10n ** 18n;
       await tokenA.write.mint([lp, amount]);
@@ -422,15 +423,15 @@ describe("Gas Report", async function () {
       await tokenB.write.approve([await router.address, amount], { account: lp });
 
       await router.write.addLiquidity([
-        tokenA.address, tokenB.address, 10000n * 10n ** 18n, 10000n * 10n ** 18n, 0n, 0n, lp,
+        tokenA.address, tokenB.address, 10000n * 10n ** 18n, 10000n * 10n ** 18n, 0n, 0n, lp, getDeadline(),
       ], { account: lp });
 
-      const tokenOut = tokenA.address;
+      const tokenOut = token0;
       const repayAmount = 101n * 10n ** 18n;
       const abiCoder = new ethers.AbiCoder();
       const data = abiCoder.encode(["address", "uint256"], [tokenOut, repayAmount]);
 
-      const hash = await pair.write.flashSwap([await flashReceiver.address, 100n * 10n ** 18n, 0n, data as `0x${string}`]);
+      const hash = await pair.write.swap([100n * 10n ** 18n, 0n, await flashReceiver.address, data as `0x${string}`]);
       const gasUsed = await getGasUsed(hash);
       console.log(`\n  pair.flashSwap: ${gasUsed.toString()} gas`);
     });
