@@ -17,6 +17,25 @@ describe("v2-FluxSwap", async function () {
   const publicClient = await viem.getPublicClient();
   const [walletClient, walletClient2, walletClient3] = await viem.getWalletClients();
   const getDeadline = () => BigInt(Math.floor(Date.now() / 1000) + 3600);
+  const expectRevert = async (promise: Promise<unknown>, reason: string) => {
+    let error: any;
+    try {
+      await promise;
+    } catch (e) {
+      error = e;
+    }
+
+    ok(error, `Expected revert with reason: ${reason}`);
+
+    const errorText = [error?.details, error?.shortMessage, error?.message, String(error)]
+      .filter((value): value is string => typeof value === "string")
+      .join("\n");
+
+    ok(
+      errorText.includes(reason),
+      `Expected revert reason "${reason}", got: ${errorText}`
+    );
+  };
 
   let factory: any;
   let router: any;
@@ -154,6 +173,13 @@ describe("v2-FluxSwap", async function () {
   describe("Factory", function () {
     it("should set feeToSetter correctly", async function () {
       strictEqual((await factory.read.feeToSetter()).toLowerCase(), deployer);
+    });
+
+    it("should not allow zero address feeToSetter in constructor", async function () {
+      await expectRevert(
+        viem.deployContract("FluxSwapFactory", ["0x0000000000000000000000000000000000000000"]),
+        "FluxSwap: ZERO_ADDRESS"
+      );
     });
 
     it("should create a new pair", async function () {
@@ -313,6 +339,17 @@ describe("v2-FluxSwap", async function () {
       }
       ok(testSucceeded, "addLiquidityETH should succeed");
     });
+
+    it("should not allow zero addresses in router constructor", async function () {
+      await expectRevert(
+        viem.deployContract("FluxSwapRouter", ["0x0000000000000000000000000000000000000000", WETH.address]),
+        "FluxSwapRouter: ZERO_ADDRESS"
+      );
+      await expectRevert(
+        viem.deployContract("FluxSwapRouter", [factory.address, "0x0000000000000000000000000000000000000000"]),
+        "FluxSwapRouter: ZERO_ADDRESS"
+      );
+    });
   });
 
   /**
@@ -400,6 +437,8 @@ describe("v2-FluxSwap", async function () {
       const reservesBefore = await pair.read.getReserves();
       const reserve0Before = reservesBefore[0] as bigint;
       const reserve1Before = reservesBefore[1] as bigint;
+      const token0 = (await pair.read.token0()).toLowerCase();
+      const outputReserveBefore = tokenB.address.toLowerCase() === token0 ? reserve0Before : reserve1Before;
 
       for (let i = 0; i < 3; i++) {
         await router.write.swapExactTokensForTokens([
@@ -414,9 +453,10 @@ describe("v2-FluxSwap", async function () {
       const reservesAfter = await pair.read.getReserves();
       const reserve0After = reservesAfter[0] as bigint;
       const reserve1After = reservesAfter[1] as bigint;
+      const outputReserveAfter = tokenB.address.toLowerCase() === token0 ? reserve0After : reserve1After;
 
-      if (reserve1Before > 0n) {
-        const totalPriceImpact = ((reserve1Before - reserve1After) * 100n) / reserve1Before;
+      if (outputReserveBefore > 0n) {
+        const totalPriceImpact = ((outputReserveBefore - outputReserveAfter) * 100n) / outputReserveBefore;
 
         ok(totalPriceImpact > 0n, "Multiple swaps should accumulate price impact");
         ok(totalPriceImpact < 100n, "Price impact should not exceed 100%");
@@ -581,6 +621,24 @@ describe("v2-FluxSwap", async function () {
 
       ok(actualOutput >= onePercentSlippage, "Output with 5% slippage tolerance should meet 1% minimum");
     });
+
+    it("should revert clearly when pair does not exist", async function () {
+      const tokenC = await viem.deployContract("MockERC20", ["Token C", "TKNC", 18]);
+
+      await tokenC.write.mint([trader, 1000n * 10n ** 18n]);
+      await tokenC.write.approve([await router.address, 1000n * 10n ** 18n], { account: trader });
+
+      await expectRevert(
+        router.write.swapExactTokensForTokens([
+          1n * 10n ** 18n,
+          0n,
+          [tokenA.address, tokenC.address],
+          trader,
+          getDeadline()
+        ], { account: trader }),
+        "FluxSwapRouter: PAIR_NOT_FOUND"
+      );
+    });
   });
 
   /**
@@ -629,46 +687,40 @@ describe("v2-FluxSwap", async function () {
    */
   describe("FlashSwap", function () {
     it("should not allow flash swap with zero output", async function () {
-      let errorOccurred = false;
-      try {
-        await pair.write.flashSwap([trader, 0n, 0n, "0x"]);
-      } catch (e) {
-        errorOccurred = true;
-      }
-      strictEqual(errorOccurred, true);
+      await expectRevert(
+        pair.write.swap([0n, 0n, trader, "0x01"], { account: trader }),
+        "FluxSwap: INSUFFICIENT_OUTPUT_AMOUNT"
+      );
     });
 
-    it("should not allow flash swap to non-contract address", async function () {
-      let errorOccurred = false;
-      try {
-        await pair.write.flashSwap([deployer, 1n, 0n, "0x"]);
-      } catch (e) {
-        errorOccurred = true;
-      }
-      ok(errorOccurred, "Should revert when recipient is not a contract");
+    it("should revert flash swap when a non-callback receiver cannot repay", async function () {
+      await expectRevert(
+        pair.write.swap([1n, 0n, deployer, "0x01"], { account: trader }),
+        "function call to a non-contract account"
+      );
     });
 
     it("should require repayment in flash swap", async function () {
-      let errorOccurred = false;
-      try {
-        await pair.write.flashSwap([trader, 10n * 10n ** 18n, 0n, "0x"]);
-      } catch (e) {
-        errorOccurred = true;
-      }
-      strictEqual(errorOccurred, true, "Flash swap should require repayment");
+      const flashReceiver = await viem.deployContract("MockFlashSwapReceiver", []);
+      const tokenOut = tokenA.address < tokenB.address ? tokenA.address : tokenB.address;
+      const data = encodeAbiParameters(
+        [{ type: "address" }, { type: "uint256" }],
+        [tokenOut, 0n]
+      );
+
+      await expectRevert(
+        pair.write.swap([10n * 10n ** 18n, 0n, await flashReceiver.address, data]),
+        "FluxSwap: INSUFFICIENT_INPUT_AMOUNT"
+      );
     });
 
     it("should fail with insufficient repayment in flash swap", async function () {
       const partialReceiver = await viem.deployContract("MockPartialFlashSwapReceiver", []);
 
-      let errorOccurred = false;
-      try {
-        const data = encodeAbiParameters([{ type: "uint256" }], [100n * 10n ** 18n]);
-        await pair.write.flashSwap([await partialReceiver.address, 100n * 10n ** 18n, 0n, data]);
-      } catch (e) {
-        errorOccurred = true;
-      }
-      strictEqual(errorOccurred, true, "Flash swap should fail with insufficient repayment");
+      await expectRevert(
+        pair.write.swap([100n * 10n ** 18n, 0n, await partialReceiver.address, "0x01"]),
+        "FluxSwap: K"
+      );
     });
   });
 
