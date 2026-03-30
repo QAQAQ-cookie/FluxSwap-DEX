@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import "../interfaces/IFluxSwapRouter.sol";
 import "../interfaces/IFluxSwapFactory.sol";
 import "../interfaces/IFluxSwapPair.sol";
+import "../interfaces/IERC20.sol";
 import "../interfaces/IWETH.sol";
 import "../libraries/TransferHelper.sol";
 
@@ -279,6 +280,57 @@ contract FluxSwapRouter is IFluxSwapRouter {
         }
     }
 
+    function swapExactTokensForTokensSupportingFeeOnTransferTokens(
+        uint256 amountIn,
+        uint256 amountOutMin,
+        address[] calldata path,
+        address to,
+        uint256 deadline
+    ) external override ensure(deadline) {
+        address pair = IFluxSwapFactory(factory).getPair(path[0], path[1]);
+        TransferHelper.safeTransferFrom(path[0], msg.sender, pair, amountIn);
+        uint256 balanceBefore = IERC20(path[path.length - 1]).balanceOf(to);
+        _swapSupportingFeeOnTransferTokens(path, to);
+        require(
+            IERC20(path[path.length - 1]).balanceOf(to) - balanceBefore >= amountOutMin,
+            "FluxSwapRouter: INSUFFICIENT_OUTPUT_AMOUNT"
+        );
+    }
+
+    function swapExactETHForTokensSupportingFeeOnTransferTokens(
+        uint256 amountOutMin,
+        address[] calldata path,
+        address to,
+        uint256 deadline
+    ) external payable override ensure(deadline) {
+        require(path[0] == WETH, "FluxSwapRouter: INVALID_PATH");
+        uint256 balanceBefore = IERC20(path[path.length - 1]).balanceOf(to);
+        IWETH(WETH).deposit{value: msg.value}();
+        assert(IWETH(WETH).transfer(IFluxSwapFactory(factory).getPair(path[0], path[1]), msg.value));
+        _swapSupportingFeeOnTransferTokens(path, to);
+        require(
+            IERC20(path[path.length - 1]).balanceOf(to) - balanceBefore >= amountOutMin,
+            "FluxSwapRouter: INSUFFICIENT_OUTPUT_AMOUNT"
+        );
+    }
+
+    function swapExactTokensForETHSupportingFeeOnTransferTokens(
+        uint256 amountIn,
+        uint256 amountOutMin,
+        address[] calldata path,
+        address to,
+        uint256 deadline
+    ) external override ensure(deadline) {
+        require(path[path.length - 1] == WETH, "FluxSwapRouter: INVALID_PATH");
+        address pair = IFluxSwapFactory(factory).getPair(path[0], path[1]);
+        TransferHelper.safeTransferFrom(path[0], msg.sender, pair, amountIn);
+        _swapSupportingFeeOnTransferTokens(path, address(this));
+        uint256 amountOut = IERC20(WETH).balanceOf(address(this));
+        require(amountOut >= amountOutMin, "FluxSwapRouter: INSUFFICIENT_OUTPUT_AMOUNT");
+        IWETH(WETH).withdraw(amountOut);
+        TransferHelper.safeTransferETH(to, amountOut);
+    }
+
     function quote(uint256 amountA, uint256 reserveA, uint256 reserveB) public pure override returns (uint256 amountB) {
         require(amountA > 0, "FluxSwapRouter: INSUFFICIENT_AMOUNT");
         require(reserveA > 0 && reserveB > 0, "FluxSwapRouter: INSUFFICIENT_LIQUIDITY");
@@ -349,6 +401,29 @@ contract FluxSwapRouter is IFluxSwapRouter {
                 to,
                 new bytes(0)
             );
+        }
+    }
+
+    function _swapSupportingFeeOnTransferTokens(address[] memory path, address _to) internal {
+        for (uint256 i = 0; i < path.length - 1; i++) {
+            (address input, address output) = (path[i], path[i + 1]);
+            address pairAddress = IFluxSwapFactory(factory).getPair(input, output);
+            IFluxSwapPair pair = IFluxSwapPair(pairAddress);
+            uint256 amountOutput;
+            uint256 amount0Out;
+            uint256 amount1Out;
+            {
+                (address token0, ) = sortTokens(input, output);
+                (uint112 reserve0, uint112 reserve1, ) = pair.getReserves();
+                (uint256 reserveInput, uint256 reserveOutput) =
+                    input == token0 ? (reserve0, reserve1) : (reserve1, reserve0);
+                uint256 amountInput = IERC20(input).balanceOf(pairAddress) - reserveInput;
+                amountOutput = getAmountOut(amountInput, reserveInput, reserveOutput);
+                (amount0Out, amount1Out) =
+                    input == token0 ? (uint256(0), amountOutput) : (amountOutput, uint256(0));
+            }
+            address to = i < path.length - 2 ? IFluxSwapFactory(factory).getPair(output, path[i + 2]) : _to;
+            pair.swap(amount0Out, amount1Out, to, new bytes(0));
         }
     }
 

@@ -14,6 +14,7 @@ import { encodeAbiParameters } from "viem";
 describe("v2-FluxSwap", async function () {
   const hardhatNetwork = await network.connect();
   const { viem } = hardhatNetwork;
+  const publicClient = await viem.getPublicClient();
   const [walletClient, walletClient2, walletClient3] = await viem.getWalletClients();
   const getDeadline = () => BigInt(Math.floor(Date.now() / 1000) + 3600);
 
@@ -1194,6 +1195,93 @@ describe("v2-FluxSwap", async function () {
    * Pair ERC20 函数测试
    * 场景：LP 代币的 transfer、approve、transferFrom
    */
+  describe("Fee-On-Transfer Token Support", function () {
+    it("should swap exact taxed tokens for tokens with supporting router function", async function () {
+      const feeToken = await viem.deployContract("MockFeeOnTransferERC20", ["Tax Token", "TAX", 18, 100n]);
+      await factory.write.createPair([feeToken.address, tokenB.address]);
+      const taxedPairAddress = await factory.read.getPair([feeToken.address, tokenB.address]);
+      const taxedPair = await viem.getContractAt("FluxSwapPair", taxedPairAddress);
+
+      const liquidityAmount = 10000n * 10n ** 18n;
+      const swapAmount = 100n * 10n ** 18n;
+
+      await feeToken.write.mint([lp, 20000n * 10n ** 18n]);
+      await feeToken.write.mint([trader, 1000n * 10n ** 18n]);
+      await tokenB.write.mint([lp, 20000n * 10n ** 18n]);
+
+      await feeToken.write.transfer([taxedPairAddress, liquidityAmount], { account: lp });
+      await tokenB.write.transfer([taxedPairAddress, liquidityAmount], { account: lp });
+      await taxedPair.write.mint([lp], { account: lp });
+
+      await feeToken.write.approve([router.address, swapAmount], { account: trader });
+
+      const balanceBefore = await tokenB.read.balanceOf([trader]);
+      await router.write.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+        [swapAmount, 1n, [feeToken.address, tokenB.address], trader, getDeadline()],
+        { account: trader }
+      );
+      const balanceAfter = await tokenB.read.balanceOf([trader]);
+
+      ok(balanceAfter > balanceBefore, "Trader should receive output tokens");
+    });
+
+    it("should swap exact ETH for taxed tokens with supporting router function", async function () {
+      const feeToken = await viem.deployContract("MockFeeOnTransferERC20", ["Tax Token", "TAX", 18, 100n]);
+      await factory.write.createPair([feeToken.address, WETH.address]);
+      const taxedPairAddress = await factory.read.getPair([feeToken.address, WETH.address]);
+      const taxedPair = await viem.getContractAt("FluxSwapPair", taxedPairAddress);
+
+      const tokenLiquidity = 10000n * 10n ** 18n;
+      const ethLiquidity = 10n * 10n ** 18n;
+
+      await feeToken.write.mint([lp, 20000n * 10n ** 18n]);
+      await feeToken.write.transfer([taxedPairAddress, tokenLiquidity], { account: lp });
+      await WETH.write.deposit({ account: lp, value: ethLiquidity });
+      await WETH.write.transfer([taxedPairAddress, ethLiquidity], { account: lp });
+      await taxedPair.write.mint([lp], { account: lp });
+
+      const balanceBefore = await feeToken.read.balanceOf([trader]);
+      await router.write.swapExactETHForTokensSupportingFeeOnTransferTokens(
+        [1n, [WETH.address, feeToken.address], trader, getDeadline()],
+        { account: trader, value: 1n * 10n ** 18n }
+      );
+      const balanceAfter = await feeToken.read.balanceOf([trader]);
+
+      ok(balanceAfter > balanceBefore, "Trader should receive taxed output token");
+    });
+
+    it("should swap exact taxed tokens for ETH with supporting router function", async function () {
+      const feeToken = await viem.deployContract("MockFeeOnTransferERC20", ["Tax Token", "TAX", 18, 100n]);
+      await factory.write.createPair([feeToken.address, WETH.address]);
+      const taxedPairAddress = await factory.read.getPair([feeToken.address, WETH.address]);
+      const taxedPair = await viem.getContractAt("FluxSwapPair", taxedPairAddress);
+
+      const tokenLiquidity = 10000n * 10n ** 18n;
+      const ethLiquidity = 10n * 10n ** 18n;
+      const swapAmount = 100n * 10n ** 18n;
+
+      await feeToken.write.mint([lp, 20000n * 10n ** 18n]);
+      await feeToken.write.mint([trader, 1000n * 10n ** 18n]);
+      await feeToken.write.transfer([taxedPairAddress, tokenLiquidity], { account: lp });
+      await WETH.write.deposit({ account: lp, value: ethLiquidity });
+      await WETH.write.transfer([taxedPairAddress, ethLiquidity], { account: lp });
+      await taxedPair.write.mint([lp], { account: lp });
+
+      await feeToken.write.approve([router.address, swapAmount], { account: trader });
+
+      const balanceBefore = await publicClient.getBalance({ address: trader });
+      const hash = await router.write.swapExactTokensForETHSupportingFeeOnTransferTokens(
+        [swapAmount, 1n, [feeToken.address, WETH.address], trader, getDeadline()],
+        { account: trader }
+      );
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      const gasPaid = receipt.gasUsed * receipt.effectiveGasPrice;
+      const balanceAfter = await publicClient.getBalance({ address: trader });
+
+      ok(balanceAfter + gasPaid > balanceBefore, "Trader should receive ETH output");
+    });
+  });
+
   describe("Pair ERC20 Functions", function () {
     it("should track totalSupply correctly", async function () {
       const totalSupply = await pair.read.totalSupply();
@@ -1255,11 +1343,11 @@ describe("v2-FluxSwap", async function () {
       strictEqual(errorOccurred, true, "Should revert when transferring more than balance");
     });
 
-    it("should not allow transferFrom exceeding allowance", async function () {
-      const owner = lp;
-      const spender = trader;
-      const allowanceAmount = 1n * 10n ** 18n;
-      const excessiveAmount = allowanceAmount + 1n;
+      it("should not allow transferFrom exceeding allowance", async function () {
+        const owner = lp;
+        const spender = trader;
+        const allowanceAmount = 1n * 10n ** 18n;
+        const excessiveAmount = allowanceAmount + 1n;
 
       await pair.write.approve([spender, allowanceAmount], { account: owner });
 
@@ -1268,10 +1356,30 @@ describe("v2-FluxSwap", async function () {
         await pair.write.transferFrom([owner, trader, excessiveAmount], { account: spender });
       } catch (e) {
         errorOccurred = true;
-      }
-      strictEqual(errorOccurred, true, "Should revert when transferring more than allowance");
+        }
+        strictEqual(errorOccurred, true, "Should revert when transferring more than allowance");
+      });
+
+      it("should not allow transfer to zero address", async function () {
+        let errorOccurred = false;
+        try {
+          await pair.write.transfer(["0x0000000000000000000000000000000000000000", 1n], { account: lp });
+        } catch (e) {
+          errorOccurred = true;
+        }
+        strictEqual(errorOccurred, true, "Should revert when transferring to zero address");
+      });
+
+      it("should not allow approve to zero address", async function () {
+        let errorOccurred = false;
+        try {
+          await pair.write.approve(["0x0000000000000000000000000000000000000000", 1n], { account: lp });
+        } catch (e) {
+          errorOccurred = true;
+        }
+        strictEqual(errorOccurred, true, "Should revert when approving zero address");
+      });
     });
-  });
 
   /**
    * 工厂所有交易对长度测试

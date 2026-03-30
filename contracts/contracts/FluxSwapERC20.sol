@@ -41,17 +41,22 @@ contract FluxSwapERC20 {
     }
 
     function _burn(address from, uint256 value) internal {
+        require(from != address(0), "FluxSwap: BURN_FROM_ZERO_ADDRESS");
         balanceOf[from] -= value;
         totalSupply -= value;
         emit Transfer(from, address(0), value);
     }
 
     function _approve(address owner, address spender, uint256 value) private {
+        require(owner != address(0), "FluxSwap: APPROVE_FROM_ZERO_ADDRESS");
+        require(spender != address(0), "FluxSwap: APPROVE_TO_ZERO_ADDRESS");
         allowance[owner][spender] = value;
         emit Approval(owner, spender, value);
     }
 
     function _transfer(address from, address to, uint256 value) private {
+        require(from != address(0), "FluxSwap: TRANSFER_FROM_ZERO_ADDRESS");
+        require(to != address(0), "FluxSwap: TRANSFER_TO_ZERO_ADDRESS");
         balanceOf[from] -= value;
         balanceOf[to] += value;
         emit Transfer(from, to, value);
@@ -70,6 +75,7 @@ contract FluxSwapERC20 {
     function transferFrom(address from, address to, uint256 value) external returns (bool) {
         if (allowance[from][msg.sender] != type(uint256).max) {
             allowance[from][msg.sender] -= value;
+            emit Approval(from, msg.sender, allowance[from][msg.sender]);
         }
         _transfer(from, to, value);
         return true;
