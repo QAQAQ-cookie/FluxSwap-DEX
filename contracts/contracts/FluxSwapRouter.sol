@@ -58,7 +58,9 @@ contract FluxSwapRouter is IFluxSwapRouter {
         uint256 value;
     }
 
-    receive() external payable {}
+    receive() external payable {
+        assert(msg.sender == WETH);
+    }
 
     modifier ensure(uint256 deadline) {
         require(deadline >= block.timestamp, "FluxSwapRouter: EXPIRED");
