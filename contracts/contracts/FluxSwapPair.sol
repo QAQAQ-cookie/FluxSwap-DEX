@@ -165,11 +165,13 @@ contract FluxSwapPair is FluxSwapERC20 {
     function skim(address to) external lock {
         address _token0 = token0;
         address _token1 = token1;
+        // 把超出已记录储备的余额转出，不改变当前储备记录。
         _safeTransfer(_token0, to, IERC20(_token0).balanceOf(address(this)) - reserve0);
         _safeTransfer(_token1, to, IERC20(_token1).balanceOf(address(this)) - reserve1);
     }
 
     function sync() external lock {
+        // 强制把储备同步为 Pair 当前实际余额。
         _update(
             IERC20(token0).balanceOf(address(this)),
             IERC20(token1).balanceOf(address(this)),
@@ -183,6 +185,7 @@ contract FluxSwapPair is FluxSwapERC20 {
         uint32 blockTimestamp = uint32(block.timestamp % 2**32);
         uint32 timeElapsed = blockTimestamp - blockTimestampLast;
         if (timeElapsed > 0 && _reserve0 != 0 && _reserve1 != 0) {
+            // TWAP 累计值基于上一次记录的储备更新，而不是基于当前新余额。
             price0CumulativeLast += uint256(UQ112x112.encode(_reserve1).uqdiv(_reserve0)) * timeElapsed;
             price1CumulativeLast += uint256(UQ112x112.encode(_reserve0).uqdiv(_reserve1)) * timeElapsed;
         }

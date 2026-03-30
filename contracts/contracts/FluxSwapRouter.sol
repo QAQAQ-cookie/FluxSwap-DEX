@@ -58,6 +58,7 @@ contract FluxSwapRouter is IFluxSwapRouter {
         uint256 value;
     }
 
+    // 仅在 WETH 解包回 ETH 时接收原生 ETH，避免误转资金留在 Router 中。
     receive() external payable {
         assert(msg.sender == WETH);
     }
@@ -421,6 +422,7 @@ contract FluxSwapRouter is IFluxSwapRouter {
                 (uint112 reserve0, uint112 reserve1, ) = pair.getReserves();
                 (uint256 reserveInput, uint256 reserveOutput) =
                     input == token0 ? (reserve0, reserve1) : (reserve1, reserve0);
+                // 带税代币的实际到账数量可能小于 amountIn，因此这里通过 Pair 余额变化反推真实输入量。
                 uint256 amountInput = IERC20(input).balanceOf(pairAddress) - reserveInput;
                 amountOutput = getAmountOut(amountInput, reserveInput, reserveOutput);
                 (amount0Out, amount1Out) =
@@ -511,6 +513,7 @@ contract FluxSwapRouter is IFluxSwapRouter {
 
     function _getPairOrRevert(address tokenA, address tokenB) internal view returns (address pair) {
         pair = IFluxSwapFactory(factory).getPair(tokenA, tokenB);
+        // 用明确的 Router 错误替代底层调用失败，便于定位路径或交易对缺失问题。
         require(pair != address(0), "FluxSwapRouter: PAIR_NOT_FOUND");
     }
 
