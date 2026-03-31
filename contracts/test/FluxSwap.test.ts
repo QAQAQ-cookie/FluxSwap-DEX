@@ -758,6 +758,122 @@ describe("v2-FluxSwap", async function () {
   });
 
   /**
+   * 协议手续费测试
+   * 场景：开启 feeTo 后，协议通过新增 LP 份额分享部分手续费增值。
+   */
+  describe("Protocol Fee", function () {
+    it("should initialize kLast after liquidity changes when fee is on", async function () {
+      await factory.write.setFeeTo([deployer]);
+      strictEqual(await pair.read.kLast(), 0n);
+
+      await router.write.addLiquidity([
+        tokenA.address,
+        tokenB.address,
+        100n * 10n ** 18n,
+        100n * 10n ** 18n,
+        0n,
+        0n,
+        lp,
+        getDeadline(),
+      ], { account: lp });
+
+      ok(await pair.read.kLast() > 0n, "kLast should be initialized when fee is on");
+    });
+
+    it("should mint LP shares to feeTo after fee-generating swaps", async function () {
+      await factory.write.setFeeTo([deployer]);
+
+      await router.write.addLiquidity([
+        tokenA.address,
+        tokenB.address,
+        100n * 10n ** 18n,
+        100n * 10n ** 18n,
+        0n,
+        0n,
+        lp,
+        getDeadline(),
+      ], { account: lp });
+
+      const protocolLpBefore = await pair.read.balanceOf([deployer]);
+      const kLastBefore = await pair.read.kLast();
+
+      await router.write.swapExactTokensForTokens([
+        100n * 10n ** 18n,
+        0n,
+        [tokenA.address, tokenB.address],
+        trader,
+        getDeadline(),
+      ], { account: trader });
+
+      await router.write.addLiquidity([
+        tokenA.address,
+        tokenB.address,
+        100n * 10n ** 18n,
+        100n * 10n ** 18n,
+        0n,
+        0n,
+        lp,
+        getDeadline(),
+      ], { account: lp });
+
+      const protocolLpAfter = await pair.read.balanceOf([deployer]);
+      const kLastAfter = await pair.read.kLast();
+
+      ok(protocolLpAfter > protocolLpBefore, "feeTo should receive newly minted LP shares");
+      ok(kLastAfter >= kLastBefore, "kLast should stay updated after fee minting");
+    });
+
+    it("should allow feeTo to redeem protocol fee shares for underlying assets", async function () {
+      await factory.write.setFeeTo([deployer]);
+
+      await router.write.addLiquidity([
+        tokenA.address,
+        tokenB.address,
+        100n * 10n ** 18n,
+        100n * 10n ** 18n,
+        0n,
+        0n,
+        lp,
+        getDeadline(),
+      ], { account: lp });
+
+      await router.write.swapExactTokensForTokens([
+        100n * 10n ** 18n,
+        0n,
+        [tokenA.address, tokenB.address],
+        trader,
+        getDeadline(),
+      ], { account: trader });
+
+      await router.write.addLiquidity([
+        tokenA.address,
+        tokenB.address,
+        100n * 10n ** 18n,
+        100n * 10n ** 18n,
+        0n,
+        0n,
+        lp,
+        getDeadline(),
+      ], { account: lp });
+
+      const protocolLp = await pair.read.balanceOf([deployer]);
+      ok(protocolLp > 0n, "feeTo should hold LP shares before redeeming");
+
+      const deployerTokenABefore = await tokenA.read.balanceOf([deployer]);
+      const deployerTokenBBefore = await tokenB.read.balanceOf([deployer]);
+
+      await pair.write.transfer([pair.address, protocolLp], { account: deployer });
+      await pair.write.burn([deployer], { account: deployer });
+
+      const deployerTokenAAfter = await tokenA.read.balanceOf([deployer]);
+      const deployerTokenBAfter = await tokenB.read.balanceOf([deployer]);
+
+      ok(deployerTokenAAfter > deployerTokenABefore, "feeTo should receive tokenA when burning protocol shares");
+      ok(deployerTokenBAfter > deployerTokenBBefore, "feeTo should receive tokenB when burning protocol shares");
+    });
+  });
+
+  /**
    * 重入保护测试
    * 场景：验证合约对重入攻击的防护
    */
