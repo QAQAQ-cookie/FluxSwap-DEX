@@ -12,6 +12,10 @@ contract FluxSwapPair is FluxSwapERC20 {
     using UQ112x112 for uint224;
 
     uint256 public constant MINIMUM_LIQUIDITY = 10**3;
+    uint256 private constant FEE_BPS_BASE = 10000;
+    uint256 private constant TOTAL_SWAP_FEE_BPS = 30;
+    uint256 private constant PROTOCOL_SWAP_FEE_BPS = 5;
+    uint256 private constant LP_SWAP_FEE_BPS = TOTAL_SWAP_FEE_BPS - PROTOCOL_SWAP_FEE_BPS;
 
     address public factory;
     address public token0;
@@ -23,7 +27,6 @@ contract FluxSwapPair is FluxSwapERC20 {
 
     uint256 public price0CumulativeLast;
     uint256 public price1CumulativeLast;
-    uint256 public kLast;
 
     uint256 private unlocked = 1;
 
@@ -44,6 +47,7 @@ contract FluxSwapPair is FluxSwapERC20 {
         uint256 amount1Out,
         address indexed to
     );
+    event ProtocolFeePaid(address indexed treasury, uint256 amount0, uint256 amount1);
     event Sync(uint112 reserve0, uint112 reserve1);
 
     constructor() {
@@ -65,26 +69,6 @@ contract FluxSwapPair is FluxSwapERC20 {
         token1 = _token1;
     }
 
-    function _mintFee(uint112 _reserve0, uint112 _reserve1) private returns (bool feeOn) {
-        address feeTo = IFluxSwapFactory(factory).feeTo();
-        feeOn = feeTo != address(0);
-        uint256 _kLast = kLast;
-        if (feeOn) {
-            if (_kLast != 0) {
-                uint256 rootK = Math.sqrt(uint256(_reserve0) * uint256(_reserve1));
-                uint256 rootKLast = Math.sqrt(_kLast);
-                if (rootK > rootKLast) {
-                    uint256 numerator = totalSupply * (rootK - rootKLast);
-                    uint256 denominator = rootK * 5 + rootKLast;
-                    uint256 liquidity = numerator / denominator;
-                    if (liquidity > 0) _mint(feeTo, liquidity);
-                }
-            }
-        } else if (_kLast != 0) {
-            kLast = 0;
-        }
-    }
-
     function mint(address to) external lock returns (uint256 liquidity) {
         (uint112 _reserve0, uint112 _reserve1, ) = getReserves();
         uint256 balance0 = IERC20(token0).balanceOf(address(this));
@@ -92,7 +76,6 @@ contract FluxSwapPair is FluxSwapERC20 {
         uint256 amount0 = balance0 - _reserve0;
         uint256 amount1 = balance1 - _reserve1;
 
-        bool feeOn = _mintFee(_reserve0, _reserve1);
         uint256 _totalSupply = totalSupply;
         if (_totalSupply == 0) {
             liquidity = Math.sqrt(amount0 * amount1) - MINIMUM_LIQUIDITY;
@@ -104,7 +87,6 @@ contract FluxSwapPair is FluxSwapERC20 {
         _mint(to, liquidity);
 
         _update(balance0, balance1, _reserve0, _reserve1);
-        if (feeOn) kLast = uint256(reserve0) * uint256(reserve1);
         emit Mint(msg.sender, amount0, amount1);
     }
 
@@ -116,7 +98,6 @@ contract FluxSwapPair is FluxSwapERC20 {
         uint256 balance1 = IERC20(_token1).balanceOf(address(this));
         uint256 liquidity = balanceOf[address(this)];
 
-        bool feeOn = _mintFee(_reserve0, _reserve1);
         uint256 _totalSupply = totalSupply;
         amount0 = (liquidity * balance0) / _totalSupply;
         amount1 = (liquidity * balance1) / _totalSupply;
@@ -128,7 +109,6 @@ contract FluxSwapPair is FluxSwapERC20 {
         balance1 = IERC20(_token1).balanceOf(address(this));
 
         _update(balance0, balance1, _reserve0, _reserve1);
-        if (feeOn) kLast = uint256(reserve0) * uint256(reserve1);
         emit Burn(msg.sender, amount0, amount1, to);
     }
 
@@ -153,9 +133,33 @@ contract FluxSwapPair is FluxSwapERC20 {
         uint256 amount1In = balance1 > _reserve1 - amount1Out ? balance1 - (_reserve1 - amount1Out) : 0;
         require(amount0In > 0 || amount1In > 0, "FluxSwap: INSUFFICIENT_INPUT_AMOUNT");
         {
-            uint256 balance0Adjusted = balance0 * 1000 - amount0In * 3;
-            uint256 balance1Adjusted = balance1 * 1000 - amount1In * 3;
-            require(balance0Adjusted * balance1Adjusted >= uint256(_reserve0) * uint256(_reserve1) * 1000**2, "FluxSwap: K");
+            address treasury = IFluxSwapFactory(factory).treasury();
+            uint256 lpFeeBps = TOTAL_SWAP_FEE_BPS;
+            uint256 protocolFee0;
+            uint256 protocolFee1;
+
+            if (treasury != address(0)) {
+                protocolFee0 = (amount0In * PROTOCOL_SWAP_FEE_BPS) / FEE_BPS_BASE;
+                protocolFee1 = (amount1In * PROTOCOL_SWAP_FEE_BPS) / FEE_BPS_BASE;
+
+                if (protocolFee0 > 0) _safeTransfer(token0, treasury, protocolFee0);
+                if (protocolFee1 > 0) _safeTransfer(token1, treasury, protocolFee1);
+
+                balance0 -= protocolFee0;
+                balance1 -= protocolFee1;
+                lpFeeBps = LP_SWAP_FEE_BPS;
+
+                if (protocolFee0 > 0 || protocolFee1 > 0) {
+                    emit ProtocolFeePaid(treasury, protocolFee0, protocolFee1);
+                }
+            }
+
+            uint256 balance0Adjusted = balance0 * FEE_BPS_BASE - amount0In * lpFeeBps;
+            uint256 balance1Adjusted = balance1 * FEE_BPS_BASE - amount1In * lpFeeBps;
+            require(
+                balance0Adjusted * balance1Adjusted >= uint256(_reserve0) * uint256(_reserve1) * FEE_BPS_BASE**2,
+                "FluxSwap: K"
+            );
         }
 
         _update(balance0, balance1, _reserve0, _reserve1);

@@ -17,6 +17,7 @@ describe("v2-FluxSwap", async function () {
   const publicClient = await viem.getPublicClient();
   const [walletClient, walletClient2, walletClient3] = await viem.getWalletClients();
   const getDeadline = () => BigInt(Math.floor(Date.now() / 1000) + 3600);
+  const getProtocolFee = (amountIn: bigint) => (amountIn * 5n) / 10000n;
   const expectRevert = async (promise: Promise<unknown>, reason: string) => {
     let error: any;
     try {
@@ -35,6 +36,11 @@ describe("v2-FluxSwap", async function () {
       errorText.includes(reason),
       `Expected revert reason "${reason}", got: ${errorText}`
     );
+  };
+  const getReserveForToken = async (targetPair: any, tokenAddress: `0x${string}`) => {
+    const [reserve0, reserve1] = await targetPair.read.getReserves();
+    const token0 = (await targetPair.read.token0()).toLowerCase();
+    return tokenAddress.toLowerCase() === token0 ? reserve0 : reserve1;
   };
 
   let factory: any;
@@ -171,11 +177,11 @@ describe("v2-FluxSwap", async function () {
    * 场景：创建交易对、设置手续费接收地址、权限控制
    */
   describe("Factory", function () {
-    it("should set feeToSetter correctly", async function () {
-      strictEqual((await factory.read.feeToSetter()).toLowerCase(), deployer);
+    it("should set treasurySetter correctly", async function () {
+      strictEqual((await factory.read.treasurySetter()).toLowerCase(), deployer);
     });
 
-    it("should not allow zero address feeToSetter in constructor", async function () {
+    it("should not allow zero address treasurySetter in constructor", async function () {
       await expectRevert(
         viem.deployContract("FluxSwapFactory", ["0x0000000000000000000000000000000000000000"]),
         "FluxSwap: ZERO_ADDRESS"
@@ -224,14 +230,43 @@ describe("v2-FluxSwap", async function () {
       ok(allPairsLength > 0n);
     });
 
-    it("should set feeTo", async function () {
-      await factory.write.setFeeTo([deployer]);
-      strictEqual((await factory.read.feeTo()).toLowerCase(), deployer);
+    it("should set treasury", async function () {
+      await factory.write.setTreasury([deployer]);
+      strictEqual((await factory.read.treasury()).toLowerCase(), deployer);
     });
 
-    it("should set feeToSetter", async function () {
-      await factory.write.setFeeToSetter([deployer]);
-      strictEqual((await factory.read.feeToSetter()).toLowerCase(), deployer);
+    it("should set treasurySetter", async function () {
+      await factory.write.setTreasurySetter([lp]);
+      strictEqual((await factory.read.treasurySetter()).toLowerCase(), lp);
+    });
+
+    it("should reject setting the same treasurySetter again", async function () {
+      await expectRevert(
+        factory.write.setTreasurySetter([deployer]),
+        "FluxSwap: SAME_TREASURY_SETTER"
+      );
+    });
+
+    it("should revoke old treasury setter authority after handoff", async function () {
+      await factory.write.setTreasurySetter([trader]);
+      strictEqual((await factory.read.treasurySetter()).toLowerCase(), trader);
+
+      await expectRevert(
+        factory.write.setTreasury([lp], { account: deployer }),
+        "FluxSwap: FORBIDDEN"
+      );
+
+      await factory.write.setTreasury([lp], { account: trader });
+      strictEqual((await factory.read.treasury()).toLowerCase(), lp);
+    });
+
+    it("should reject direct treasury setter role grants outside the managed handoff", async function () {
+      const role = await factory.read.TREASURY_SETTER_ROLE();
+
+      await expectRevert(
+        factory.write.grantRole([role, trader], { account: deployer }),
+        "FluxSwap: ROLE_MANAGED_BY_SETTER"
+      );
     });
   });
 
@@ -762,114 +797,74 @@ describe("v2-FluxSwap", async function () {
    * 场景：开启 feeTo 后，协议通过新增 LP 份额分享部分手续费增值。
    */
   describe("Protocol Fee", function () {
-    it("should initialize kLast after liquidity changes when fee is on", async function () {
-      await factory.write.setFeeTo([deployer]);
-      strictEqual(await pair.read.kLast(), 0n);
+    it("should send protocol fee directly to treasury without minting LP shares", async function () {
+      const swapAmount = 100n * 10n ** 18n;
+      const expectedProtocolFee = getProtocolFee(swapAmount);
 
-      await router.write.addLiquidity([
-        tokenA.address,
-        tokenB.address,
-        100n * 10n ** 18n,
-        100n * 10n ** 18n,
-        0n,
-        0n,
-        lp,
-        getDeadline(),
-      ], { account: lp });
+      await factory.write.setTreasury([deployer]);
 
-      ok(await pair.read.kLast() > 0n, "kLast should be initialized when fee is on");
-    });
-
-    it("should mint LP shares to feeTo after fee-generating swaps", async function () {
-      await factory.write.setFeeTo([deployer]);
-
-      await router.write.addLiquidity([
-        tokenA.address,
-        tokenB.address,
-        100n * 10n ** 18n,
-        100n * 10n ** 18n,
-        0n,
-        0n,
-        lp,
-        getDeadline(),
-      ], { account: lp });
-
-      const protocolLpBefore = await pair.read.balanceOf([deployer]);
-      const kLastBefore = await pair.read.kLast();
+      const reserveBefore = await getReserveForToken(pair, tokenA.address);
+      const treasuryTokenABefore = await tokenA.read.balanceOf([deployer]);
+      const totalSupplyBefore = await pair.read.totalSupply();
 
       await router.write.swapExactTokensForTokens([
-        100n * 10n ** 18n,
+        swapAmount,
         0n,
         [tokenA.address, tokenB.address],
         trader,
         getDeadline(),
       ], { account: trader });
 
-      await router.write.addLiquidity([
-        tokenA.address,
-        tokenB.address,
-        100n * 10n ** 18n,
-        100n * 10n ** 18n,
-        0n,
-        0n,
-        lp,
-        getDeadline(),
-      ], { account: lp });
+      const reserveAfter = await getReserveForToken(pair, tokenA.address);
+      const treasuryTokenAAfter = await tokenA.read.balanceOf([deployer]);
+      const totalSupplyAfter = await pair.read.totalSupply();
+      const protocolLpBalance = await pair.read.balanceOf([deployer]);
 
-      const protocolLpAfter = await pair.read.balanceOf([deployer]);
-      const kLastAfter = await pair.read.kLast();
-
-      ok(protocolLpAfter > protocolLpBefore, "feeTo should receive newly minted LP shares");
-      ok(kLastAfter >= kLastBefore, "kLast should stay updated after fee minting");
+      strictEqual(treasuryTokenAAfter - treasuryTokenABefore, expectedProtocolFee);
+      strictEqual(reserveAfter - reserveBefore, swapAmount - expectedProtocolFee);
+      strictEqual(totalSupplyAfter, totalSupplyBefore);
+      strictEqual(protocolLpBalance, 0n);
     });
 
-    it("should allow feeTo to redeem protocol fee shares for underlying assets", async function () {
-      await factory.write.setFeeTo([deployer]);
-
-      await router.write.addLiquidity([
-        tokenA.address,
-        tokenB.address,
-        100n * 10n ** 18n,
-        100n * 10n ** 18n,
-        0n,
-        0n,
-        lp,
-        getDeadline(),
-      ], { account: lp });
-
-      await router.write.swapExactTokensForTokens([
-        100n * 10n ** 18n,
-        0n,
-        [tokenA.address, tokenB.address],
-        trader,
-        getDeadline(),
-      ], { account: trader });
-
-      await router.write.addLiquidity([
-        tokenA.address,
-        tokenB.address,
-        100n * 10n ** 18n,
-        100n * 10n ** 18n,
-        0n,
-        0n,
-        lp,
-        getDeadline(),
-      ], { account: lp });
-
-      const protocolLp = await pair.read.balanceOf([deployer]);
-      ok(protocolLp > 0n, "feeTo should hold LP shares before redeeming");
-
+    it("should keep the full 0.30% fee in the pair when treasury is disabled", async function () {
+      const swapAmount = 100n * 10n ** 18n;
+      const reserveBefore = await getReserveForToken(pair, tokenA.address);
       const deployerTokenABefore = await tokenA.read.balanceOf([deployer]);
-      const deployerTokenBBefore = await tokenB.read.balanceOf([deployer]);
 
-      await pair.write.transfer([pair.address, protocolLp], { account: deployer });
-      await pair.write.burn([deployer], { account: deployer });
+      await router.write.swapExactTokensForTokens([
+        swapAmount,
+        0n,
+        [tokenA.address, tokenB.address],
+        trader,
+        getDeadline(),
+      ], { account: trader });
 
+      const reserveAfter = await getReserveForToken(pair, tokenA.address);
       const deployerTokenAAfter = await tokenA.read.balanceOf([deployer]);
-      const deployerTokenBAfter = await tokenB.read.balanceOf([deployer]);
 
-      ok(deployerTokenAAfter > deployerTokenABefore, "feeTo should receive tokenA when burning protocol shares");
-      ok(deployerTokenBAfter > deployerTokenBBefore, "feeTo should receive tokenB when burning protocol shares");
+      strictEqual(reserveAfter - reserveBefore, swapAmount);
+      strictEqual(deployerTokenAAfter, deployerTokenABefore);
+    });
+
+    it("should collect protocol fees on every hop during multi-hop swaps", async function () {
+      await factory.write.setTreasury([deployer]);
+
+      const treasuryTokenABefore = await tokenA.read.balanceOf([deployer]);
+      const treasuryTokenBBefore = await tokenB.read.balanceOf([deployer]);
+
+      await router.write.swapExactTokensForTokens([
+        100n * 10n ** 18n,
+        0n,
+        [tokenA.address, tokenB.address, WETH.address],
+        trader,
+        getDeadline(),
+      ], { account: trader });
+
+      const treasuryTokenAAfter = await tokenA.read.balanceOf([deployer]);
+      const treasuryTokenBAfter = await tokenB.read.balanceOf([deployer]);
+
+      ok(treasuryTokenAAfter > treasuryTokenABefore, "treasury should receive first-hop input token");
+      ok(treasuryTokenBAfter > treasuryTokenBBefore, "treasury should receive second-hop input token");
     });
   });
 

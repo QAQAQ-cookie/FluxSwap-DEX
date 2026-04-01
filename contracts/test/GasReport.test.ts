@@ -45,11 +45,11 @@ describe("Gas Report", async function () {
       console.log(`\n  factory.createPair: ${gasUsed.toString()} gas`);
     });
 
-    it("factory.setFeeTo gas", async function () {
+    it("factory.setTreasury gas", async function () {
       const factory = await viem.deployContract("FluxSwapFactory", [deployer]);
-      const hash = await factory.write.setFeeTo([trader], { account: deployer });
+      const hash = await factory.write.setTreasury([trader], { account: deployer });
       const gasUsed = await getGasUsed(hash);
-      console.log(`\n  factory.setFeeTo: ${gasUsed.toString()} gas`);
+      console.log(`\n  factory.setTreasury: ${gasUsed.toString()} gas`);
     });
   });
 

@@ -1,18 +1,24 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+
 import "./FluxSwapPair.sol";
 import "../interfaces/IFluxSwapFactory.sol";
 
-contract FluxSwapFactory is IFluxSwapFactory {
-    address public override feeTo;
-    address public override feeToSetter;
+contract FluxSwapFactory is IFluxSwapFactory, AccessControl {
+    bytes32 public constant TREASURY_SETTER_ROLE = keccak256("TREASURY_SETTER_ROLE");
+
+    address public override treasury;
+    address public override treasurySetter;
     mapping(address => mapping(address => address)) public override getPair;
     address[] public override allPairs;
 
-    constructor(address _feeToSetter) {
-        require(_feeToSetter != address(0), "FluxSwap: ZERO_ADDRESS");
-        feeToSetter = _feeToSetter;
+    constructor(address _treasurySetter) {
+        require(_treasurySetter != address(0), "FluxSwap: ZERO_ADDRESS");
+        _grantRole(DEFAULT_ADMIN_ROLE, _treasurySetter);
+        _grantRole(TREASURY_SETTER_ROLE, _treasurySetter);
+        treasurySetter = _treasurySetter;
     }
 
     function allPairsLength() external view override returns (uint256) {
@@ -43,13 +49,42 @@ contract FluxSwapFactory is IFluxSwapFactory {
         emit PairCreated(token0, token1, pair, allPairs.length);
     }
 
-    function setFeeTo(address _feeTo) external override {
-        require(msg.sender == feeToSetter, "FluxSwap: FORBIDDEN");
-        feeTo = _feeTo;
+    function setTreasury(address _treasury) external override {
+        require(hasRole(TREASURY_SETTER_ROLE, msg.sender), "FluxSwap: FORBIDDEN");
+        treasury = _treasury;
+        emit TreasuryUpdated(_treasury);
     }
 
-    function setFeeToSetter(address _feeToSetter) external override {
-        require(msg.sender == feeToSetter, "FluxSwap: FORBIDDEN");
-        feeToSetter = _feeToSetter;
+    function setTreasurySetter(address _treasurySetter) external override {
+        require(_treasurySetter != address(0), "FluxSwap: ZERO_ADDRESS");
+        require(hasRole(TREASURY_SETTER_ROLE, msg.sender), "FluxSwap: FORBIDDEN");
+        require(_treasurySetter != treasurySetter, "FluxSwap: SAME_TREASURY_SETTER");
+
+        address previousTreasurySetter = treasurySetter;
+        _grantRole(DEFAULT_ADMIN_ROLE, _treasurySetter);
+        _grantRole(TREASURY_SETTER_ROLE, _treasurySetter);
+        _revokeRole(TREASURY_SETTER_ROLE, previousTreasurySetter);
+        _revokeRole(DEFAULT_ADMIN_ROLE, previousTreasurySetter);
+        treasurySetter = _treasurySetter;
+        emit TreasurySetterUpdated(_treasurySetter);
+    }
+
+    function grantRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
+        require(role != TREASURY_SETTER_ROLE, "FluxSwap: ROLE_MANAGED_BY_SETTER");
+        super.grantRole(role, account);
+    }
+
+    function revokeRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
+        require(role != TREASURY_SETTER_ROLE, "FluxSwap: ROLE_MANAGED_BY_SETTER");
+        super.revokeRole(role, account);
+    }
+
+    function renounceRole(bytes32 role, address callerConfirmation) public override {
+        require(role != TREASURY_SETTER_ROLE, "FluxSwap: ROLE_MANAGED_BY_SETTER");
+        super.renounceRole(role, callerConfirmation);
+    }
+
+    function supportsInterface(bytes4 interfaceId) public view override(AccessControl) returns (bool) {
+        return super.supportsInterface(interfaceId);
     }
 }

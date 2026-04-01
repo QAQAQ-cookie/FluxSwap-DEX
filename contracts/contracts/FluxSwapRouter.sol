@@ -9,6 +9,9 @@ import "../interfaces/IWETH.sol";
 import "../libraries/TransferHelper.sol";
 
 contract FluxSwapRouter is IFluxSwapRouter {
+    uint256 private constant FEE_BPS_BASE = 10000;
+    uint256 private constant TOTAL_SWAP_FEE_BPS = 30;
+
     address public immutable override factory;
     address public immutable override WETH;
 
@@ -349,9 +352,9 @@ contract FluxSwapRouter is IFluxSwapRouter {
     ) public pure override returns (uint256 amountOut) {
         require(amountIn > 0, "FluxSwapRouter: INSUFFICIENT_INPUT_AMOUNT");
         require(reserveIn > 0 && reserveOut > 0, "FluxSwapRouter: INSUFFICIENT_LIQUIDITY");
-        uint256 amountInWithFee = amountIn * 997;
+        uint256 amountInWithFee = amountIn * (FEE_BPS_BASE - TOTAL_SWAP_FEE_BPS);
         uint256 numerator = amountInWithFee * reserveOut;
-        uint256 denominator = (reserveIn * 1000) + amountInWithFee;
+        uint256 denominator = (reserveIn * FEE_BPS_BASE) + amountInWithFee;
         amountOut = numerator / denominator;
     }
 
@@ -362,8 +365,8 @@ contract FluxSwapRouter is IFluxSwapRouter {
     ) public pure override returns (uint256 amountIn) {
         require(amountOut > 0, "FluxSwapRouter: INSUFFICIENT_OUTPUT_AMOUNT");
         require(reserveIn > 0 && reserveOut > 0, "FluxSwapRouter: INSUFFICIENT_LIQUIDITY");
-        uint256 numerator = reserveIn * amountOut * 1000;
-        uint256 denominator = (reserveOut - amountOut) * 997;
+        uint256 numerator = reserveIn * amountOut * FEE_BPS_BASE;
+        uint256 denominator = (reserveOut - amountOut) * (FEE_BPS_BASE - TOTAL_SWAP_FEE_BPS);
         amountIn = (numerator / denominator) + 1;
     }
 
