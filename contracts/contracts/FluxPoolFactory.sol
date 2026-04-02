@@ -25,7 +25,6 @@ contract FluxPoolFactory is Ownable {
         address indexed rewardSource,
         address indexed rewardNotifier
     );
-    event ManagedPoolRewardsDurationUpdated(address indexed pool, uint256 rewardsDuration);
     event ManagedPoolOwnershipTransferred(address indexed pool, address indexed newOwner);
     event ManagedPoolUnallocatedRewardsRecovered(address indexed pool, address indexed to, uint256 amount);
 
@@ -39,25 +38,11 @@ contract FluxPoolFactory is Ownable {
         rewardToken = _rewardToken;
     }
 
-    function createSingleTokenPool(
-        address stakingToken,
-        uint256 allocPoint,
-        bool active,
-        uint256 rewardsDuration
-    ) external onlyOwner returns (address pool) {
+    function createSingleTokenPool(address stakingToken, uint256 allocPoint, bool active) external onlyOwner returns (address pool) {
         require(stakingToken != address(0), "FluxPoolFactory: ZERO_ADDRESS");
         require(singleTokenPools[stakingToken] == address(0), "FluxPoolFactory: POOL_EXISTS");
 
-        pool = address(
-            new FluxSwapStakingRewards(
-                address(this),
-                stakingToken,
-                rewardToken,
-                manager,
-                address(this),
-                rewardsDuration
-            )
-        );
+        pool = address(new FluxSwapStakingRewards(address(this), stakingToken, rewardToken, manager, address(this)));
 
         FluxSwapStakingRewards(pool).setRewardConfiguration(manager, pool);
 
@@ -68,12 +53,7 @@ contract FluxPoolFactory is Ownable {
         emit SingleTokenPoolCreated(stakingToken, pool, allocPoint, active);
     }
 
-    function createLPPool(
-        address lpToken,
-        uint256 allocPoint,
-        bool active,
-        uint256 rewardsDuration
-    ) external onlyOwner returns (address pool) {
+    function createLPPool(address lpToken, uint256 allocPoint, bool active) external onlyOwner returns (address pool) {
         require(lpToken != address(0), "FluxPoolFactory: ZERO_ADDRESS");
         require(lpTokenPools[lpToken] == address(0), "FluxPoolFactory: POOL_EXISTS");
 
@@ -84,8 +64,7 @@ contract FluxPoolFactory is Ownable {
                 lpToken,
                 rewardToken,
                 manager,
-                address(this),
-                rewardsDuration
+                address(this)
             )
         );
 
@@ -118,12 +97,6 @@ contract FluxPoolFactory is Ownable {
         _requireManagedPool(pool);
         FluxSwapStakingRewards(pool).setRewardConfiguration(rewardSource, rewardNotifier);
         emit ManagedPoolRewardConfigurationUpdated(pool, rewardSource, rewardNotifier);
-    }
-
-    function setManagedPoolRewardsDuration(address pool, uint256 rewardsDuration) external onlyOwner {
-        _requireManagedPool(pool);
-        FluxSwapStakingRewards(pool).setRewardsDuration(rewardsDuration);
-        emit ManagedPoolRewardsDurationUpdated(pool, rewardsDuration);
     }
 
     function transferManagedPoolOwnership(address pool, address newOwner) external onlyOwner {

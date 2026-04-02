@@ -10,7 +10,6 @@ describe("FluxBuybackExecutor", async function () {
     await viem.getWalletClients();
 
   const timelockDelay = 3600n;
-  const rewardsDuration = 7n;
   const initialSupply = 10_000_000n * 10n ** 18n;
   const cap = 100_000_000n * 10n ** 18n;
   const maxUint256 = (1n << 256n) - 1n;
@@ -106,7 +105,6 @@ describe("FluxBuybackExecutor", async function () {
       fluxToken.address,
       treasury.address,
       operatorClient.account.address,
-      rewardsDuration,
     ]);
 
     buybackExecutor = await viem.deployContract("FluxBuybackExecutor", [
@@ -191,7 +189,6 @@ describe("FluxBuybackExecutor", async function () {
       account: operatorClient.account.address,
     });
 
-    await networkHelpers.time.increase(Number(rewardsDuration));
     await stakingRewards.write.exit({ account: stakerClient.account.address });
     const remainingRewardReserve = await stakingRewards.read.rewardReserve();
     const stakingRewardsBalance = await fluxToken.read.balanceOf([stakingRewards.address]);

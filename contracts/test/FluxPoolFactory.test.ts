@@ -9,7 +9,6 @@ describe("FluxPoolFactory", async function () {
   const [multisigClient, guardianClient, operatorClient, lpClient] = await viem.getWalletClients();
 
   const timelockDelay = 3600n;
-  const rewardsDuration = 7n;
   const initialSupply = 10_000_000n * 10n ** 18n;
   const cap = 100_000_000n * 10n ** 18n;
   const maxUint256 = (1n << 256n) - 1n;
@@ -125,7 +124,7 @@ describe("FluxPoolFactory", async function () {
   });
 
   it("should create a single token pool and auto-register it in the manager", async function () {
-    await poolFactory.write.createSingleTokenPool([fluxToken.address, 40n, true, rewardsDuration], {
+    await poolFactory.write.createSingleTokenPool([fluxToken.address, 40n, true], {
       account: multisigClient.account.address,
     });
 
@@ -142,7 +141,7 @@ describe("FluxPoolFactory", async function () {
   });
 
   it("should create an LP pool and auto-register it in the manager", async function () {
-    await poolFactory.write.createLPPool([pair.address, 60n, true, rewardsDuration], {
+    await poolFactory.write.createLPPool([pair.address, 60n, true], {
       account: multisigClient.account.address,
     });
 
@@ -159,12 +158,12 @@ describe("FluxPoolFactory", async function () {
   });
 
   it("should prevent duplicate pool creation", async function () {
-    await poolFactory.write.createSingleTokenPool([fluxToken.address, 40n, true, rewardsDuration], {
+    await poolFactory.write.createSingleTokenPool([fluxToken.address, 40n, true], {
       account: multisigClient.account.address,
     });
 
     await expectRevert(
-      poolFactory.write.createSingleTokenPool([fluxToken.address, 50n, true, rewardsDuration], {
+      poolFactory.write.createSingleTokenPool([fluxToken.address, 50n, true], {
         account: multisigClient.account.address,
       }),
       "FluxPoolFactory: POOL_EXISTS"
@@ -172,7 +171,7 @@ describe("FluxPoolFactory", async function () {
   });
 
   it("should keep governance over existing pools after factory ownership transfer", async function () {
-    await poolFactory.write.createSingleTokenPool([fluxToken.address, 40n, true, rewardsDuration], {
+    await poolFactory.write.createSingleTokenPool([fluxToken.address, 40n, true], {
       account: multisigClient.account.address,
     });
 
@@ -184,30 +183,22 @@ describe("FluxPoolFactory", async function () {
     });
 
     await expectRevert(
-      poolFactory.write.setManagedPoolRewardsDuration([poolAddress, 14n], {
+      poolFactory.write.setManagedPoolRewardConfiguration([poolAddress, treasury.address, operatorClient.account.address], {
         account: multisigClient.account.address,
       }),
       "OwnableUnauthorizedAccount"
     );
 
-    await poolFactory.write.setManagedPoolRewardsDuration([poolAddress, 14n], {
-      account: operatorClient.account.address,
-    });
-    await poolFactory.write.setManagedPoolRewardConfiguration([
-      poolAddress,
-      treasury.address,
-      operatorClient.account.address,
-    ], {
+    await poolFactory.write.setManagedPoolRewardConfiguration([poolAddress, treasury.address, operatorClient.account.address], {
       account: operatorClient.account.address,
     });
 
-    strictEqual(await pool.read.rewardsDuration(), 14n);
     strictEqual((await pool.read.rewardSource()).toLowerCase(), treasury.address.toLowerCase());
     strictEqual((await pool.read.rewardNotifier()).toLowerCase(), operatorClient.account.address.toLowerCase());
   });
 
   it("should allow the factory owner to hand off pool ownership explicitly", async function () {
-    await poolFactory.write.createSingleTokenPool([fluxToken.address, 40n, true, rewardsDuration], {
+    await poolFactory.write.createSingleTokenPool([fluxToken.address, 40n, true], {
       account: multisigClient.account.address,
     });
 
@@ -230,7 +221,7 @@ describe("FluxPoolFactory", async function () {
   });
 
   it("should reject handing a managed pool to its current owner", async function () {
-    await poolFactory.write.createSingleTokenPool([fluxToken.address, 40n, true, rewardsDuration], {
+    await poolFactory.write.createSingleTokenPool([fluxToken.address, 40n, true], {
       account: multisigClient.account.address,
     });
 
@@ -249,7 +240,7 @@ describe("FluxPoolFactory", async function () {
   it("should allow the factory owner to recover unallocated rewards from a managed pool", async function () {
     const totalReward = 500n * 10n ** 18n;
 
-    await poolFactory.write.createSingleTokenPool([fluxToken.address, 100n, true, rewardsDuration], {
+    await poolFactory.write.createSingleTokenPool([fluxToken.address, 100n, true], {
       account: multisigClient.account.address,
     });
 
@@ -270,7 +261,7 @@ describe("FluxPoolFactory", async function () {
   });
 
   it("should require atomic reward configuration changes when a managed pool is in self-sync mode", async function () {
-    await poolFactory.write.createSingleTokenPool([fluxToken.address, 40n, true, rewardsDuration], {
+    await poolFactory.write.createSingleTokenPool([fluxToken.address, 40n, true], {
       account: multisigClient.account.address,
     });
 

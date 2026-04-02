@@ -28,8 +28,6 @@ describe("FluxSwapStakingRewards", async function () {
   };
 
   const timelockDelay = 3600n;
-  const rewardsDuration = 7n;
-
   let treasury: any;
   let stakeToken: any;
   let rewardToken: any;
@@ -58,7 +56,6 @@ describe("FluxSwapStakingRewards", async function () {
       rewardToken.address,
       treasury.address,
       operatorClient.account.address,
-      rewardsDuration,
     ]);
 
     await stakeToken.write.mint([userAClient.account.address, 1_000n * 10n ** 18n]);
@@ -80,44 +77,30 @@ describe("FluxSwapStakingRewards", async function () {
     );
   }
 
-  it("should distribute treasury-funded rewards to a single staker over time", async function () {
+  it("should distribute treasury-funded rewards to a single staker immediately in the accounting", async function () {
     const rewardAmount = 700n * 10n ** 18n;
 
     await approveRewardSpender(rewardAmount);
     await stakingRewards.write.stake([100n * 10n ** 18n], { account: userAClient.account.address });
     await stakingRewards.write.notifyRewardAmount([rewardAmount], { account: operatorClient.account.address });
 
-    await networkHelpers.time.increase(3);
-    const earnedBeforeClaim = await stakingRewards.read.earned([userAClient.account.address]);
-
-    ok(earnedBeforeClaim > 0n, "reward should accumulate over time");
-    ok(earnedBeforeClaim < rewardAmount, "partial period reward should stay below total reward");
+    strictEqual(await stakingRewards.read.earned([userAClient.account.address]), rewardAmount);
 
     await stakingRewards.write.getReward({ account: userAClient.account.address });
-    const claimedReward = await rewardToken.read.balanceOf([userAClient.account.address]);
-    const rewardRate = await stakingRewards.read.rewardRate();
-
-    ok(claimedReward >= earnedBeforeClaim, "claimed reward should not be lower than previewed reward");
-    ok(claimedReward <= earnedBeforeClaim + rewardRate, "claim should differ by at most one reward interval");
+    strictEqual(await rewardToken.read.balanceOf([userAClient.account.address]), rewardAmount);
+    strictEqual(await stakingRewards.read.rewardReserve(), 0n);
   });
 
-  it("should split rewards by staking share when a second staker joins later", async function () {
-    const rewardAmount = 700n * 10n ** 18n;
-
-    await approveRewardSpender(rewardAmount);
+  it("should split rewards by staking share across multiple reward batches", async function () {
+    await approveRewardSpender(400n * 10n ** 18n);
     await stakingRewards.write.stake([100n * 10n ** 18n], { account: userAClient.account.address });
-    await stakingRewards.write.notifyRewardAmount([rewardAmount], { account: operatorClient.account.address });
+    await stakingRewards.write.notifyRewardAmount([200n * 10n ** 18n], { account: operatorClient.account.address });
 
-    await networkHelpers.time.increase(2);
     await stakingRewards.write.stake([100n * 10n ** 18n], { account: userBClient.account.address });
-    const userAEarnedAtJoin = await stakingRewards.read.earned([userAClient.account.address]);
+    await stakingRewards.write.notifyRewardAmount([200n * 10n ** 18n], { account: operatorClient.account.address });
 
-    await networkHelpers.time.increase(5);
-    const userAFinalReward = await stakingRewards.read.earned([userAClient.account.address]);
-    const userBFinalReward = await stakingRewards.read.earned([userBClient.account.address]);
-
-    strictEqual(userAFinalReward + userBFinalReward, rewardAmount);
-    strictEqual(userAFinalReward, userAEarnedAtJoin + userBFinalReward);
+    strictEqual(await stakingRewards.read.earned([userAClient.account.address]), 300n * 10n ** 18n);
+    strictEqual(await stakingRewards.read.earned([userBClient.account.address]), 100n * 10n ** 18n);
   });
 
   it("should allow users to exit with principal and reward", async function () {
@@ -130,8 +113,6 @@ describe("FluxSwapStakingRewards", async function () {
 
     await stakingRewards.write.stake([stakeAmount], { account: userAClient.account.address });
     await stakingRewards.write.notifyRewardAmount([rewardAmount], { account: operatorClient.account.address });
-
-    await networkHelpers.time.increase(7);
     await stakingRewards.write.exit({ account: userAClient.account.address });
 
     strictEqual(await stakeToken.read.balanceOf([userAClient.account.address]), stakeBalanceBefore);
@@ -148,12 +129,11 @@ describe("FluxSwapStakingRewards", async function () {
     );
   });
 
-  it("should roll queued dust into the next reward period", async function () {
+  it("should roll queued dust into the next reward distribution", async function () {
     await approveRewardSpender(28n);
-    await stakingRewards.write.stake([1n], { account: userAClient.account.address });
+    await stakingRewards.write.stake([7n], { account: userAClient.account.address });
 
     await stakingRewards.write.notifyRewardAmount([15n], { account: operatorClient.account.address });
-    await networkHelpers.time.increase(Number(rewardsDuration));
     await stakingRewards.write.getReward({ account: userAClient.account.address });
 
     strictEqual(await rewardToken.read.balanceOf([userAClient.account.address]), 14n);
@@ -161,31 +141,28 @@ describe("FluxSwapStakingRewards", async function () {
     strictEqual(await stakingRewards.read.queuedRewards(), 1n);
 
     await stakingRewards.write.notifyRewardAmount([13n], { account: operatorClient.account.address });
-    strictEqual(await stakingRewards.read.rewardRate(), 2n);
     strictEqual(await stakingRewards.read.queuedRewards(), 0n);
 
-    await networkHelpers.time.increase(Number(rewardsDuration));
     await stakingRewards.write.getReward({ account: userAClient.account.address });
 
     strictEqual(await rewardToken.read.balanceOf([userAClient.account.address]), 28n);
     strictEqual(await stakingRewards.read.rewardReserve(), 0n);
   });
 
-  it("should queue tiny rewards until they are large enough to start a period", async function () {
+  it("should queue tiny rewards until they are large enough to distribute", async function () {
     await approveRewardSpender(7n);
-    await stakingRewards.write.stake([1n], { account: userAClient.account.address });
+    await stakingRewards.write.stake([7n], { account: userAClient.account.address });
 
     await stakingRewards.write.notifyRewardAmount([1n], { account: operatorClient.account.address });
 
-    strictEqual(await stakingRewards.read.rewardRate(), 0n);
     strictEqual(await stakingRewards.read.queuedRewards(), 1n);
+    strictEqual(await stakingRewards.read.earned([userAClient.account.address]), 0n);
 
     await stakingRewards.write.notifyRewardAmount([6n], { account: operatorClient.account.address });
 
-    strictEqual(await stakingRewards.read.rewardRate(), 1n);
     strictEqual(await stakingRewards.read.queuedRewards(), 0n);
+    strictEqual(await stakingRewards.read.earned([userAClient.account.address]), 7n);
 
-    await networkHelpers.time.increase(Number(rewardsDuration));
     await stakingRewards.write.getReward({ account: userAClient.account.address });
 
     strictEqual(await rewardToken.read.balanceOf([userAClient.account.address]), 7n);
@@ -218,26 +195,34 @@ describe("FluxSwapStakingRewards", async function () {
     strictEqual(await stakingRewards.read.queuedRewards(), 0n);
   });
 
+  it("should release queued rewards when the first staker enters after rewards arrived", async function () {
+    await approveRewardSpender(10n);
+    await stakingRewards.write.notifyRewardAmount([10n], { account: operatorClient.account.address });
+
+    strictEqual(await stakingRewards.read.queuedRewards(), 10n);
+    strictEqual(await stakingRewards.read.earned([userAClient.account.address]), 0n);
+
+    await stakingRewards.write.stake([5n], { account: userAClient.account.address });
+
+    strictEqual(await stakingRewards.read.queuedRewards(), 0n);
+    strictEqual(await stakingRewards.read.earned([userAClient.account.address]), 10n);
+  });
+
   it("should only recover rewards that are not already owed to users", async function () {
-    const rewardAmount = 700n * 10n ** 18n;
-    const stakeAmount = 100n * 10n ** 18n;
+    await approveRewardSpender(10n);
+    await stakingRewards.write.stake([3n], { account: userAClient.account.address });
+    await stakingRewards.write.notifyRewardAmount([10n], { account: operatorClient.account.address });
 
-    await approveRewardSpender(rewardAmount);
-    await stakingRewards.write.stake([stakeAmount], { account: userAClient.account.address });
-    await stakingRewards.write.notifyRewardAmount([rewardAmount], { account: operatorClient.account.address });
-
-    await networkHelpers.time.increase(3);
-    await stakingRewards.write.withdraw([stakeAmount], { account: userAClient.account.address });
+    await stakingRewards.write.withdraw([3n], { account: userAClient.account.address });
     const pendingReward = await stakingRewards.read.pendingUserRewards();
 
-    ok(pendingReward > 0n);
-    ok(pendingReward < rewardAmount);
+    strictEqual(pendingReward, 9n);
 
     await stakingRewards.write.recoverUnallocatedRewards([userBClient.account.address], {
       account: multisigClient.account.address,
     });
 
-    strictEqual(await rewardToken.read.balanceOf([userBClient.account.address]), rewardAmount - pendingReward);
+    strictEqual(await rewardToken.read.balanceOf([userBClient.account.address]), 1n);
     strictEqual(await stakingRewards.read.rewardReserve(), pendingReward);
 
     await stakingRewards.write.getReward({ account: userAClient.account.address });

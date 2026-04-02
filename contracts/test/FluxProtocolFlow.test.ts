@@ -8,7 +8,6 @@ describe("Flux Protocol Flow", async function () {
   const [multisigClient, guardianClient, operatorClient, userAClient, userBClient] = await viem.getWalletClients();
 
   const timelockDelay = 3600n;
-  const rewardsDuration = 7n;
   const initialSupply = 10_000_000n * 10n ** 18n;
   const cap = 100_000_000n * 10n ** 18n;
 
@@ -74,7 +73,6 @@ describe("Flux Protocol Flow", async function () {
       fluxToken.address,
       treasury.address,
       operatorClient.account.address,
-      rewardsDuration,
     ]);
   });
 
@@ -143,8 +141,6 @@ describe("Flux Protocol Flow", async function () {
     await stakingRewards.write.stake([stakeAmount], {
       account: userBClient.account.address,
     });
-
-    await networkHelpers.time.increase(10);
 
     await stakingRewards.write.exit({ account: userAClient.account.address });
     await stakingRewards.write.exit({ account: userBClient.account.address });

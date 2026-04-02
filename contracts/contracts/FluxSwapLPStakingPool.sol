@@ -17,16 +17,14 @@ contract FluxSwapLPStakingPool is FluxSwapStakingRewards {
         address _lpToken,
         address _rewardsToken,
         address _rewardSource,
-        address _rewardNotifier,
-        uint256 _rewardsDuration
+        address _rewardNotifier
     )
         FluxSwapStakingRewards(
             _owner,
             _lpToken,
             _rewardsToken,
             _rewardSource,
-            _rewardNotifier,
-            _rewardsDuration
+            _rewardNotifier
         )
     {
         require(_factory != address(0), "FluxSwapLPStakingPool: ZERO_ADDRESS");

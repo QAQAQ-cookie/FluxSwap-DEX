@@ -9,7 +9,6 @@ describe("FluxSwapLPStakingPool", async function () {
   const [multisigClient, guardianClient, operatorClient, lpClient, stakerClient] = await viem.getWalletClients();
 
   const timelockDelay = 3600n;
-  const rewardsDuration = 7n;
   const initialSupply = 10_000_000n * 10n ** 18n;
   const cap = 100_000_000n * 10n ** 18n;
 
@@ -110,7 +109,6 @@ describe("FluxSwapLPStakingPool", async function () {
       fluxToken.address,
       treasury.address,
       operatorClient.account.address,
-      rewardsDuration,
     ]);
   });
 
@@ -130,7 +128,6 @@ describe("FluxSwapLPStakingPool", async function () {
         fluxToken.address,
         treasury.address,
         operatorClient.account.address,
-        rewardsDuration,
       ]),
       "FluxSwapLPStakingPool: INVALID_FACTORY"
     );
@@ -158,7 +155,6 @@ describe("FluxSwapLPStakingPool", async function () {
       account: operatorClient.account.address,
     });
 
-    await networkHelpers.time.increase(Number(rewardsDuration));
     await pool.write.exit({ account: stakerClient.account.address });
 
     strictEqual(await pair.read.balanceOf([stakerClient.account.address]), lpBalanceBefore);

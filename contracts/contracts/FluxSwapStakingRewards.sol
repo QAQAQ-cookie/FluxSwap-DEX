@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import "../interfaces/IERC20.sol";
 import "../interfaces/IFluxMultiPoolManager.sol";
 import "../libraries/TransferHelper.sol";
 
@@ -14,10 +13,6 @@ contract FluxSwapStakingRewards {
     address public immutable stakingToken;
     address public immutable rewardsToken;
 
-    uint256 public rewardsDuration;
-    uint256 public periodFinish;
-    uint256 public rewardRate;
-    uint256 public lastUpdateTime;
     uint256 public rewardPerTokenStored;
     uint256 public totalStaked;
     uint256 public rewardReserve;
@@ -38,8 +33,7 @@ contract FluxSwapStakingRewards {
         address indexed newRewardSource,
         address indexed newRewardNotifier
     );
-    event RewardsDurationUpdated(uint256 previousDuration, uint256 newDuration);
-    event RewardAdded(uint256 reward, uint256 rewardRate, uint256 periodFinish);
+    event RewardAdded(uint256 reward, uint256 accountedReward, uint256 queuedRewards);
     event Staked(address indexed user, uint256 amount);
     event Withdrawn(address indexed user, uint256 amount);
     event RewardPaid(address indexed user, uint256 reward);
@@ -62,32 +56,24 @@ contract FluxSwapStakingRewards {
         unlocked = 1;
     }
 
-    modifier updateReward(address account) {
-        _updateReward(account);
-        _;
-    }
-
     constructor(
         address _owner,
         address _stakingToken,
         address _rewardsToken,
         address _rewardSource,
-        address _rewardNotifier,
-        uint256 _rewardsDuration
+        address _rewardNotifier
     ) {
         require(_owner != address(0), "FluxSwapStakingRewards: ZERO_ADDRESS");
         require(_stakingToken != address(0), "FluxSwapStakingRewards: ZERO_ADDRESS");
         require(_rewardsToken != address(0), "FluxSwapStakingRewards: ZERO_ADDRESS");
         require(_rewardSource != address(0), "FluxSwapStakingRewards: ZERO_ADDRESS");
         require(_rewardNotifier != address(0), "FluxSwapStakingRewards: ZERO_ADDRESS");
-        require(_rewardsDuration > 0, "FluxSwapStakingRewards: INVALID_DURATION");
 
         owner = _owner;
         stakingToken = _stakingToken;
         rewardsToken = _rewardsToken;
         rewardSource = _rewardSource;
         rewardNotifier = _rewardNotifier;
-        rewardsDuration = _rewardsDuration;
     }
 
     function transferOwnership(address newOwner) external onlyOwner {
@@ -126,23 +112,8 @@ contract FluxSwapStakingRewards {
         emit RewardConfigurationUpdated(previousRewardSource, newRewardSource, newRewardNotifier);
     }
 
-    function setRewardsDuration(uint256 newRewardsDuration) external onlyOwner {
-        require(newRewardsDuration > 0, "FluxSwapStakingRewards: INVALID_DURATION");
-        require(block.timestamp > periodFinish, "FluxSwapStakingRewards: ACTIVE_PERIOD");
-        emit RewardsDurationUpdated(rewardsDuration, newRewardsDuration);
-        rewardsDuration = newRewardsDuration;
-    }
-
-    function lastTimeRewardApplicable() public view returns (uint256) {
-        return block.timestamp < periodFinish ? block.timestamp : periodFinish;
-    }
-
     function rewardPerToken() public view returns (uint256) {
-        if (totalStaked == 0) {
-            return rewardPerTokenStored;
-        }
-
-        return rewardPerTokenStored + (((lastTimeRewardApplicable() - lastUpdateTime) * rewardRate * PRECISION) / totalStaked);
+        return rewardPerTokenStored;
     }
 
     function earned(address account) public view returns (uint256) {
@@ -156,6 +127,7 @@ contract FluxSwapStakingRewards {
         totalStaked += amount;
         balanceOf[msg.sender] += amount;
         TransferHelper.safeTransferFrom(stakingToken, msg.sender, address(this), amount);
+        _flushQueuedRewards();
         emit Staked(msg.sender, amount);
     }
 
@@ -167,6 +139,7 @@ contract FluxSwapStakingRewards {
         totalStaked -= amount;
         balanceOf[msg.sender] -= amount;
         TransferHelper.safeTransfer(stakingToken, msg.sender, amount);
+        _flushQueuedRewards();
         emit Withdrawn(msg.sender, amount);
     }
 
@@ -184,6 +157,7 @@ contract FluxSwapStakingRewards {
             totalStaked -= stakeAmount;
             balanceOf[msg.sender] = 0;
             TransferHelper.safeTransfer(stakingToken, msg.sender, stakeAmount);
+            _flushQueuedRewards();
             emit Withdrawn(msg.sender, stakeAmount);
         }
 
@@ -194,12 +168,11 @@ contract FluxSwapStakingRewards {
         require(reward > 0, "FluxSwapStakingRewards: ZERO_AMOUNT");
 
         _requireSourceNotPaused(rewardSource, "FluxSwapStakingRewards: REWARD_SOURCE_PAUSED");
-        _updateReward(address(0));
         TransferHelper.safeTransferFrom(rewardsToken, rewardSource, address(this), reward);
         rewardReserve += reward;
 
-        _applyRewardAmount(reward);
-        emit RewardAdded(reward, rewardRate, periodFinish);
+        uint256 accountedReward = _applyRewardAmount(reward);
+        emit RewardAdded(reward, accountedReward, queuedRewards);
     }
 
     function syncRewards() external lock returns (uint256 reward) {
@@ -209,15 +182,11 @@ contract FluxSwapStakingRewards {
     function recoverUnallocatedRewards(address to) external lock onlyOwner returns (uint256 amount) {
         require(to != address(0), "FluxSwapStakingRewards: ZERO_ADDRESS");
         _syncRewards();
-        _updateReward(address(0));
         require(totalStaked == 0, "FluxSwapStakingRewards: ACTIVE_STAKERS");
 
         amount = rewardReserve - pendingUserRewards;
         require(amount > 0, "FluxSwapStakingRewards: NO_UNALLOCATED_REWARDS");
 
-        rewardRate = 0;
-        periodFinish = block.timestamp;
-        lastUpdateTime = block.timestamp;
         queuedRewards = 0;
         rewardReserve -= amount;
 
@@ -247,50 +216,39 @@ contract FluxSwapStakingRewards {
             return 0;
         }
 
-        _updateReward(address(0));
         rewardReserve += reward;
-        _applyRewardAmount(reward);
+        uint256 accountedReward = _applyRewardAmount(reward);
 
-        emit RewardAdded(reward, rewardRate, periodFinish);
+        emit RewardAdded(reward, accountedReward, queuedRewards);
     }
 
-    function _applyRewardAmount(uint256 reward) private {
+    function _applyRewardAmount(uint256 reward) private returns (uint256 accountedReward) {
         uint256 distributable = reward + queuedRewards;
 
-        if (block.timestamp >= periodFinish) {
-            rewardRate = distributable / rewardsDuration;
-        } else {
-            uint256 remaining = periodFinish - block.timestamp;
-            uint256 leftover = remaining * rewardRate;
-            distributable += leftover;
-            rewardRate = distributable / rewardsDuration;
+        if (distributable == 0 || totalStaked == 0) {
+            queuedRewards = distributable;
+            return 0;
         }
 
-        lastUpdateTime = block.timestamp;
-        queuedRewards = distributable % rewardsDuration;
-
-        if (rewardRate == 0) {
+        uint256 rewardPerTokenIncrement = (distributable * PRECISION) / totalStaked;
+        if (rewardPerTokenIncrement == 0) {
             queuedRewards = distributable;
-            periodFinish = block.timestamp;
-        } else {
-            periodFinish = block.timestamp + rewardsDuration;
+            return 0;
+        }
+
+        rewardPerTokenStored += rewardPerTokenIncrement;
+
+        accountedReward = (rewardPerTokenIncrement * totalStaked) / PRECISION;
+        queuedRewards = distributable - accountedReward;
+    }
+
+    function _flushQueuedRewards() private {
+        if (queuedRewards > 0 && totalStaked > 0) {
+            _applyRewardAmount(0);
         }
     }
 
     function _updateReward(address account) private {
-        uint256 applicableTime = lastTimeRewardApplicable();
-        if (applicableTime > lastUpdateTime) {
-            uint256 releasedReward = (applicableTime - lastUpdateTime) * rewardRate;
-            if (releasedReward > 0) {
-                if (totalStaked == 0) {
-                    queuedRewards += releasedReward;
-                } else {
-                    rewardPerTokenStored += (releasedReward * PRECISION) / totalStaked;
-                }
-            }
-            lastUpdateTime = applicableTime;
-        }
-
         if (account != address(0)) {
             uint256 accruedReward =
                 (balanceOf[account] * (rewardPerTokenStored - userRewardPerTokenPaid[account])) /

@@ -10,7 +10,6 @@ describe("FluxMultiPoolManager", async function () {
     await viem.getWalletClients();
 
   const timelockDelay = 3600n;
-  const rewardsDuration = 10n;
   const initialSupply = 10_000_000n * 10n ** 18n;
   const cap = 100_000_000n * 10n ** 18n;
   const maxUint256 = (1n << 256n) - 1n;
@@ -112,7 +111,6 @@ describe("FluxMultiPoolManager", async function () {
       fluxToken.address,
       manager.address,
       manager.address,
-      rewardsDuration,
     ]);
     await singleTokenPool.write.setRewardConfiguration([manager.address, singleTokenPool.address], {
       account: multisigClient.account.address,
@@ -152,7 +150,6 @@ describe("FluxMultiPoolManager", async function () {
       fluxToken.address,
       manager.address,
       manager.address,
-      rewardsDuration,
     ]);
     await lpPool.write.setRewardConfiguration([manager.address, lpPool.address], {
       account: multisigClient.account.address,
@@ -200,8 +197,6 @@ describe("FluxMultiPoolManager", async function () {
     });
     await singleTokenPool.write.syncRewards();
     await lpPool.write.syncRewards();
-
-    await networkHelpers.time.increase(Number(rewardsDuration));
 
     await singleTokenPool.write.exit({ account: stakerAClient.account.address });
     await lpPool.write.exit({ account: stakerBClient.account.address });
