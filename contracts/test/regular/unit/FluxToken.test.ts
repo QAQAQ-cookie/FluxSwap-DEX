@@ -54,6 +54,12 @@ describe("FluxToken", async function () {
     strictEqual(await token.read.isMinter([ownerClient.account.address]), true);
   });
 
+  it("should expose ERC165 support", async function () {
+    strictEqual(await token.read.supportsInterface(["0x01ffc9a7"]), true);
+    strictEqual(await token.read.supportsInterface(["0x7965db0b"]), true);
+    strictEqual(await token.read.supportsInterface(["0xffffffff"]), false);
+  });
+
   it("should allow owner to grant and revoke minter role", async function () {
     await token.write.setMinter([treasuryClient.account.address, true], {
       account: ownerClient.account.address,
@@ -156,6 +162,33 @@ describe("FluxToken", async function () {
     );
   });
 
+  it("should reject zero-address admin operations and mint recipients", async function () {
+    await expectRevert(
+      token.write.setMinter(["0x0000000000000000000000000000000000000000", true], {
+        account: ownerClient.account.address,
+      }),
+      "FluxToken: ZERO_ADDRESS"
+    );
+
+    await expectRevert(
+      token.write.transferOwnership(["0x0000000000000000000000000000000000000000"], {
+        account: ownerClient.account.address,
+      }),
+      "FluxToken: ZERO_ADDRESS"
+    );
+
+    await token.write.setMinter([treasuryClient.account.address, true], {
+      account: ownerClient.account.address,
+    });
+
+    await expectRevert(
+      token.write.mint(["0x0000000000000000000000000000000000000000", 1n], {
+        account: treasuryClient.account.address,
+      }),
+      "FluxToken: ZERO_ADDRESS"
+    );
+  });
+
   it("should validate constructor inputs", async function () {
     await expectRevert(
       viem.deployContract("FluxToken", [
@@ -191,6 +224,18 @@ describe("FluxToken", async function () {
         cap,
       ]),
       "FluxToken: CAP_EXCEEDED"
+    );
+
+    await expectRevert(
+      viem.deployContract("FluxToken", [
+        "Flux Token",
+        "FLUX",
+        ownerClient.account.address,
+        "0x0000000000000000000000000000000000000000",
+        1n,
+        cap,
+      ]),
+      "FluxToken: ZERO_ADDRESS"
     );
   });
 });

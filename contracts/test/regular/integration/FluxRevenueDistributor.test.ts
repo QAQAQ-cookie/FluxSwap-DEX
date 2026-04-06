@@ -185,6 +185,7 @@ describe("FluxRevenueDistributor", async function () {
     const swapAmount = 1_000n * 10n ** 18n;
     const protocolFee = (swapAmount * 5n) / 10000n;
     const buybackAmountIn = (protocolFee * buybackBps) / 10000n;
+    const buybackProtocolFee = (buybackAmountIn * 5n) / 10000n;
 
     await configureTreasuryForFluxRecipient(stakerClient.account.address, 5_000n * 10n ** 18n);
     await treasury.write.allocate([fluxToken.address, stakerClient.account.address, userFunding], {
@@ -222,7 +223,7 @@ describe("FluxRevenueDistributor", async function () {
       { account: operatorClient.account.address }
     );
 
-    strictEqual(await revenueToken.read.balanceOf([treasury.address]), protocolFee - buybackAmountIn);
+    strictEqual(await revenueToken.read.balanceOf([treasury.address]), protocolFee - buybackAmountIn + buybackProtocolFee);
     strictEqual(await fluxToken.read.totalSupply(), totalSupplyBefore - burnedAmount);
     strictEqual(await fluxToken.read.balanceOf([manager.address]), distributedAmount);
 
@@ -248,6 +249,44 @@ describe("FluxRevenueDistributor", async function () {
     strictEqual(await manager.read.pendingPoolRewards([stakingPool.address]), rewardAmount);
   });
 
+  it("should route direct treasury FLUX distribution all the way into a staker payout", async function () {
+    const userFunding = 1_000n * 10n ** 18n;
+    const rewardAmount = 500n * 10n ** 18n;
+    const stakeAmount = 100n * 10n ** 18n;
+
+    await configureTreasuryForFluxRecipient(stakerClient.account.address, 5_000n * 10n ** 18n);
+    await approveTreasurySpender(fluxToken.address, manager.address, rewardAmount);
+
+    await treasury.write.allocate([fluxToken.address, stakerClient.account.address, userFunding], {
+      account: operatorClient.account.address,
+    });
+
+    await fluxToken.write.approve([stakingPool.address, userFunding], {
+      account: stakerClient.account.address,
+    });
+    await stakingPool.write.stake([stakeAmount], {
+      account: stakerClient.account.address,
+    });
+
+    await revenueDistributor.write.distributeTreasuryRewards([rewardAmount], {
+      account: operatorClient.account.address,
+    });
+
+    strictEqual(await fluxToken.read.balanceOf([manager.address]), rewardAmount);
+    strictEqual(await manager.read.pendingPoolRewards([stakingPool.address]), rewardAmount);
+
+    await stakingPool.write.syncRewards();
+
+    strictEqual(await manager.read.pendingPoolRewards([stakingPool.address]), 0n);
+    strictEqual(await fluxToken.read.balanceOf([manager.address]), 0n);
+    strictEqual(await stakingPool.read.earned([stakerClient.account.address]), rewardAmount);
+
+    await stakingPool.write.exit({ account: stakerClient.account.address });
+
+    strictEqual(await fluxToken.read.balanceOf([stakingPool.address]), 0n);
+    strictEqual(await fluxToken.read.balanceOf([stakerClient.account.address]), userFunding + rewardAmount);
+  });
+
   it("should block distributor execution while paused", async function () {
     await revenueDistributor.write.pause({ account: multisigClient.account.address });
 
@@ -256,6 +295,26 @@ describe("FluxRevenueDistributor", async function () {
         account: operatorClient.account.address,
       }),
       "FluxRevenueDistributor: PAUSED"
+    );
+  });
+
+  it("should reject execution if manager and buyback executor treasury pointers diverge", async function () {
+    const alternateTreasury = await viem.deployContract("FluxSwapTreasury", [
+      multisigClient.account.address,
+      guardianClient.account.address,
+      operatorClient.account.address,
+      timelockDelay,
+    ]);
+
+    await manager.write.setTreasury([alternateTreasury.address], {
+      account: multisigClient.account.address,
+    });
+
+    await expectRevert(
+      revenueDistributor.write.distributeTreasuryRewards([1n], {
+        account: operatorClient.account.address,
+      }),
+      "FluxRevenueDistributor: TREASURY_MISMATCH"
     );
   });
 

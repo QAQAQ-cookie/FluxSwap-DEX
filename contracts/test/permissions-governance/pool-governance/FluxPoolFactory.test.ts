@@ -211,6 +211,7 @@ describe("FluxPoolFactory", async function () {
 
     strictEqual((await pool.read.owner()).toLowerCase(), operatorClient.account.address.toLowerCase());
     strictEqual(await poolFactory.read.managedPools([poolAddress]), false);
+    strictEqual((await manager.read.pools([0n]))[2], false);
 
     await expectRevert(
       poolFactory.write.setManagedPoolRewardSource([poolAddress, treasury.address], {
@@ -218,6 +219,36 @@ describe("FluxPoolFactory", async function () {
       }),
       "FluxPoolFactory: POOL_NOT_MANAGED"
     );
+  });
+
+  it("should allow recreating a managed pool for the same asset after ownership handoff", async function () {
+    const stakingToken = await viem.deployContract("MockERC20", ["Stake Token", "STK", 18]);
+
+    await poolFactory.write.createSingleTokenPool([stakingToken.address, 40n, true], {
+      account: multisigClient.account.address,
+    });
+
+    const originalPool = await poolFactory.read.singleTokenPools([stakingToken.address]);
+
+    await poolFactory.write.transferManagedPoolOwnership([originalPool, operatorClient.account.address], {
+      account: multisigClient.account.address,
+    });
+
+    await poolFactory.write.createSingleTokenPool([stakingToken.address, 60n, true], {
+      account: multisigClient.account.address,
+    });
+
+    const replacementPool = await poolFactory.read.singleTokenPools([stakingToken.address]);
+    const originalPoolInfo = await manager.read.pools([0n]);
+    const replacementPoolInfo = await manager.read.pools([1n]);
+
+    ok(replacementPool !== originalPool, "expected a newly created managed pool");
+    strictEqual(await poolFactory.read.managedPools([replacementPool]), true);
+    strictEqual(originalPoolInfo[0].toLowerCase(), originalPool.toLowerCase());
+    strictEqual(originalPoolInfo[2], false);
+    strictEqual(replacementPoolInfo[0].toLowerCase(), replacementPool.toLowerCase());
+    strictEqual(replacementPoolInfo[2], true);
+    strictEqual(await manager.read.totalAllocPoint(), 60n);
   });
 
   it("should reject handing a managed pool to its current owner", async function () {

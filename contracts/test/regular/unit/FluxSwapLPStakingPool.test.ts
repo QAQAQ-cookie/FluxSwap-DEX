@@ -133,6 +133,75 @@ describe("FluxSwapLPStakingPool", async function () {
     );
   });
 
+  it("should validate constructor addresses", async function () {
+    await expectRevert(
+      viem.deployContract("FluxSwapLPStakingPool", [
+        multisigClient.account.address,
+        "0x0000000000000000000000000000000000000000",
+        pair.address,
+        fluxToken.address,
+        treasury.address,
+        operatorClient.account.address,
+      ]),
+      "FluxSwapLPStakingPool: ZERO_ADDRESS"
+    );
+
+    await expectRevert(
+      viem.deployContract("FluxSwapLPStakingPool", [
+        multisigClient.account.address,
+        factory.address,
+        "0x0000000000000000000000000000000000000000",
+        fluxToken.address,
+        treasury.address,
+        operatorClient.account.address,
+      ]),
+      "FluxSwapStakingRewards: ZERO_ADDRESS"
+    );
+
+    await expectRevert(
+      viem.deployContract("FluxSwapLPStakingPool", [
+        multisigClient.account.address,
+        factory.address,
+        pair.address,
+        "0x0000000000000000000000000000000000000000",
+        treasury.address,
+        operatorClient.account.address,
+      ]),
+      "FluxSwapStakingRewards: ZERO_ADDRESS"
+    );
+
+    await expectRevert(
+      viem.deployContract("FluxSwapLPStakingPool", [
+        multisigClient.account.address,
+        factory.address,
+        pair.address,
+        fluxToken.address,
+        "0x0000000000000000000000000000000000000000",
+        operatorClient.account.address,
+      ]),
+      "FluxSwapStakingRewards: ZERO_ADDRESS"
+    );
+
+    await expectRevert(
+      viem.deployContract("FluxSwapLPStakingPool", [
+        multisigClient.account.address,
+        factory.address,
+        pair.address,
+        fluxToken.address,
+        treasury.address,
+        "0x0000000000000000000000000000000000000000",
+      ]),
+      "FluxSwapStakingRewards: ZERO_ADDRESS"
+    );
+  });
+
+  it("should expose immutable LP pair metadata", async function () {
+    strictEqual((await pool.read.factory()).toLowerCase(), factory.address.toLowerCase());
+    strictEqual((await pool.read.lpToken()).toLowerCase(), pair.address.toLowerCase());
+    strictEqual((await pool.read.token0()).toLowerCase(), (await pair.read.token0()).toLowerCase());
+    strictEqual((await pool.read.token1()).toLowerCase(), (await pair.read.token1()).toLowerCase());
+  });
+
   it("should stake LP tokens and earn FLUX rewards from treasury", async function () {
     const lpStakeAmount = 100n * 10n ** 18n;
     const rewardAmount = 700n * 10n ** 18n;

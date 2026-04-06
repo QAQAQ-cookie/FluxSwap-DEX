@@ -66,6 +66,13 @@ describe("FluxBuybackExecutor", async function () {
     );
   }
 
+  async function configureDailySpendCap(tokenAddress: `0x${string}`, spendingCap: bigint) {
+    const capOp = await treasury.read.hashSetDailySpendCap([tokenAddress, spendingCap]);
+    await scheduleAndExecute(capOp, () =>
+      treasury.write.executeSetDailySpendCap([tokenAddress, spendingCap, capOp])
+    );
+  }
+
   async function approveTreasurySpender(tokenAddress: `0x${string}`, spender: `0x${string}`, amount: bigint) {
     const approveOp = await treasury.read.hashApproveSpender([tokenAddress, spender, amount]);
     await scheduleAndExecute(approveOp, () =>
@@ -253,6 +260,21 @@ describe("FluxBuybackExecutor", async function () {
         { account: operatorClient.account.address }
       ),
       "FluxBuybackExecutor: TREASURY_PAUSED"
+    );
+  });
+
+  it("should enforce treasury daily spend caps for approved buyback spenders", async function () {
+    const amountIn = 100n * 10n ** 18n;
+
+    await configureDailySpendCap(revenueToken.address, amountIn - 1n);
+    await approveTreasurySpender(revenueToken.address, buybackExecutor.address, amountIn);
+
+    await expectRevert(
+      buybackExecutor.write.executeBuyback(
+        [revenueToken.address, amountIn, 0n, [revenueToken.address, fluxToken.address], treasury.address, await getDeadline()],
+        { account: operatorClient.account.address }
+      ),
+      "FluxSwapTreasury: DAILY_CAP_EXCEEDED"
     );
   });
 

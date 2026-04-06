@@ -349,6 +349,48 @@ describe("v2-FluxSwap", async function () {
       }
       strictEqual(errorOccurred, true);
     });
+
+    it("should enforce amountAMin on initial liquidity", async function () {
+      const isolatedFactory = await viem.deployContract("FluxSwapFactory", [deployer]);
+      const isolatedRouter = await viem.deployContract("FluxSwapRouter", [isolatedFactory.address, WETH.address]);
+      const isolatedTokenA = await viem.deployContract("MockERC20", ["Isolated Token A", "ITKA", 18]);
+      const isolatedTokenB = await viem.deployContract("MockERC20", ["Isolated Token B", "ITKB", 18]);
+
+      await isolatedTokenA.write.mint([lp, 1_000n * 10n ** 18n]);
+      await isolatedTokenB.write.mint([lp, 1_000n * 10n ** 18n]);
+      await isolatedTokenA.write.approve([isolatedRouter.address, 1_000n * 10n ** 18n], { account: lp });
+      await isolatedTokenB.write.approve([isolatedRouter.address, 1_000n * 10n ** 18n], { account: lp });
+
+      await expectRevert(
+        isolatedRouter.write.addLiquidity([
+          isolatedTokenA.address,
+          isolatedTokenB.address,
+          100n * 10n ** 18n,
+          100n * 10n ** 18n,
+          101n * 10n ** 18n,
+          100n * 10n ** 18n,
+          lp,
+          getDeadline(),
+        ], { account: lp }),
+        "FluxSwapRouter: INSUFFICIENT_A_AMOUNT"
+      );
+    });
+
+    it("should enforce amountBMin when tokenB is the limiting side", async function () {
+      await expectRevert(
+        router.write.addLiquidity([
+          tokenA.address,
+          tokenB.address,
+          2n * 10n ** 18n,
+          1n * 10n ** 18n,
+          0n,
+          1n * 10n ** 18n + 1n,
+          lp,
+          getDeadline(),
+        ], { account: lp }),
+        "FluxSwapRouter: INSUFFICIENT_B_AMOUNT"
+      );
+    });
   });
 
   /**
@@ -383,6 +425,43 @@ describe("v2-FluxSwap", async function () {
       await expectRevert(
         viem.deployContract("FluxSwapRouter", [factory.address, "0x0000000000000000000000000000000000000000"]),
         "FluxSwapRouter: ZERO_ADDRESS"
+      );
+    });
+
+    it("should enforce token minimums on initial ETH liquidity", async function () {
+      const isolatedFactory = await viem.deployContract("FluxSwapFactory", [deployer]);
+      const isolatedRouter = await viem.deployContract("FluxSwapRouter", [isolatedFactory.address, WETH.address]);
+      const isolatedToken = await viem.deployContract("MockERC20", ["Isolated Token", "ITK", 18]);
+
+      await isolatedToken.write.mint([lp, 1_000n * 10n ** 18n]);
+      await isolatedToken.write.approve([isolatedRouter.address, 1_000n * 10n ** 18n], { account: lp });
+
+      await expectRevert(
+        isolatedRouter.write.addLiquidityETH([
+          isolatedToken.address,
+          100n * 10n ** 18n,
+          101n * 10n ** 18n,
+          100n * 10n ** 18n,
+          lp,
+          getDeadline(),
+        ], { account: lp, value: 100n * 10n ** 18n }),
+        "FluxSwapRouter: INSUFFICIENT_TOKEN_AMOUNT"
+      );
+    });
+
+    it("should enforce amountETHMin when ETH is the limiting side", async function () {
+      await tokenB.write.approve([router.address, 2n * 10n ** 18n], { account: lp });
+
+      await expectRevert(
+        router.write.addLiquidityETH([
+          tokenB.address,
+          2n * 10n ** 18n,
+          0n,
+          1n * 10n ** 18n + 1n,
+          lp,
+          getDeadline(),
+        ], { account: lp, value: 1n * 10n ** 18n }),
+        "FluxSwapRouter: INSUFFICIENT_ETH_AMOUNT"
       );
     });
   });
@@ -1442,6 +1521,74 @@ describe("v2-FluxSwap", async function () {
       const balanceAfter = await publicClient.getBalance({ address: trader });
 
       ok(balanceAfter + gasPaid > balanceBefore, "Trader should receive ETH output");
+    });
+
+    it("should not let fee-on-transfer ETH swaps drain pre-existing WETH from the router", async function () {
+      const feeToken = await viem.deployContract("MockFeeOnTransferERC20", ["Tax Token", "TAX", 18, 100n]);
+      await factory.write.createPair([feeToken.address, WETH.address]);
+      const taxedPairAddress = await factory.read.getPair([feeToken.address, WETH.address]);
+      const taxedPair = await viem.getContractAt("FluxSwapPair", taxedPairAddress);
+
+      const tokenLiquidity = 10000n * 10n ** 18n;
+      const ethLiquidity = 10n * 10n ** 18n;
+      const swapAmount = 100n * 10n ** 18n;
+      const strayWETH = 2n * 10n ** 17n;
+
+      await feeToken.write.mint([lp, 20000n * 10n ** 18n]);
+      await feeToken.write.mint([trader, 1000n * 10n ** 18n]);
+      await feeToken.write.transfer([taxedPairAddress, tokenLiquidity], { account: lp });
+      await WETH.write.deposit({ account: lp, value: ethLiquidity + strayWETH });
+      await WETH.write.transfer([taxedPairAddress, ethLiquidity], { account: lp });
+      await taxedPair.write.mint([lp], { account: lp });
+
+      await WETH.write.transfer([router.address, strayWETH], { account: lp });
+      strictEqual(await WETH.read.balanceOf([router.address]), strayWETH);
+
+      await feeToken.write.approve([router.address, swapAmount], { account: trader });
+
+      const balanceBefore = await publicClient.getBalance({ address: trader });
+      const hash = await router.write.swapExactTokensForETHSupportingFeeOnTransferTokens(
+        [swapAmount, 1n, [feeToken.address, WETH.address], trader, getDeadline()],
+        { account: trader }
+      );
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      const gasPaid = receipt.gasUsed * receipt.effectiveGasPrice;
+      const balanceAfter = await publicClient.getBalance({ address: trader });
+
+      ok(balanceAfter + gasPaid > balanceBefore, "Trader should receive ETH output");
+      strictEqual(await WETH.read.balanceOf([router.address]), strayWETH);
+    });
+
+    it("should reject invalid paths in supporting fee-on-transfer swap functions", async function () {
+      const feeToken = await viem.deployContract("MockFeeOnTransferERC20", ["Tax Token", "TAX", 18, 100n]);
+      const swapAmount = 10n * 10n ** 18n;
+
+      await feeToken.write.mint([trader, swapAmount]);
+      await feeToken.write.approve([router.address, swapAmount], { account: trader });
+
+      await expectRevert(
+        router.write.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+          [swapAmount, 1n, [feeToken.address], trader, getDeadline()],
+          { account: trader }
+        ),
+        "FluxSwapRouter: INVALID_PATH"
+      );
+
+      await expectRevert(
+        router.write.swapExactETHForTokensSupportingFeeOnTransferTokens(
+          [1n, [WETH.address], trader, getDeadline()],
+          { account: trader, value: 1n * 10n ** 18n }
+        ),
+        "FluxSwapRouter: INVALID_PATH"
+      );
+
+      await expectRevert(
+        router.write.swapExactTokensForETHSupportingFeeOnTransferTokens(
+          [swapAmount, 1n, [feeToken.address], trader, getDeadline()],
+          { account: trader }
+        ),
+        "FluxSwapRouter: INVALID_PATH"
+      );
     });
   });
 

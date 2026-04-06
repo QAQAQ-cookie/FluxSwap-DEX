@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "npx hardhat test"
+    "test": "npx hardhat test",
+    "test:unit": "node ./scripts/run-unit-tests.mjs",
+    "test:integration": "node ./scripts/run-integration-tests.mjs"
   },
   "keywords": [],
   "author": "",

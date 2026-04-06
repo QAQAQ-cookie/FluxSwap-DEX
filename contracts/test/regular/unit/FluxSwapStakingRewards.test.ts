@@ -39,6 +39,13 @@ describe("FluxSwapStakingRewards", async function () {
     await execute();
   }
 
+  async function approveTreasurySpender(tokenAddress: `0x${string}`, spender: `0x${string}`, amount: bigint) {
+    const approveOp = await treasury.read.hashApproveSpender([tokenAddress, spender, amount]);
+    await scheduleAndExecute(approveOp, () =>
+      treasury.write.executeApproveSpender([tokenAddress, spender, amount, approveOp])
+    );
+  }
+
   beforeEach(async function () {
     treasury = await viem.deployContract("FluxSwapTreasury", [
       multisigClient.account.address,
@@ -71,11 +78,112 @@ describe("FluxSwapStakingRewards", async function () {
   });
 
   async function approveRewardSpender(amount: bigint) {
-    const approveOp = await treasury.read.hashApproveSpender([rewardToken.address, stakingRewards.address, amount]);
-    await scheduleAndExecute(approveOp, () =>
-      treasury.write.executeApproveSpender([rewardToken.address, stakingRewards.address, amount, approveOp])
-    );
+    await approveTreasurySpender(rewardToken.address, stakingRewards.address, amount);
   }
+
+  it("should validate constructor inputs", async function () {
+    await expectRevert(
+      viem.deployContract("FluxSwapStakingRewards", [
+        "0x0000000000000000000000000000000000000000",
+        stakeToken.address,
+        rewardToken.address,
+        treasury.address,
+        operatorClient.account.address,
+      ]),
+      "FluxSwapStakingRewards: ZERO_ADDRESS"
+    );
+
+    await expectRevert(
+      viem.deployContract("FluxSwapStakingRewards", [
+        multisigClient.account.address,
+        "0x0000000000000000000000000000000000000000",
+        rewardToken.address,
+        treasury.address,
+        operatorClient.account.address,
+      ]),
+      "FluxSwapStakingRewards: ZERO_ADDRESS"
+    );
+
+    await expectRevert(
+      viem.deployContract("FluxSwapStakingRewards", [
+        multisigClient.account.address,
+        stakeToken.address,
+        "0x0000000000000000000000000000000000000000",
+        treasury.address,
+        operatorClient.account.address,
+      ]),
+      "FluxSwapStakingRewards: ZERO_ADDRESS"
+    );
+
+    await expectRevert(
+      viem.deployContract("FluxSwapStakingRewards", [
+        multisigClient.account.address,
+        stakeToken.address,
+        rewardToken.address,
+        "0x0000000000000000000000000000000000000000",
+        operatorClient.account.address,
+      ]),
+      "FluxSwapStakingRewards: ZERO_ADDRESS"
+    );
+
+    await expectRevert(
+      viem.deployContract("FluxSwapStakingRewards", [
+        multisigClient.account.address,
+        stakeToken.address,
+        rewardToken.address,
+        treasury.address,
+        "0x0000000000000000000000000000000000000000",
+      ]),
+      "FluxSwapStakingRewards: ZERO_ADDRESS"
+    );
+  });
+
+  it("should allow the owner to update reward source and notifier individually when not in self-sync mode", async function () {
+    await stakingRewards.write.setRewardSource([userAClient.account.address], {
+      account: multisigClient.account.address,
+    });
+    await stakingRewards.write.setRewardNotifier([userBClient.account.address], {
+      account: multisigClient.account.address,
+    });
+
+    strictEqual((await stakingRewards.read.rewardSource()).toLowerCase(), userAClient.account.address.toLowerCase());
+    strictEqual((await stakingRewards.read.rewardNotifier()).toLowerCase(), userBClient.account.address.toLowerCase());
+
+    await expectRevert(
+      stakingRewards.write.setRewardSource(["0x0000000000000000000000000000000000000000"], {
+        account: multisigClient.account.address,
+      }),
+      "FluxSwapStakingRewards: ZERO_ADDRESS"
+    );
+
+    await expectRevert(
+      stakingRewards.write.setRewardNotifier(["0x0000000000000000000000000000000000000000"], {
+        account: multisigClient.account.address,
+      }),
+      "FluxSwapStakingRewards: ZERO_ADDRESS"
+    );
+  });
+
+  it("should validate stake and withdraw amounts", async function () {
+    await expectRevert(
+      stakingRewards.write.stake([0n], { account: userAClient.account.address }),
+      "FluxSwapStakingRewards: ZERO_AMOUNT"
+    );
+
+    await stakingRewards.write.stake([10n * 10n ** 18n], {
+      account: userAClient.account.address,
+    });
+
+    await expectRevert(
+      stakingRewards.write.withdraw([0n], { account: userAClient.account.address }),
+      "FluxSwapStakingRewards: ZERO_AMOUNT"
+    );
+
+    await expectRevert(
+      stakingRewards.write.withdraw([11n * 10n ** 18n], { account: userAClient.account.address }),
+      "FluxSwapStakingRewards: INSUFFICIENT_BALANCE"
+    );
+  });
 
   it("should distribute treasury-funded rewards to a single staker immediately in the accounting", async function () {
     const rewardAmount = 700n * 10n ** 18n;
@@ -129,6 +237,56 @@ describe("FluxSwapStakingRewards", async function () {
     );
   });
 
+  it("should allow the owner to update reward configuration atomically", async function () {
+    await stakingRewards.write.setRewardConfiguration([userAClient.account.address, userBClient.account.address], {
+      account: multisigClient.account.address,
+    });
+
+    strictEqual((await stakingRewards.read.rewardSource()).toLowerCase(), userAClient.account.address.toLowerCase());
+    strictEqual((await stakingRewards.read.rewardNotifier()).toLowerCase(), userBClient.account.address.toLowerCase());
+  });
+
+  it("should reject partial reward configuration changes while using self-sync mode", async function () {
+    await stakingRewards.write.setRewardConfiguration([treasury.address, stakingRewards.address], {
+      account: multisigClient.account.address,
+    });
+
+    await expectRevert(
+      stakingRewards.write.setRewardSource([userAClient.account.address], {
+        account: multisigClient.account.address,
+      }),
+      "FluxSwapStakingRewards: USE_REWARD_CONFIGURATION"
+    );
+
+    await expectRevert(
+      stakingRewards.write.setRewardNotifier([userBClient.account.address], {
+        account: multisigClient.account.address,
+      }),
+      "FluxSwapStakingRewards: USE_REWARD_CONFIGURATION"
+    );
+  });
+
+  it("should transfer ownership and restrict config updates to the new owner", async function () {
+    await stakingRewards.write.transferOwnership([userAClient.account.address], {
+      account: multisigClient.account.address,
+    });
+
+    await expectRevert(
+      stakingRewards.write.setRewardConfiguration([userAClient.account.address, userBClient.account.address], {
+        account: multisigClient.account.address,
+      }),
+      "FluxSwapStakingRewards: FORBIDDEN"
+    );
+
+    await stakingRewards.write.setRewardConfiguration([userBClient.account.address, userAClient.account.address], {
+      account: userAClient.account.address,
+    });
+
+    strictEqual((await stakingRewards.read.owner()).toLowerCase(), userAClient.account.address.toLowerCase());
+    strictEqual((await stakingRewards.read.rewardSource()).toLowerCase(), userBClient.account.address.toLowerCase());
+    strictEqual((await stakingRewards.read.rewardNotifier()).toLowerCase(), userAClient.account.address.toLowerCase());
+  });
+
   it("should roll queued dust into the next reward distribution", async function () {
     await approveRewardSpender(28n);
     await stakingRewards.write.stake([7n], { account: userAClient.account.address });
@@ -169,6 +327,22 @@ describe("FluxSwapStakingRewards", async function () {
     strictEqual(await stakingRewards.read.rewardReserve(), 0n);
   });
 
+  it("should keep previously queued rounding dust with existing stakers when a new staker joins", async function () {
+    await approveRewardSpender(10n);
+
+    await stakingRewards.write.stake([3n], { account: userAClient.account.address });
+    await stakingRewards.write.notifyRewardAmount([10n], { account: operatorClient.account.address });
+
+    strictEqual(await stakingRewards.read.earned([userAClient.account.address]), 9n);
+    strictEqual(await stakingRewards.read.queuedRewards(), 1n);
+
+    await stakingRewards.write.stake([1n], { account: userBClient.account.address });
+
+    strictEqual(await stakingRewards.read.earned([userAClient.account.address]), 10n);
+    strictEqual(await stakingRewards.read.earned([userBClient.account.address]), 0n);
+    strictEqual(await stakingRewards.read.queuedRewards(), 0n);
+  });
+
   it("should block reward notifications when the treasury reward source is paused", async function () {
     await approveRewardSpender(100n * 10n ** 18n);
     await treasury.write.pause({ account: guardianClient.account.address });
@@ -195,6 +369,48 @@ describe("FluxSwapStakingRewards", async function () {
     strictEqual(await stakingRewards.read.queuedRewards(), 0n);
   });
 
+  it("should sync rewards from a self-updating manager source", async function () {
+    const manager = await viem.deployContract("FluxMultiPoolManager", [
+      multisigClient.account.address,
+      treasury.address,
+      operatorClient.account.address,
+      rewardToken.address,
+    ]);
+
+    const selfSyncPool = await viem.deployContract("FluxSwapStakingRewards", [
+      multisigClient.account.address,
+      stakeToken.address,
+      rewardToken.address,
+      manager.address,
+      manager.address,
+    ]);
+
+    await selfSyncPool.write.setRewardConfiguration([manager.address, selfSyncPool.address], {
+      account: multisigClient.account.address,
+    });
+    await manager.write.addPool([selfSyncPool.address, 100n, true], {
+      account: multisigClient.account.address,
+    });
+
+    await stakeToken.write.approve([selfSyncPool.address, 1_000n * 10n ** 18n], {
+      account: userAClient.account.address,
+    });
+    await selfSyncPool.write.stake([100n * 10n ** 18n], {
+      account: userAClient.account.address,
+    });
+
+    await approveTreasurySpender(rewardToken.address, manager.address, 200n * 10n ** 18n);
+    await manager.write.distributeRewards([200n * 10n ** 18n], {
+      account: operatorClient.account.address,
+    });
+
+    await selfSyncPool.write.syncRewards();
+
+    strictEqual(await rewardToken.read.balanceOf([selfSyncPool.address]), 200n * 10n ** 18n);
+    strictEqual(await selfSyncPool.read.rewardReserve(), 200n * 10n ** 18n);
+    strictEqual(await selfSyncPool.read.earned([userAClient.account.address]), 200n * 10n ** 18n);
+  });
+
   it("should release queued rewards when the first staker enters after rewards arrived", async function () {
     await approveRewardSpender(10n);
     await stakingRewards.write.notifyRewardAmount([10n], { account: operatorClient.account.address });
@@ -216,13 +432,16 @@ describe("FluxSwapStakingRewards", async function () {
     await stakingRewards.write.withdraw([3n], { account: userAClient.account.address });
     const pendingReward = await stakingRewards.read.pendingUserRewards();
 
-    strictEqual(pendingReward, 9n);
+    strictEqual(pendingReward, 10n);
 
-    await stakingRewards.write.recoverUnallocatedRewards([userBClient.account.address], {
-      account: multisigClient.account.address,
-    });
+    await expectRevert(
+      stakingRewards.write.recoverUnallocatedRewards([userBClient.account.address], {
+        account: multisigClient.account.address,
+      }),
+      "FluxSwapStakingRewards: NO_UNALLOCATED_REWARDS"
+    );
 
-    strictEqual(await rewardToken.read.balanceOf([userBClient.account.address]), 1n);
+    strictEqual(await rewardToken.read.balanceOf([userBClient.account.address]), 0n);
     strictEqual(await stakingRewards.read.rewardReserve(), pendingReward);
 
     await stakingRewards.write.getReward({ account: userAClient.account.address });

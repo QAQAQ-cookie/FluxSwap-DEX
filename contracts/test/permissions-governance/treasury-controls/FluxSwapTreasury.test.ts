@@ -205,7 +205,7 @@ describe("FluxSwapTreasury", async function () {
     );
   });
 
-  it("should manage spender approvals through timelocked operations", async function () {
+  it("should manage treasury-enforced spender caps through timelocked operations", async function () {
     await token.write.mint([treasury.address, 1000n * 10n ** 18n]);
 
     const approveOp = await treasury.read.hashApproveSpender([token.address, spenderClient.account.address, 250n * 10n ** 18n]);
@@ -213,20 +213,44 @@ describe("FluxSwapTreasury", async function () {
       treasury.write.executeApproveSpender([token.address, spenderClient.account.address, 250n * 10n ** 18n, approveOp])
     );
 
-    strictEqual(
-      await token.read.allowance([treasury.address, spenderClient.account.address]),
-      250n * 10n ** 18n
-    );
+    strictEqual(await treasury.read.approvedSpendRemaining([token.address, spenderClient.account.address]), 250n * 10n ** 18n);
+    strictEqual(await token.read.allowance([treasury.address, spenderClient.account.address]), 0n);
+
+    await treasury.write.pullApprovedToken([token.address, 100n * 10n ** 18n], {
+      account: spenderClient.account.address,
+    });
+
+    strictEqual(await token.read.balanceOf([spenderClient.account.address]), 100n * 10n ** 18n);
+    strictEqual(await treasury.read.approvedSpendRemaining([token.address, spenderClient.account.address]), 150n * 10n ** 18n);
 
     const revokeOp = await treasury.read.hashRevokeSpender([token.address, spenderClient.account.address]);
     await scheduleAndExecute(revokeOp, () =>
       treasury.write.executeRevokeSpender([token.address, spenderClient.account.address, revokeOp])
     );
 
-    strictEqual(await token.read.allowance([treasury.address, spenderClient.account.address]), 0n);
+    strictEqual(await treasury.read.approvedSpendRemaining([token.address, spenderClient.account.address]), 0n);
   });
 
-  it("should support timelocked spender approvals for tokens that do not return bool on approve", async function () {
+  it("should block approved spenders from bypassing treasury accounting with raw transferFrom", async function () {
+    await token.write.mint([treasury.address, 1000n * 10n ** 18n]);
+
+    const approveOp = await treasury.read.hashApproveSpender([token.address, spenderClient.account.address, 250n * 10n ** 18n]);
+    await scheduleAndExecute(approveOp, () =>
+      treasury.write.executeApproveSpender([token.address, spenderClient.account.address, 250n * 10n ** 18n, approveOp])
+    );
+
+    await expectRevert(
+      token.write.transferFrom([treasury.address, recipientClient.account.address, 250n * 10n ** 18n], {
+        account: spenderClient.account.address,
+      }),
+      "Insufficient allowance"
+    );
+
+    strictEqual(await token.read.balanceOf([recipientClient.account.address]), 0n);
+    strictEqual(await treasury.read.approvedSpendRemaining([token.address, spenderClient.account.address]), 250n * 10n ** 18n);
+  });
+
+  it("should support treasury-enforced spender pulls for tokens that do not return bool on approve", async function () {
     const noReturnToken = await viem.deployContract("MockNoReturnERC20", ["No Return Token", "NRT", 18]);
     await noReturnToken.write.mint([treasury.address, 1000n * 10n ** 18n]);
 
@@ -244,17 +268,22 @@ describe("FluxSwapTreasury", async function () {
       ])
     );
 
-    strictEqual(
-      await noReturnToken.read.allowance([treasury.address, spenderClient.account.address]),
-      250n * 10n ** 18n
-    );
+    strictEqual(await treasury.read.approvedSpendRemaining([noReturnToken.address, spenderClient.account.address]), 250n * 10n ** 18n);
+    strictEqual(await noReturnToken.read.allowance([treasury.address, spenderClient.account.address]), 0n);
+
+    await treasury.write.pullApprovedToken([noReturnToken.address, 125n * 10n ** 18n], {
+      account: spenderClient.account.address,
+    });
+
+    strictEqual(await noReturnToken.read.balanceOf([spenderClient.account.address]), 125n * 10n ** 18n);
+    strictEqual(await treasury.read.approvedSpendRemaining([noReturnToken.address, spenderClient.account.address]), 125n * 10n ** 18n);
 
     const revokeOp = await treasury.read.hashRevokeSpender([noReturnToken.address, spenderClient.account.address]);
     await scheduleAndExecute(revokeOp, () =>
       treasury.write.executeRevokeSpender([noReturnToken.address, spenderClient.account.address, revokeOp])
     );
 
-    strictEqual(await noReturnToken.read.allowance([treasury.address, spenderClient.account.address]), 0n);
+    strictEqual(await treasury.read.approvedSpendRemaining([noReturnToken.address, spenderClient.account.address]), 0n);
   });
 
   it("should release ETH through daily-capped native allocations", async function () {
