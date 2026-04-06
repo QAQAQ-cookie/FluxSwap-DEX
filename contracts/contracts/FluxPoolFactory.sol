@@ -15,6 +15,8 @@ contract FluxPoolFactory is Ownable {
     mapping(address => address) public singleTokenPools;
     mapping(address => address) public lpTokenPools;
     mapping(address => bool) public managedPools;
+    mapping(address => address) public managedPoolStakingAsset;
+    mapping(address => bool) public managedPoolIsLP;
 
     event SingleTokenPoolCreated(address indexed stakingToken, address indexed pool, uint256 allocPoint, bool active);
     event LPPoolCreated(address indexed lpToken, address indexed pool, uint256 allocPoint, bool active);
@@ -48,6 +50,8 @@ contract FluxPoolFactory is Ownable {
 
         singleTokenPools[stakingToken] = pool;
         managedPools[pool] = true;
+        managedPoolStakingAsset[pool] = stakingToken;
+        managedPoolIsLP[pool] = false;
         IFluxMultiPoolManager(manager).addPool(pool, allocPoint, active);
 
         emit SingleTokenPoolCreated(stakingToken, pool, allocPoint, active);
@@ -72,6 +76,8 @@ contract FluxPoolFactory is Ownable {
 
         lpTokenPools[lpToken] = pool;
         managedPools[pool] = true;
+        managedPoolStakingAsset[pool] = lpToken;
+        managedPoolIsLP[pool] = true;
         IFluxMultiPoolManager(manager).addPool(pool, allocPoint, active);
 
         emit LPPoolCreated(lpToken, pool, allocPoint, active);
@@ -102,7 +108,9 @@ contract FluxPoolFactory is Ownable {
     function transferManagedPoolOwnership(address pool, address newOwner) external onlyOwner {
         _requireManagedPool(pool);
         require(newOwner != FluxSwapStakingRewards(pool).owner(), "FluxPoolFactory: SAME_OWNER");
+        IFluxMultiPoolManager(manager).deactivatePool(pool);
         FluxSwapStakingRewards(pool).transferOwnership(newOwner);
+        _clearManagedPoolAssetRegistration(pool);
         managedPools[pool] = false;
         emit ManagedPoolOwnershipTransferred(pool, newOwner);
     }
@@ -115,5 +123,21 @@ contract FluxPoolFactory is Ownable {
 
     function _requireManagedPool(address pool) private view {
         require(managedPools[pool], "FluxPoolFactory: POOL_NOT_MANAGED");
+    }
+
+    function _clearManagedPoolAssetRegistration(address pool) private {
+        address stakingAsset = managedPoolStakingAsset[pool];
+        if (stakingAsset == address(0)) {
+            return;
+        }
+
+        if (managedPoolIsLP[pool]) {
+            delete lpTokenPools[stakingAsset];
+        } else {
+            delete singleTokenPools[stakingAsset];
+        }
+
+        delete managedPoolStakingAsset[pool];
+        delete managedPoolIsLP[pool];
     }
 }

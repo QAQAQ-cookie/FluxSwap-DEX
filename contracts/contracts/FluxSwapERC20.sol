@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+
 contract FluxSwapERC20 {
     string public constant name = "FluxSwap LP";
     string public constant symbol = "FLUX-LP";
@@ -98,7 +100,7 @@ contract FluxSwapERC20 {
                 keccak256(abi.encode(PERMIT_TYPEHASH, owner, spender, value, nonces[owner]++, deadline))
             )
         );
-        address recoveredAddress = ecrecover(digest, v, r, s);
+        address recoveredAddress = ECDSA.recover(digest, v, r, s);
         require(recoveredAddress != address(0) && recoveredAddress == owner, "FluxSwap: INVALID_SIGNATURE");
         _approve(owner, spender, value);
     }

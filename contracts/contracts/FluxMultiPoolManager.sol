@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
+import "../interfaces/IFluxSwapTreasury.sol";
 import "../libraries/TransferHelper.sol";
 
 contract FluxMultiPoolManager is Ownable, AccessControl {
@@ -173,6 +174,22 @@ contract FluxMultiPoolManager is Ownable, AccessControl {
         emit PoolAdded(pid, pool, allocPoint, active);
     }
 
+    function deactivatePool(address pool) external onlyOwnerOrPoolFactory {
+        uint256 pidPlusOne = poolPidPlusOne[pool];
+        require(pidPlusOne != 0, "FluxMultiPoolManager: INVALID_POOL");
+
+        uint256 pid = pidPlusOne - 1;
+        PoolInfo storage poolInfo = pools[pid];
+        _accruePool(poolInfo);
+
+        if (poolInfo.active) {
+            totalAllocPoint -= poolInfo.allocPoint;
+            poolInfo.active = false;
+            poolInfo.rewardDebt = 0;
+            emit PoolUpdated(pid, poolInfo.allocPoint, false);
+        }
+    }
+
     function setPool(uint256 pid, uint256 allocPoint, bool active) external onlyOwner {
         require(pid < pools.length, "FluxMultiPoolManager: INVALID_POOL");
 
@@ -198,7 +215,7 @@ contract FluxMultiPoolManager is Ownable, AccessControl {
         require(totalAllocPoint > 0, "FluxMultiPoolManager: NO_ACTIVE_POOLS");
 
         _requireSourceNotPaused(treasury, "FluxMultiPoolManager: TREASURY_PAUSED");
-        TransferHelper.safeTransferFrom(rewardToken, treasury, address(this), totalReward);
+        IFluxSwapTreasury(treasury).pullApprovedToken(rewardToken, totalReward);
 
         uint256 distributable = totalReward + undistributedRewards;
         uint256 rewardDelta = (distributable * PRECISION) / totalAllocPoint;

@@ -295,6 +295,7 @@ contract FluxSwapRouter is IFluxSwapRouter {
         address to,
         uint256 deadline
     ) external override ensure(deadline) {
+        require(path.length >= 2, "FluxSwapRouter: INVALID_PATH");
         address pair = _getPairOrRevert(path[0], path[1]);
         TransferHelper.safeTransferFrom(path[0], msg.sender, pair, amountIn);
         uint256 balanceBefore = IERC20(path[path.length - 1]).balanceOf(to);
@@ -311,6 +312,7 @@ contract FluxSwapRouter is IFluxSwapRouter {
         address to,
         uint256 deadline
     ) external payable override ensure(deadline) {
+        require(path.length >= 2, "FluxSwapRouter: INVALID_PATH");
         require(path[0] == WETH, "FluxSwapRouter: INVALID_PATH");
         uint256 balanceBefore = IERC20(path[path.length - 1]).balanceOf(to);
         IWETH(WETH).deposit{value: msg.value}();
@@ -329,11 +331,13 @@ contract FluxSwapRouter is IFluxSwapRouter {
         address to,
         uint256 deadline
     ) external override ensure(deadline) {
+        require(path.length >= 2, "FluxSwapRouter: INVALID_PATH");
         require(path[path.length - 1] == WETH, "FluxSwapRouter: INVALID_PATH");
         address pair = _getPairOrRevert(path[0], path[1]);
         TransferHelper.safeTransferFrom(path[0], msg.sender, pair, amountIn);
+        uint256 balanceBefore = IERC20(WETH).balanceOf(address(this));
         _swapSupportingFeeOnTransferTokens(path, address(this));
-        uint256 amountOut = IERC20(WETH).balanceOf(address(this));
+        uint256 amountOut = IERC20(WETH).balanceOf(address(this)) - balanceBefore;
         require(amountOut >= amountOutMin, "FluxSwapRouter: INSUFFICIENT_OUTPUT_AMOUNT");
         IWETH(WETH).withdraw(amountOut);
         TransferHelper.safeTransferETH(to, amountOut);
@@ -446,16 +450,20 @@ contract FluxSwapRouter is IFluxSwapRouter {
         (uint256 reserveA, uint256 reserveB) = _getReserves(params.tokenA, params.tokenB);
 
         if (reserveA == 0 && reserveB == 0) {
+            require(params.amountADesired >= params.amountAMin, "FluxSwapRouter: INSUFFICIENT_A_AMOUNT");
+            require(params.amountBDesired >= params.amountBMin, "FluxSwapRouter: INSUFFICIENT_B_AMOUNT");
             (amountA, amountB) = (params.amountADesired, params.amountBDesired);
         } else {
             uint256 amountBOptimal = quote(params.amountADesired, reserveA, reserveB);
             if (amountBOptimal <= params.amountBDesired) {
+                require(params.amountADesired >= params.amountAMin, "FluxSwapRouter: INSUFFICIENT_A_AMOUNT");
                 require(amountBOptimal >= params.amountBMin, "FluxSwapRouter: INSUFFICIENT_B_AMOUNT");
                 (amountA, amountB) = (params.amountADesired, amountBOptimal);
             } else {
                 uint256 amountAOptimal = quote(params.amountBDesired, reserveB, reserveA);
                 assert(amountAOptimal <= params.amountADesired);
                 require(amountAOptimal >= params.amountAMin, "FluxSwapRouter: INSUFFICIENT_A_AMOUNT");
+                require(params.amountBDesired >= params.amountBMin, "FluxSwapRouter: INSUFFICIENT_B_AMOUNT");
                 (amountA, amountB) = (amountAOptimal, params.amountBDesired);
             }
         }
@@ -476,16 +484,20 @@ contract FluxSwapRouter is IFluxSwapRouter {
         (uint256 reserveToken, uint256 reserveETH) = _getReserves(params.token, WETH);
 
         if (reserveToken == 0 && reserveETH == 0) {
+            require(params.amountTokenDesired >= params.amountTokenMin, "FluxSwapRouter: INSUFFICIENT_TOKEN_AMOUNT");
+            require(params.value >= params.amountETHMin, "FluxSwapRouter: INSUFFICIENT_ETH_AMOUNT");
             (amountToken, amountETH) = (params.amountTokenDesired, params.value);
         } else {
             uint256 amountETHOptimal = quote(params.amountTokenDesired, reserveToken, reserveETH);
             if (amountETHOptimal <= params.value) {
+                require(params.amountTokenDesired >= params.amountTokenMin, "FluxSwapRouter: INSUFFICIENT_TOKEN_AMOUNT");
                 require(amountETHOptimal >= params.amountETHMin, "FluxSwapRouter: INSUFFICIENT_ETH_AMOUNT");
                 (amountToken, amountETH) = (params.amountTokenDesired, amountETHOptimal);
             } else {
                 uint256 amountTokenOptimal = quote(params.value, reserveETH, reserveToken);
                 assert(amountTokenOptimal <= params.amountTokenDesired);
                 require(amountTokenOptimal >= params.amountTokenMin, "FluxSwapRouter: INSUFFICIENT_TOKEN_AMOUNT");
+                require(params.value >= params.amountETHMin, "FluxSwapRouter: INSUFFICIENT_ETH_AMOUNT");
                 (amountToken, amountETH) = (amountTokenOptimal, params.value);
             }
         }

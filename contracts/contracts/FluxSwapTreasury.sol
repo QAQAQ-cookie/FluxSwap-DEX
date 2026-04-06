@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import "../interfaces/IBurnableERC20.sol";
 import "../interfaces/IERC20.sol";
 import "../libraries/TransferHelper.sol";
 
@@ -16,6 +17,7 @@ contract FluxSwapTreasury {
     mapping(address => uint256) public dailySpendCap;
     mapping(address => uint256) public spentToday;
     mapping(address => uint256) public lastSpendDay;
+    mapping(address => mapping(address => uint256)) public approvedSpendRemaining;
     mapping(bytes32 => uint256) public operationReadyAt;
 
     event OperationScheduled(bytes32 indexed operationId, uint256 executeAfter, address indexed scheduler);
@@ -32,6 +34,14 @@ contract FluxSwapTreasury {
     event NativeAllocationExecuted(address indexed to, uint256 amount, address indexed executor);
     event SpenderApproved(address indexed token, address indexed spender, uint256 amount);
     event SpenderRevoked(address indexed token, address indexed spender);
+    event ApprovedSpenderCapConsumed(address indexed token, address indexed spender, uint256 amount, uint256 remaining);
+    event ApprovedSpenderTokenPulled(
+        address indexed token,
+        address indexed spender,
+        uint256 amount,
+        uint256 remaining
+    );
+    event ApprovedSpenderTokenBurned(address indexed token, address indexed spender, uint256 amount, uint256 remaining);
     event EmergencyWithdraw(address indexed token, address indexed to, uint256 amount);
     event NativeEmergencyWithdraw(address indexed to, uint256 amount);
     event NativeReceived(address indexed from, uint256 amount);
@@ -72,6 +82,10 @@ contract FluxSwapTreasury {
 
     receive() external payable {
         emit NativeReceived(msg.sender, msg.value);
+    }
+
+    function isFluxSwapTreasury() external pure returns (bool) {
+        return true;
     }
 
     function pause() external onlyGuardianOrMultisig {
@@ -167,8 +181,7 @@ contract FluxSwapTreasury {
         require(token != address(0), "FluxSwapTreasury: ZERO_ADDRESS");
         require(spender != address(0), "FluxSwapTreasury: ZERO_ADDRESS");
         _consumeOperation(operationId, hashApproveSpender(token, spender, amount));
-        _safeApprove(token, spender, 0);
-        _safeApprove(token, spender, amount);
+        approvedSpendRemaining[token][spender] = amount;
         emit SpenderApproved(token, spender, amount);
     }
 
@@ -176,8 +189,26 @@ contract FluxSwapTreasury {
         require(token != address(0), "FluxSwapTreasury: ZERO_ADDRESS");
         require(spender != address(0), "FluxSwapTreasury: ZERO_ADDRESS");
         _consumeOperation(operationId, hashRevokeSpender(token, spender));
-        _safeApprove(token, spender, 0);
+        delete approvedSpendRemaining[token][spender];
         emit SpenderRevoked(token, spender);
+    }
+
+    function consumeApprovedSpenderCap(address token, uint256 amount) external whenNotPaused {
+        uint256 remaining = _consumeApprovedSpender(token, amount);
+        emit ApprovedSpenderCapConsumed(token, msg.sender, amount, remaining);
+    }
+
+    function pullApprovedToken(address token, uint256 amount) external whenNotPaused {
+        uint256 remaining = _consumeApprovedSpender(token, amount);
+        TransferHelper.safeTransfer(token, msg.sender, amount);
+
+        emit ApprovedSpenderTokenPulled(token, msg.sender, amount, remaining);
+    }
+
+    function burnApprovedToken(address token, uint256 amount) external whenNotPaused {
+        uint256 remaining = _consumeApprovedSpender(token, amount);
+        IBurnableERC20(token).burn(amount);
+        emit ApprovedSpenderTokenBurned(token, msg.sender, amount, remaining);
     }
 
     function executeEmergencyWithdraw(address token, address to, uint256 amount, bytes32 operationId) external {
@@ -260,13 +291,23 @@ contract FluxSwapTreasury {
         spentToday[token] += amount;
     }
 
-    function _safeApprove(address token, address spender, uint256 amount) private {
-        (bool success, bytes memory data) = token.call(
-            abi.encodeWithSignature("approve(address,uint256)", spender, amount)
-        );
-        require(
-            success && (data.length == 0 || abi.decode(data, (bool))),
-            "FluxSwapTreasury: APPROVE_FAILED"
-        );
+    function _consumeCapIfConfigured(address token, uint256 amount) internal {
+        if (dailySpendCap[token] == 0) {
+            return;
+        }
+
+        _consumeCap(token, amount);
+    }
+
+    function _consumeApprovedSpender(address token, uint256 amount) private returns (uint256 remainingAfter) {
+        require(token != address(0), "FluxSwapTreasury: ZERO_ADDRESS");
+        require(amount > 0, "FluxSwapTreasury: ZERO_AMOUNT");
+
+        uint256 remaining = approvedSpendRemaining[token][msg.sender];
+        require(remaining >= amount, "FluxSwapTreasury: SPENDER_ALLOWANCE_EXCEEDED");
+
+        remainingAfter = remaining - amount;
+        approvedSpendRemaining[token][msg.sender] = remainingAfter;
+        _consumeCapIfConfigured(token, amount);
     }
 }

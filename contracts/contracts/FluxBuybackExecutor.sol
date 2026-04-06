@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
+import "../interfaces/IFluxSwapTreasury.sol";
 import "../interfaces/IFluxSwapRouter.sol";
 import "../libraries/TransferHelper.sol";
 
@@ -165,7 +166,7 @@ contract FluxBuybackExecutor is Ownable, AccessControl {
         }
 
         _requireSourceNotPaused(treasury, "FluxBuybackExecutor: TREASURY_PAUSED");
-        TransferHelper.safeTransferFrom(spendToken, treasury, address(this), amountIn);
+        IFluxSwapTreasury(treasury).pullApprovedToken(spendToken, amountIn);
         _safeApprove(spendToken, router, 0);
         _safeApprove(spendToken, router, amountIn);
 

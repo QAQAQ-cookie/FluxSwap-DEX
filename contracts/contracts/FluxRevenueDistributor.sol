@@ -4,9 +4,9 @@ pragma solidity ^0.8.28;
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
-import "../interfaces/IBurnableERC20.sol";
 import "../interfaces/IFluxBuybackExecutor.sol";
 import "../interfaces/IFluxMultiPoolManager.sol";
+import "../interfaces/IFluxSwapTreasury.sol";
 import "../libraries/TransferHelper.sol";
 
 contract FluxRevenueDistributor is Ownable, AccessControl {
@@ -194,6 +194,8 @@ contract FluxRevenueDistributor is Ownable, AccessControl {
         require(path[0] == spendToken, "FluxRevenueDistributor: INVALID_PATH");
         require(path[path.length - 1] == rewardToken, "FluxRevenueDistributor: INVALID_PATH");
 
+        address treasury = _requireTreasuryMatch();
+
         uint256 buybackAmountIn = (revenueAmount * buybackBps) / BPS_BASE;
         require(buybackAmountIn > 0, "FluxRevenueDistributor: BUYBACK_TOO_SMALL");
 
@@ -208,7 +210,7 @@ contract FluxRevenueDistributor is Ownable, AccessControl {
 
         uint256 burnedAmount = (amountOut * burnBps) / BPS_BASE;
         if (burnedAmount > 0) {
-            IBurnableERC20(rewardToken).burnFrom(IFluxMultiPoolManager(manager).treasury(), burnedAmount);
+            IFluxSwapTreasury(treasury).burnApprovedToken(rewardToken, burnedAmount);
         }
 
         uint256 distributedAmount = amountOut - burnedAmount;
@@ -229,6 +231,7 @@ contract FluxRevenueDistributor is Ownable, AccessControl {
 
     function distributeTreasuryRewards(uint256 amount) external onlyOperatorOrOwner whenNotPaused {
         require(amount > 0, "FluxRevenueDistributor: ZERO_AMOUNT");
+        _requireTreasuryMatch();
         IFluxMultiPoolManager(manager).distributeRewards(amount);
         emit TreasuryRewardsDistributed(amount, msg.sender);
     }
@@ -242,5 +245,10 @@ contract FluxRevenueDistributor is Ownable, AccessControl {
 
     function supportsInterface(bytes4 interfaceId) public view override(AccessControl) returns (bool) {
         return super.supportsInterface(interfaceId);
+    }
+
+    function _requireTreasuryMatch() private view returns (address treasury) {
+        treasury = IFluxMultiPoolManager(manager).treasury();
+        require(IFluxBuybackExecutor(buybackExecutor).treasury() == treasury, "FluxRevenueDistributor: TREASURY_MISMATCH");
     }
 }

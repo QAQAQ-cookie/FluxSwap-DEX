@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import "../interfaces/IFluxMultiPoolManager.sol";
+import "../interfaces/IFluxSwapTreasury.sol";
 import "../libraries/TransferHelper.sol";
 
 contract FluxSwapStakingRewards {
@@ -121,25 +122,29 @@ contract FluxSwapStakingRewards {
     }
 
     function stake(uint256 amount) external lock {
+        uint256 previousTotalStaked = totalStaked;
         _syncRewards();
+        _flushQueuedRewards();
         _updateReward(msg.sender);
         require(amount > 0, "FluxSwapStakingRewards: ZERO_AMOUNT");
         totalStaked += amount;
         balanceOf[msg.sender] += amount;
         TransferHelper.safeTransferFrom(stakingToken, msg.sender, address(this), amount);
-        _flushQueuedRewards();
+        if (previousTotalStaked == 0) {
+            _flushQueuedRewards();
+        }
         emit Staked(msg.sender, amount);
     }
 
     function withdraw(uint256 amount) external lock {
         _syncRewards();
+        _flushQueuedRewards();
         _updateReward(msg.sender);
         require(amount > 0, "FluxSwapStakingRewards: ZERO_AMOUNT");
         require(balanceOf[msg.sender] >= amount, "FluxSwapStakingRewards: INSUFFICIENT_BALANCE");
         totalStaked -= amount;
         balanceOf[msg.sender] -= amount;
         TransferHelper.safeTransfer(stakingToken, msg.sender, amount);
-        _flushQueuedRewards();
         emit Withdrawn(msg.sender, amount);
     }
 
@@ -151,13 +156,13 @@ contract FluxSwapStakingRewards {
 
     function exit() external lock {
         _syncRewards();
+        _flushQueuedRewards();
         _updateReward(msg.sender);
         uint256 stakeAmount = balanceOf[msg.sender];
         if (stakeAmount > 0) {
             totalStaked -= stakeAmount;
             balanceOf[msg.sender] = 0;
             TransferHelper.safeTransfer(stakingToken, msg.sender, stakeAmount);
-            _flushQueuedRewards();
             emit Withdrawn(msg.sender, stakeAmount);
         }
 
@@ -168,7 +173,11 @@ contract FluxSwapStakingRewards {
         require(reward > 0, "FluxSwapStakingRewards: ZERO_AMOUNT");
 
         _requireSourceNotPaused(rewardSource, "FluxSwapStakingRewards: REWARD_SOURCE_PAUSED");
-        TransferHelper.safeTransferFrom(rewardsToken, rewardSource, address(this), reward);
+        if (_isTreasurySource(rewardSource)) {
+            IFluxSwapTreasury(rewardSource).pullApprovedToken(rewardsToken, reward);
+        } else {
+            TransferHelper.safeTransferFrom(rewardsToken, rewardSource, address(this), reward);
+        }
         rewardReserve += reward;
 
         uint256 accountedReward = _applyRewardAmount(reward);
@@ -236,9 +245,17 @@ contract FluxSwapStakingRewards {
             return 0;
         }
 
-        rewardPerTokenStored += rewardPerTokenIncrement;
+        uint256 previousRewardPerTokenStored = rewardPerTokenStored;
+        uint256 updatedRewardPerTokenStored = previousRewardPerTokenStored + rewardPerTokenIncrement;
+        rewardPerTokenStored = updatedRewardPerTokenStored;
 
-        accountedReward = (rewardPerTokenIncrement * totalStaked) / PRECISION;
+        if (reward == 0) {
+            accountedReward =
+                ((updatedRewardPerTokenStored * totalStaked) / PRECISION) -
+                ((previousRewardPerTokenStored * totalStaked) / PRECISION);
+        } else {
+            accountedReward = (rewardPerTokenIncrement * totalStaked) / PRECISION;
+        }
         queuedRewards = distributable - accountedReward;
     }
 
@@ -266,5 +283,10 @@ contract FluxSwapStakingRewards {
         if (success && data.length >= 32) {
             require(!abi.decode(data, (bool)), errorMessage);
         }
+    }
+
+    function _isTreasurySource(address source) private view returns (bool) {
+        (bool success, bytes memory data) = source.staticcall(abi.encodeWithSignature("isFluxSwapTreasury()"));
+        return success && data.length >= 32 && abi.decode(data, (bool));
     }
 }
