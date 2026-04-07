@@ -6,7 +6,8 @@
   "scripts": {
     "test": "npx hardhat test",
     "test:unit": "node ./scripts/run-unit-tests.mjs",
-    "test:integration": "node ./scripts/run-integration-tests.mjs"
+    "test:integration": "node ./scripts/run-integration-tests.mjs",
+    "test:regression": "node ./scripts/run-regression-tests.mjs"
   },
   "keywords": [],
   "author": "",
