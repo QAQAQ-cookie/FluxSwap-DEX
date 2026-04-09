@@ -2,6 +2,16 @@ import { network } from "hardhat";
 import { beforeEach, describe, it } from "node:test";
 import { ok, strictEqual } from "node:assert";
 
+/*
+ * 单元目标：
+ * 1. 验证构造参数与基础 stake / withdraw 输入校验。
+ * 2. 验证单用户、多用户、多批次奖励分发与退出结算。
+ * 3. 验证 rewardSource / rewardNotifier 原子更新与 self-sync 模式约束。
+ * 4. 验证 ownership 迁移后的配置权限收敛。
+ * 5. 验证 queued reward、rounding dust、首个质押用户入场时的奖励释放。
+ * 6. 验证 treasury pause 对通知发奖的阻断，以及 recoverUnallocatedRewards 只回收未分配奖励。
+ * 7. 验证从 manager 自同步拉取奖励的路径。
+ */
 describe("FluxSwapStakingRewards", async function () {
   const hardhatNetwork = await network.connect();
   const { viem, networkHelpers } = hardhatNetwork;

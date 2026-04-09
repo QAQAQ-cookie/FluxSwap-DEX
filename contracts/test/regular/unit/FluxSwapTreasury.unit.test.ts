@@ -2,6 +2,15 @@ import { network } from "hardhat";
 import { beforeEach, describe, it } from "node:test";
 import { ok, strictEqual } from "node:assert";
 
+/*
+ * 单元目标：
+ * 1. 验证构造参数与 treasury marker。
+ * 2. 验证 timelock 操作的 schedule / cancel 只能由 multisig 执行。
+ * 3. 验证 operator、guardian、minDelay 变更都受 timelock 保护。
+ * 4. 验证 token allocate、allowlist、daily cap、次日额度重置。
+ * 5. 验证 approved spender 的额度消耗、pull、burn、revoke 与 no-return ERC20 兼容。
+ * 6. 验证 pause / unpause 权限边界、原生 ETH 分配路径，以及 token / native emergency withdraw 只能在 timelock 到期后执行。
+ */
 describe("FluxSwapTreasury Unit", async function () {
   const hardhatNetwork = await network.connect();
   const { viem, networkHelpers } = hardhatNetwork;

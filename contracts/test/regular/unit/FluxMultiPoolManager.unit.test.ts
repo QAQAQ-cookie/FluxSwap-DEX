@@ -2,6 +2,15 @@ import { network } from "hardhat";
 import { beforeEach, describe, it } from "node:test";
 import { ok, strictEqual } from "node:assert";
 
+/*
+ * 单元目标：
+ * 1. 验证构造参数与 ERC165 支持。
+ * 2. 验证池子的添加、停用、allocPoint 统计，以及 poolFactory 代理操作权限。
+ * 3. 验证奖励分发、pool claim、pool 配置更新、treasury 指针更新、poolFactory 指针更新。
+ * 4. 验证暂停状态、treasury pause、非法 claim / distribute 的拒绝逻辑。
+ * 5. 验证 reward token 不可被 recover，而无关 token 可被 recover。
+ * 6. 验证 operator 轮换、禁止直接 grantRole 绕过、ownership 迁移后的权限清理。
+ */
 describe("FluxMultiPoolManager Unit", async function () {
   const hardhatNetwork = await network.connect();
   const { viem, networkHelpers } = hardhatNetwork;

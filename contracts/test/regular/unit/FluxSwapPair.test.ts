@@ -3,6 +3,14 @@ import { beforeEach, describe, it } from "node:test";
 import { ok, strictEqual } from "node:assert";
 import { encodeAbiParameters, parseSignature } from "viem";
 
+/*
+ * 单元目标：
+ * 1. 验证 pair 只能由 factory 初始化一次，且 token 参数必须合法。
+ * 2. 验证首次注入流动性、储备更新、最小流动性锁定。
+ * 3. 验证销毁 LP 后按比例赎回底层资产，以及配置 treasury 后 swap 会正确沉淀协议费。
+ * 4. 验证非法输出、非法接收方、恒定乘积被破坏等失败分支。
+ * 5. 验证 flash swap、permit、transferFrom、skim、sync 等底层行为。
+ */
 describe("FluxSwapPair", async function () {
   const hardhatNetwork = await network.connect();
   const { viem } = hardhatNetwork;

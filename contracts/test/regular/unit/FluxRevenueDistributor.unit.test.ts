@@ -2,6 +2,15 @@ import { network } from "hardhat";
 import { beforeEach, describe, it } from "node:test";
 import { ok, strictEqual } from "node:assert";
 
+/*
+ * 单元目标：
+ * 1. 验证构造参数与 ERC165 支持。
+ * 2. 验证 treasury FLUX 直发奖励到 manager。
+ * 3. 验证收入资产经 buyback 后再 burn / distribute 的分发链路。
+ * 4. 验证 manager 与 buyback executor treasury 指针分叉时必须拒绝执行。
+ * 5. 验证 pause、收入配置更新、BPS 边界。
+ * 6. 验证 operator 权限管理、替换 buyback executor / manager 时的一致性约束，以及 ownership 迁移后的权限清理。
+ */
 describe("FluxRevenueDistributor Unit", async function () {
   const hardhatNetwork = await network.connect();
   const { viem, networkHelpers } = hardhatNetwork;

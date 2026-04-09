@@ -2,6 +2,15 @@ import { network } from "hardhat";
 import { beforeEach, describe, it } from "node:test";
 import { ok, strictEqual } from "node:assert";
 
+/*
+ * 单元目标：
+ * 1. 验证构造参数。
+ * 2. 验证单币池、LP 池的创建与注册。
+ * 3. 验证 managed pool 奖励配置的原子更新与后续细粒度更新。
+ * 4. 验证 duplicate pool、unmanaged pool、self-sync 下半更新等非法路径。
+ * 5. 验证 managed pool ownership handoff、旧池停用、同资产重建替代池。
+ * 6. 验证工厂从 managed pool 回收未分配奖励，以及 owner 迁移后治理能力仍然连续。
+ */
 describe("FluxPoolFactory Unit", async function () {
   const hardhatNetwork = await network.connect();
   const { viem, networkHelpers } = hardhatNetwork;

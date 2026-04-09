@@ -2,6 +2,13 @@ import { network } from "hardhat";
 import { beforeEach, describe, it } from "node:test";
 import { ok, strictEqual } from "node:assert";
 
+/*
+ * 单元目标：
+ * 1. 验证构造参数与 ERC165 支持。
+ * 2. 验证交易对创建后会按双向 token 顺序正确登记。
+ * 3. 验证 duplicate pair、identical token、zero-address 等非法建池路径会被拒绝。
+ * 4. 验证 treasurySetter 的更新、交接，以及不能通过直接授予角色绕过受控移交。
+ */
 describe("FluxSwapFactory", async function () {
   const hardhatNetwork = await network.connect();
   const { viem } = hardhatNetwork;

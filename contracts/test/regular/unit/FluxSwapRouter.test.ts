@@ -3,6 +3,14 @@ import { beforeEach, describe, it } from "node:test";
 import { ok, strictEqual } from "node:assert";
 import { parseSignature } from "viem";
 
+/*
+ * 单元目标：
+ * 1. 验证构造参数、报价 helper 与无效 helper 输入。
+ * 2. 验证过期调用、非法 ETH path、缺失 pair 等前置校验。
+ * 3. 验证 exact-input / exact-output 的 token、ETH 各类 swap 入口。
+ * 4. 验证 token 与 ETH 流动性的添加、移除、permit 移除路径。
+ * 5. 验证 amountMin / liquidityMin 等滑点保护，以及 fee-on-transfer token 的兼容与非法 path 拒绝逻辑。
+ */
 describe("FluxSwapRouter", async function () {
   const hardhatNetwork = await network.connect();
   const { viem } = hardhatNetwork;

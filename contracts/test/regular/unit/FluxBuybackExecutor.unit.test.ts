@@ -2,6 +2,15 @@ import { network } from "hardhat";
 import { beforeEach, describe, it } from "node:test";
 import { ok, strictEqual } from "node:assert";
 
+/*
+ * 单元目标：
+ * 1. 验证构造参数与 ERC165 支持。
+ * 2. 验证 buyback 会把回购结果打回 treasury。
+ * 3. 验证 buyback 参数校验，以及 recipient 必须受 treasury 约束。
+ * 4. 验证 executor pause 与 treasury pause 都会阻断回购执行。
+ * 5. 验证 treasury 与 default recipient 联动更新。
+ * 6. 验证 operator 轮换、禁止直接角色突变、stray token recover 与 ownership 迁移后的重叠 operator 权限清理。
+ */
 describe("FluxBuybackExecutor Unit", async function () {
   const hardhatNetwork = await network.connect();
   const { viem, networkHelpers } = hardhatNetwork;

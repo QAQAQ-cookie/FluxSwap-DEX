@@ -2,6 +2,13 @@ import { network } from "hardhat";
 import { beforeEach, describe, it } from "node:test";
 import { ok, strictEqual } from "node:assert";
 
+/*
+ * 单元目标：
+ * 1. 验证代币名称、符号、精度、cap、初始供应量初始化正确。
+ * 2. 验证 supportsInterface、MINTER_ROLE 授权与撤销、owner 权限边界。
+ * 3. 验证 mint 不可超过 cap，burn / burnFrom 正常工作。
+ * 4. 验证 ownership 迁移后新 owner 接管管理权，并拒绝 same-owner / zero-address 类非法操作。
+ */
 describe("FluxToken", async function () {
   const hardhatNetwork = await network.connect();
   const { viem } = hardhatNetwork;

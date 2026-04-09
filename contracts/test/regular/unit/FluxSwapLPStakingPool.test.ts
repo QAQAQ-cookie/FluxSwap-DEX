@@ -2,6 +2,12 @@ import { network } from "hardhat";
 import { beforeEach, describe, it } from "node:test";
 import { ok, strictEqual } from "node:assert";
 
+/*
+ * 单元目标：
+ * 1. 验证 LP pair 必须来自目标 factory。
+ * 2. 验证构造参数合法性与 LP pair 元信息暴露。
+ * 3. 验证用户质押 LP 后能够从 treasury 奖励源获得 FLUX 奖励并正常退出。
+ */
 describe("FluxSwapLPStakingPool", async function () {
   const hardhatNetwork = await network.connect();
   const { viem, networkHelpers } = hardhatNetwork;
