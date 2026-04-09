@@ -47,7 +47,7 @@ async function collectPermissionsGovernanceTestFiles(dir) {
       continue;
     }
 
-    if (entry.isFile() && entry.name.endsWith(".ts")) {
+    if (entry.isFile() && entry.name.endsWith(".test.ts")) {
       files.push(entryPath);
     }
   }

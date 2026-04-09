@@ -39,7 +39,7 @@ function runCommand(command, args) {
 async function getIntegrationTestFiles() {
   const entries = await readdir(integrationTestDir, { withFileTypes: true });
   return entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".ts"))
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".test.ts"))
     .map((entry) => path.join(integrationTestDir, entry.name))
     .sort((a, b) => a.localeCompare(b));
 }
