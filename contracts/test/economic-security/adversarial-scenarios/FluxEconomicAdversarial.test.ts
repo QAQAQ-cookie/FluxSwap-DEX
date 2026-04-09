@@ -9,13 +9,15 @@ import { ok, strictEqual } from "node:assert";
  * 3. 校验 treasury daily cap 被压低后，buyback 路径会整笔回滚，不会留下半消费状态。
  * 4. 校验 manager treasury 指针漂移时，direct reward 路径会在资金转移前失败，不偷耗 allowance。
  * 5. 校验微额 direct reward 在 rewardDelta 舍入为 0 时会整笔回滚，不留下 token 或 accounting 污染。
- * 6. 校验在重新报价、恢复 spend cap 或修复指针之后，收入流仍能继续执行，不会因前一次失败而卡死。
+ * 6. 校验 treasury pause 插入 buyback 收入流时，会整笔阻断且不消耗已批准额度，恢复后仍可继续执行。
+ * 7. 校验已有 pending reward 状态下，后续微额失败不会冲掉旧奖励，恢复后仍可继续结算。
+ * 8. 校验在重新报价、恢复 spend cap、解除 pause 或修复指针之后，收入流仍能继续执行，不会因前一次失败而卡死。
  */
 describe("FluxEconomicAdversarial", async function () {
   const hardhatNetwork = await network.connect();
   const { viem, networkHelpers } = hardhatNetwork;
   const publicClient = await viem.getPublicClient();
-  const [multisigClient, guardianClient, operatorClient, lpClient, traderClient, attackerClient] =
+  const [multisigClient, guardianClient, operatorClient, lpClient, traderClient, attackerClient, stakerClient] =
     await viem.getWalletClients();
 
   const bpsBase = 10_000n;
@@ -24,7 +26,7 @@ describe("FluxEconomicAdversarial", async function () {
   const initialSupply = 10_000_000n * 10n ** 18n;
   const cap = 100_000_000n * 10n ** 18n;
   const maxUint256 = (1n << 256n) - 1n;
-  const rewardPool = lpClient.account.address;
+  const stakerStakeAmount = 1n * 10n ** 18n;
 
   let treasury: any;
   let fluxToken: any;
@@ -32,6 +34,7 @@ describe("FluxEconomicAdversarial", async function () {
   let WETH: any;
   let factory: any;
   let router: any;
+  let stakingPool: any;
   let manager: any;
   let buybackExecutor: any;
   let revenueDistributor: any;
@@ -78,6 +81,37 @@ describe("FluxEconomicAdversarial", async function () {
     );
   }
 
+  async function assertPoolCanSyncClaimAndExit(expectedReward: bigint) {
+    const stakerBalanceBeforeClaim = await fluxToken.read.balanceOf([stakerClient.account.address]);
+
+    strictEqual(await manager.read.pendingPoolRewards([stakingPool.address]), expectedReward);
+
+    await stakingPool.write.syncRewards();
+
+    strictEqual(await manager.read.pendingPoolRewards([stakingPool.address]), 0n);
+    strictEqual(await fluxToken.read.balanceOf([manager.address]), 0n);
+    strictEqual(await stakingPool.read.earned([stakerClient.account.address]), expectedReward);
+
+    await stakingPool.write.getReward({ account: stakerClient.account.address });
+
+    strictEqual(
+      await fluxToken.read.balanceOf([stakerClient.account.address]),
+      stakerBalanceBeforeClaim + expectedReward
+    );
+    strictEqual(await stakingPool.read.earned([stakerClient.account.address]), 0n);
+    strictEqual(await fluxToken.read.balanceOf([stakingPool.address]), stakerStakeAmount);
+
+    await stakingPool.write.exit({ account: stakerClient.account.address });
+
+    strictEqual(await stakingPool.read.balanceOf([stakerClient.account.address]), 0n);
+    strictEqual(await stakingPool.read.totalStaked(), 0n);
+    strictEqual(await fluxToken.read.balanceOf([stakingPool.address]), 0n);
+    strictEqual(
+      await fluxToken.read.balanceOf([stakerClient.account.address]),
+      stakerBalanceBeforeClaim + expectedReward + stakerStakeAmount
+    );
+  }
+
   async function accrueProtocolRevenue(swapAmount: bigint) {
     await router.write.swapExactTokensForTokens([
       swapAmount,
@@ -118,7 +152,19 @@ describe("FluxEconomicAdversarial", async function () {
       operatorClient.account.address,
       fluxToken.address,
     ]);
-    await manager.write.addPool([rewardPool, 100n, true], {
+
+    stakingPool = await viem.deployContract("FluxSwapStakingRewards", [
+      multisigClient.account.address,
+      fluxToken.address,
+      fluxToken.address,
+      manager.address,
+      manager.address,
+    ]);
+    await stakingPool.write.setRewardConfiguration([manager.address, stakingPool.address], {
+      account: multisigClient.account.address,
+    });
+
+    await manager.write.addPool([stakingPool.address, 100n, true], {
       account: multisigClient.account.address,
     });
 
@@ -153,12 +199,18 @@ describe("FluxEconomicAdversarial", async function () {
     await fluxToken.write.mint([lpClient.account.address, 300_000n * 10n ** 18n], {
       account: multisigClient.account.address,
     });
+    await fluxToken.write.mint([stakerClient.account.address, 2_000n * 10n ** 18n], {
+      account: multisigClient.account.address,
+    });
     await revenueToken.write.mint([lpClient.account.address, 300_000n * 10n ** 18n]);
     await revenueToken.write.mint([traderClient.account.address, 300_000n * 10n ** 18n]);
     await revenueToken.write.mint([attackerClient.account.address, 300_000n * 10n ** 18n]);
 
     await fluxToken.write.approve([router.address, maxUint256], {
       account: lpClient.account.address,
+    });
+    await fluxToken.write.approve([stakingPool.address, maxUint256], {
+      account: stakerClient.account.address,
     });
 
     for (const account of [lpClient.account.address, traderClient.account.address, attackerClient.account.address]) {
@@ -175,6 +227,10 @@ describe("FluxEconomicAdversarial", async function () {
       lpClient.account.address,
       await getDeadline(),
     ], { account: lpClient.account.address });
+
+    await stakingPool.write.stake([stakerStakeAmount], {
+      account: stakerClient.account.address,
+    });
   });
 
   it("should revert a stale buyback quote after an adverse pre-trade without leaking treasury value", async function () {
@@ -222,12 +278,13 @@ describe("FluxEconomicAdversarial", async function () {
       attackerRevenue + buybackProtocolFee
     );
     strictEqual(await fluxToken.read.balanceOf([manager.address]), freshQuote);
-    strictEqual(await manager.read.pendingPoolRewards([rewardPool]), freshQuote);
+    strictEqual(await manager.read.pendingPoolRewards([stakingPool.address]), freshQuote);
     strictEqual(
       await treasury.read.approvedSpendRemaining([revenueToken.address, buybackExecutor.address]),
       0n
     );
     strictEqual(await treasury.read.approvedSpendRemaining([fluxToken.address, manager.address]), 0n);
+    await assertPoolCanSyncClaimAndExit(freshQuote);
   });
 
   it("should roll back the whole buyback when treasury daily cap is tighter than the approved spend", async function () {
@@ -264,12 +321,63 @@ describe("FluxEconomicAdversarial", async function () {
 
     strictEqual(await revenueToken.read.balanceOf([treasury.address]), buybackProtocolFee);
     strictEqual(await fluxToken.read.balanceOf([manager.address]), freshQuote);
-    strictEqual(await manager.read.pendingPoolRewards([rewardPool]), freshQuote);
+    strictEqual(await manager.read.pendingPoolRewards([stakingPool.address]), freshQuote);
     strictEqual(
       await treasury.read.approvedSpendRemaining([revenueToken.address, buybackExecutor.address]),
       0n
     );
     strictEqual(await treasury.read.approvedSpendRemaining([fluxToken.address, manager.address]), 0n);
+    await assertPoolCanSyncClaimAndExit(freshQuote);
+  });
+
+  it("should preserve approved spend across a treasury pause and resume the buyback flow after unpause", async function () {
+    const revenueAmount = await accrueProtocolRevenue(12_000n * 10n ** 18n);
+    const path = [revenueToken.address, fluxToken.address];
+    const quote = (await router.read.getAmountsOut([revenueAmount, path]))[1];
+    const treasuryRevenueBeforePause = await revenueToken.read.balanceOf([treasury.address]);
+
+    await approveTreasurySpender(revenueToken.address, buybackExecutor.address, revenueAmount);
+    await approveTreasurySpender(fluxToken.address, manager.address, quote);
+
+    await treasury.write.pause({
+      account: guardianClient.account.address,
+    });
+
+    await expectRevert(
+      revenueDistributor.write.executeBuybackAndDistribute(
+        [revenueToken.address, revenueAmount, quote, path, await getDeadline()],
+        { account: operatorClient.account.address }
+      ),
+      "FluxBuybackExecutor: TREASURY_PAUSED"
+    );
+
+    strictEqual(await revenueToken.read.balanceOf([treasury.address]), treasuryRevenueBeforePause);
+    strictEqual(await fluxToken.read.balanceOf([manager.address]), 0n);
+    strictEqual(await manager.read.pendingPoolRewards([stakingPool.address]), 0n);
+    strictEqual(
+      await treasury.read.approvedSpendRemaining([revenueToken.address, buybackExecutor.address]),
+      revenueAmount
+    );
+    strictEqual(await treasury.read.approvedSpendRemaining([fluxToken.address, manager.address]), quote);
+
+    await treasury.write.unpause({
+      account: multisigClient.account.address,
+    });
+
+    await revenueDistributor.write.executeBuybackAndDistribute(
+      [revenueToken.address, revenueAmount, quote, path, await getDeadline()],
+      { account: operatorClient.account.address }
+    );
+
+    strictEqual(await revenueToken.read.balanceOf([treasury.address]), getProtocolFee(revenueAmount));
+    strictEqual(await fluxToken.read.balanceOf([manager.address]), quote);
+    strictEqual(await manager.read.pendingPoolRewards([stakingPool.address]), quote);
+    strictEqual(
+      await treasury.read.approvedSpendRemaining([revenueToken.address, buybackExecutor.address]),
+      0n
+    );
+    strictEqual(await treasury.read.approvedSpendRemaining([fluxToken.address, manager.address]), 0n);
+    await assertPoolCanSyncClaimAndExit(quote);
   });
 
   it("should revert a stale multi-hop buyback quote after consecutive pre-trades across both hops", async function () {
@@ -377,12 +485,13 @@ describe("FluxEconomicAdversarial", async function () {
     );
     strictEqual(await WETH.read.balanceOf([treasury.address]), attackerWethFee + buybackWethFee);
     strictEqual(await fluxToken.read.balanceOf([manager.address]), freshQuote);
-    strictEqual(await manager.read.pendingPoolRewards([rewardPool]), freshQuote);
+    strictEqual(await manager.read.pendingPoolRewards([stakingPool.address]), freshQuote);
     strictEqual(
       await treasury.read.approvedSpendRemaining([revenueToken.address, buybackExecutor.address]),
       0n
     );
     strictEqual(await treasury.read.approvedSpendRemaining([fluxToken.address, manager.address]), 0n);
+    await assertPoolCanSyncClaimAndExit(freshQuote);
   });
 
   it("should fail direct treasury rewards on treasury pointer drift before consuming any approved funds", async function () {
@@ -410,7 +519,7 @@ describe("FluxEconomicAdversarial", async function () {
 
     strictEqual(await fluxToken.read.balanceOf([treasury.address]), treasuryBalanceBefore);
     strictEqual(await fluxToken.read.balanceOf([manager.address]), 0n);
-    strictEqual(await manager.read.pendingPoolRewards([rewardPool]), 0n);
+    strictEqual(await manager.read.pendingPoolRewards([stakingPool.address]), 0n);
     strictEqual(await manager.read.undistributedRewards(), 0n);
     strictEqual(await treasury.read.approvedSpendRemaining([fluxToken.address, manager.address]), rewardAmount);
 
@@ -423,8 +532,9 @@ describe("FluxEconomicAdversarial", async function () {
     });
 
     strictEqual(await fluxToken.read.balanceOf([manager.address]), rewardAmount);
-    strictEqual(await manager.read.pendingPoolRewards([rewardPool]), rewardAmount);
+    strictEqual(await manager.read.pendingPoolRewards([stakingPool.address]), rewardAmount);
     strictEqual(await treasury.read.approvedSpendRemaining([fluxToken.address, manager.address]), 0n);
+    await assertPoolCanSyncClaimAndExit(rewardAmount);
   });
 
   it("should revert microscopic direct rewards that round rewardDelta down to zero without moving funds", async function () {
@@ -446,11 +556,63 @@ describe("FluxEconomicAdversarial", async function () {
 
     strictEqual(await fluxToken.read.balanceOf([treasury.address]), treasuryBalanceBefore);
     strictEqual(await fluxToken.read.balanceOf([manager.address]), 0n);
-    strictEqual(await manager.read.pendingPoolRewards([rewardPool]), 0n);
+    strictEqual(await manager.read.pendingPoolRewards([stakingPool.address]), 0n);
     strictEqual(await manager.read.undistributedRewards(), 0n);
     strictEqual(
       await treasury.read.approvedSpendRemaining([fluxToken.address, manager.address]),
       microscopicReward
     );
+  });
+
+  it("should preserve previously accrued pending rewards when a microscopic follow-up reward reverts", async function () {
+    const initialReward = 500n * 10n ** 18n;
+    const microscopicReward = 1n;
+    const followUpReward = 2n * 10n ** 18n;
+
+    await approveTreasurySpender(fluxToken.address, manager.address, initialReward);
+    await revenueDistributor.write.distributeTreasuryRewards([initialReward], {
+      account: operatorClient.account.address,
+    });
+
+    strictEqual(await fluxToken.read.balanceOf([manager.address]), initialReward);
+    strictEqual(await manager.read.pendingPoolRewards([stakingPool.address]), initialReward);
+
+    await manager.write.setPool([0n, 2n * 10n ** 18n, true], {
+      account: multisigClient.account.address,
+    });
+
+    const treasuryBalanceBeforeFailure = await fluxToken.read.balanceOf([treasury.address]);
+    const managerBalanceBeforeFailure = await fluxToken.read.balanceOf([manager.address]);
+    const pendingRewardsBeforeFailure = await manager.read.pendingPoolRewards([stakingPool.address]);
+
+    await approveTreasurySpender(fluxToken.address, manager.address, microscopicReward);
+
+    await expectRevert(
+      revenueDistributor.write.distributeTreasuryRewards([microscopicReward], {
+        account: operatorClient.account.address,
+      }),
+      "FluxMultiPoolManager: REWARD_TOO_SMALL"
+    );
+
+    strictEqual(await fluxToken.read.balanceOf([treasury.address]), treasuryBalanceBeforeFailure);
+    strictEqual(await fluxToken.read.balanceOf([manager.address]), managerBalanceBeforeFailure);
+    strictEqual(await manager.read.pendingPoolRewards([stakingPool.address]), pendingRewardsBeforeFailure);
+    strictEqual(await manager.read.undistributedRewards(), 0n);
+    strictEqual(
+      await treasury.read.approvedSpendRemaining([fluxToken.address, manager.address]),
+      microscopicReward
+    );
+
+    await approveTreasurySpender(fluxToken.address, manager.address, followUpReward);
+    await revenueDistributor.write.distributeTreasuryRewards([followUpReward], {
+      account: operatorClient.account.address,
+    });
+
+    const totalExpectedReward = initialReward + followUpReward;
+    strictEqual(await fluxToken.read.balanceOf([manager.address]), totalExpectedReward);
+    strictEqual(await manager.read.pendingPoolRewards([stakingPool.address]), totalExpectedReward);
+    strictEqual(await manager.read.undistributedRewards(), 0n);
+    strictEqual(await treasury.read.approvedSpendRemaining([fluxToken.address, manager.address]), 0n);
+    await assertPoolCanSyncClaimAndExit(totalExpectedReward);
   });
 });

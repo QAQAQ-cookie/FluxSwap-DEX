@@ -35,6 +35,9 @@
 ## 当前状态
 
 - `integrated-amm` 已覆盖 DEX 主链路与协议费基础行为。
-- `fee-model` 开始把协议费沉淀、treasury handoff、buyback / burn / distribute、manager rounding dust 单独拉成经济对账测试。
-- `adversarial-scenarios` 已开始覆盖 stale quote、前置交易冲击、daily cap 卡点下的收入流安全回滚。
-- `adversarial-scenarios` 也开始覆盖多跳路径下的连续前置交易与逐跳报价失真。
+- `fee-model` 已把协议费沉淀、treasury handoff、buyback / burn / distribute、manager rounding dust 拉成独立的经济对账测试。
+- `adversarial-scenarios` 已覆盖 stale quote、前置交易冲击、daily cap 卡点、treasury pause 夹击下的收入流安全回滚。
+- `adversarial-scenarios` 已覆盖多跳路径下的连续前置交易与逐跳报价失真。
+- `adversarial-scenarios` 已覆盖 direct reward 在 treasury 指针漂移、微额 rounding 边界下的失败与恢复路径。
+- `adversarial-scenarios` 已覆盖已有 pending reward 状态下再次触发微额失败时，旧奖励不会被冲掉，后续有效奖励仍可继续结算。
+- `adversarial-scenarios` 中恢复后的成功路径已进一步验证真实 staking pool 的 `syncRewards -> getReward -> exit` 闭环，而不是只停在 manager 内部账本。

@@ -12,4 +12,4 @@
 ## 当前状态
 
 - 协议费基础行为已经在这里有覆盖。
-- 后续如果继续细化手续费归集、burn / distribute 比例、奖励 rounding 等经济细节，优先放到上层的 `fee-model` 子目录。
+- 更细的手续费归集、burn / distribute 比例、奖励 rounding 等经济细节，已经转由上层的 `fee-model` 子目录承接。
