@@ -4,10 +4,10 @@ import { ok, strictEqual } from "node:assert";
 import { encodeAbiParameters, parseSignature } from "viem";
 
 // 回归目标：
-// 1. 锁住 exact-output 多跳路径的双跳手续费记账。
-// 2. 锁住 fee-on-transfer 代币按“真实输入资产”计费，而不是按名义输入计费。
-// 3. 锁住 permit 移除流动性路径，避免后续退化成依赖预授权。
-// 4. 锁住 flash swap 至少要归还带手续费的金额，不能只还本金。
+// 1. 锁住多跳、ETH、token-WETH 等关键 swap 入口的协议费记账资产归属。
+// 2. 锁住 fee-on-transfer 路径必须按真实净输入计费，而不是按名义输入误记。
+// 3. 锁住 permit 与非 permit 两类移除流动性路径都能稳定赎回。
+// 4. 锁住 flash swap 成功/失败分支、超小额 rounding、full unwind 最小流动性等 Pair 关键边界。
 describe("FluxRouterPairCriticalRegression", async function () {
   const hardhatNetwork = await network.connect();
   const { viem } = hardhatNetwork;
@@ -95,6 +95,12 @@ describe("FluxRouterPairCriticalRegression", async function () {
     router = await viem.deployContract("FluxSwapRouter", [factory.address, WETH.address]);
   });
 
+  // 模块一：多跳、ETH 与 token-WETH 路径的协议费记账
+  // 对应 README 已覆盖点：
+  // - exact-output 多跳路径下，两跳输入资产都必须正确向 treasury 支付协议费。
+  // - exact-input 多跳路径下，两跳输入资产也必须分别正确向 treasury 支付协议费。
+  // - exact-output ETH 路径下，协议费必须记在真实输入资产上，不会把 token / WETH 记混。
+  // - token-WETH 路径在 exact-input / exact-output 的不同 swap 入口下，协议费资产归属保持一致。
   it("should keep exact-output multi-hop fee accounting on both hop input assets", async function () {
     const treasury = await viem.deployContract("FluxSwapTreasury", [
       multisigClient.account.address,
@@ -162,6 +168,75 @@ describe("FluxRouterPairCriticalRegression", async function () {
     strictEqual(await tokenA.read.balanceOf([treasury.address]), (amounts[0] * protocolFeeBps) / feeBase);
     strictEqual(await tokenB.read.balanceOf([treasury.address]), (amounts[1] * protocolFeeBps) / feeBase);
     strictEqual(await tokenC.read.balanceOf([recipientClient.account.address]), desiredOutput);
+  });
+
+  it("should keep exact-input multi-hop fee accounting on both hop input assets", async function () {
+    const treasury = await viem.deployContract("FluxSwapTreasury", [
+      multisigClient.account.address,
+      guardianClient.account.address,
+      operatorClient.account.address,
+      timelockDelay,
+    ]);
+
+    const tokenA = await viem.deployContract("MockERC20", ["Token A", "TKNA", 18]);
+    const tokenB = await viem.deployContract("MockERC20", ["Token B", "TKNB", 18]);
+    const tokenC = await viem.deployContract("MockERC20", ["Token C", "TKNC", 18]);
+
+    await factory.write.setTreasury([treasury.address], {
+      account: multisigClient.account.address,
+    });
+
+    await tokenA.write.mint([lpClient.account.address, 1_000_000n * 10n ** 18n]);
+    await tokenB.write.mint([lpClient.account.address, 2_000_000n * 10n ** 18n]);
+    await tokenC.write.mint([lpClient.account.address, 1_000_000n * 10n ** 18n]);
+    await tokenA.write.mint([traderClient.account.address, 1_000_000n * 10n ** 18n]);
+
+    await tokenA.write.approve([router.address, maxUint256], { account: lpClient.account.address });
+    await tokenB.write.approve([router.address, maxUint256], { account: lpClient.account.address });
+    await tokenC.write.approve([router.address, maxUint256], { account: lpClient.account.address });
+    await tokenA.write.approve([router.address, maxUint256], { account: traderClient.account.address });
+
+    await router.write.addLiquidity(
+      [
+        tokenA.address,
+        tokenB.address,
+        10_000n * 10n ** 18n,
+        10_000n * 10n ** 18n,
+        0n,
+        0n,
+        lpClient.account.address,
+        await getDeadline(),
+      ],
+      { account: lpClient.account.address }
+    );
+
+    await router.write.addLiquidity(
+      [
+        tokenB.address,
+        tokenC.address,
+        10_000n * 10n ** 18n,
+        10_000n * 10n ** 18n,
+        0n,
+        0n,
+        lpClient.account.address,
+        await getDeadline(),
+      ],
+      { account: lpClient.account.address }
+    );
+
+    const amountIn = 100n * 10n ** 18n;
+    const path = [tokenA.address, tokenB.address, tokenC.address];
+    const amounts = await router.read.getAmountsOut([amountIn, path]);
+
+    // 这里锁住 exact-input 多跳时的双资产计费：第一跳按 tokenA，第二跳按 tokenB，各自都必须记到 treasury。
+    await router.write.swapExactTokensForTokens(
+      [amountIn, 0n, path, recipientClient.account.address, await getDeadline()],
+      { account: traderClient.account.address }
+    );
+
+    strictEqual(await tokenA.read.balanceOf([treasury.address]), (amountIn * protocolFeeBps) / feeBase);
+    strictEqual(await tokenB.read.balanceOf([treasury.address]), (amounts[1] * protocolFeeBps) / feeBase);
+    strictEqual(await tokenC.read.balanceOf([recipientClient.account.address]), amounts[2]);
   });
 
   it("should keep exact-output ETH routes charging treasury fees in the true input asset", async function () {
@@ -286,6 +361,10 @@ describe("FluxRouterPairCriticalRegression", async function () {
     strictEqual((await WETH.read.balanceOf([treasury.address])) - treasuryWethBeforeExactOut, wethExactOutFee);
   });
 
+  // 模块二：fee-on-transfer 路径按真实净输入计费
+  // 对应 README 已覆盖点：
+  // - fee-on-transfer 路径必须按真实净输入计费，而不是按名义输入计费。
+  // - fee-on-transfer 的 ETH supporting 路径也必须分别把协议费记在真实输入资产 WETH / feeToken 上。
   it("should keep fee-on-transfer routes charging treasury fees from the real net input amount", async function () {
     const treasury = await viem.deployContract("FluxSwapTreasury", [
       multisigClient.account.address,
@@ -403,6 +482,10 @@ describe("FluxRouterPairCriticalRegression", async function () {
     strictEqual((await feeToken.read.balanceOf([treasury.address])) - treasuryFeeTokenBefore, netTaxedProtocolFee);
   });
 
+  // 模块三：permit 与非 permit 的移除流动性路径
+  // 对应 README 已覆盖点：
+  // - permit 移除流动性路径必须在无预授权前提下正常工作。
+  // - 非 permit 的 removeLiquidityETH 路径也必须稳定赎回 token 和原生 ETH。
   it("should keep permit liquidity removal working without any prior LP approval", async function () {
     const tokenA = await viem.deployContract("MockERC20", ["Token A", "TKNA", 18]);
     const tokenB = await viem.deployContract("MockERC20", ["Token B", "TKNB", 18]);
@@ -488,6 +571,48 @@ describe("FluxRouterPairCriticalRegression", async function () {
     ok((await publicClient.getBalance({ address: recipientClient.account.address })) > 0n);
   });
 
+  it("should keep removeLiquidityETH redeeming both token and native ETH on the non-permit path", async function () {
+    const token = await viem.deployContract("MockERC20", ["Wrapped Flow Token", "WFT", 18]);
+
+    await token.write.mint([lpClient.account.address, 1_000_000n * 10n ** 18n]);
+    await token.write.approve([router.address, maxUint256], {
+      account: lpClient.account.address,
+    });
+
+    await router.write.addLiquidityETH(
+      [token.address, 10_000n * 10n ** 18n, 0n, 0n, lpClient.account.address, await getDeadline()],
+      { account: lpClient.account.address, value: 10n * 10n ** 18n }
+    );
+
+    const pairAddress = await factory.read.getPair([token.address, WETH.address]);
+    const pair = await viem.getContractAt("FluxSwapPair", pairAddress);
+    const lpLiquidity = await pair.read.balanceOf([lpClient.account.address]);
+
+    await pair.write.approve([router.address, lpLiquidity], {
+      account: lpClient.account.address,
+    });
+
+    const recipientTokenBeforeRemove = await token.read.balanceOf([recipientClient.account.address]);
+    const recipientEthBeforeRemove = await publicClient.getBalance({ address: recipientClient.account.address });
+
+    // 这里锁住 removeLiquidityETH 的普通路径，避免后续只保住 permit 分支而把常规赎回分支改坏。
+    await router.write.removeLiquidityETH(
+      [token.address, lpLiquidity, 0n, 0n, recipientClient.account.address, await getDeadline()],
+      { account: lpClient.account.address }
+    );
+
+    ok(await token.read.balanceOf([recipientClient.account.address]) > recipientTokenBeforeRemove);
+    ok((await publicClient.getBalance({ address: recipientClient.account.address })) > recipientEthBeforeRemove);
+    strictEqual(await pair.read.balanceOf([lpClient.account.address]), 0n);
+
+    const [reserve0AfterRemove, reserve1AfterRemove] = await pair.read.getReserves();
+    ok(reserve0AfterRemove > 0n && reserve1AfterRemove > 0n);
+  });
+
+  // 模块四：flash swap 成功/失败分支与协议费沉淀
+  // 对应 README 已覆盖点：
+  // - flash swap 成功回调时，协议费也必须稳定沉淀到 treasury，不能只锁失败分支。
+  // - flash swap 必须归还带手续费的金额，不能只还本金。
   it("should keep flash swaps requiring repayment plus fee instead of allowing principal-only repayment", async function () {
     const tokenA = await viem.deployContract("MockERC20", ["Token A", "TKNA", 18]);
     const tokenB = await viem.deployContract("MockERC20", ["Token B", "TKNB", 18]);
@@ -540,6 +665,70 @@ describe("FluxRouterPairCriticalRegression", async function () {
     );
   });
 
+  it("should keep successful flash-swap callbacks accruing protocol fees into treasury", async function () {
+    const treasury = await viem.deployContract("FluxSwapTreasury", [
+      multisigClient.account.address,
+      guardianClient.account.address,
+      operatorClient.account.address,
+      timelockDelay,
+    ]);
+    const tokenA = await viem.deployContract("MockERC20", ["Token A", "TKNA", 18]);
+    const tokenB = await viem.deployContract("MockERC20", ["Token B", "TKNB", 18]);
+    const flashReceiver = await viem.deployContract("MockFlashSwapReceiver", []);
+
+    await factory.write.setTreasury([treasury.address], {
+      account: multisigClient.account.address,
+    });
+
+    await tokenA.write.mint([lpClient.account.address, 1_000_000n * 10n ** 18n]);
+    await tokenB.write.mint([lpClient.account.address, 1_000_000n * 10n ** 18n]);
+
+    await tokenA.write.approve([router.address, maxUint256], { account: lpClient.account.address });
+    await tokenB.write.approve([router.address, maxUint256], { account: lpClient.account.address });
+
+    await router.write.addLiquidity(
+      [
+        tokenA.address,
+        tokenB.address,
+        10_000n * 10n ** 18n,
+        10_000n * 10n ** 18n,
+        0n,
+        0n,
+        lpClient.account.address,
+        await getDeadline(),
+      ],
+      { account: lpClient.account.address }
+    );
+
+    const pairAddress = await factory.read.getPair([tokenA.address, tokenB.address]);
+    const pair = await viem.getContractAt("FluxSwapPair", pairAddress);
+    const token0Address = String(await pair.read.token0()).toLowerCase();
+    const flashToken = token0Address === String(tokenA.address).toLowerCase() ? tokenA : tokenB;
+    const [reserve0Before, reserve1Before] = await pair.read.getReserves();
+
+    const amountOut = 100n * 10n ** 18n;
+    const repayAmount = (amountOut * feeBase) / (feeBase - totalFeeBps) + 1n;
+    const protocolFee = (repayAmount * protocolFeeBps) / feeBase;
+    const expectedReserve0After = reserve0Before - amountOut + repayAmount - protocolFee;
+    const data = encodeAbiParameters([{ type: "address" }, { type: "uint256" }], [flashToken.address, repayAmount]);
+
+    await flashToken.write.mint([flashReceiver.address, repayAmount]);
+
+    // 这里锁住 flash swap 成功回调路径：归还本金加手续费后，协议费必须正确沉淀到 treasury。
+    await pair.write.swap([amountOut, 0n, flashReceiver.address, data], {
+      account: traderClient.account.address,
+    });
+
+    strictEqual(await flashToken.read.balanceOf([treasury.address]), protocolFee);
+    strictEqual(await flashToken.read.balanceOf([flashReceiver.address]), amountOut);
+    strictEqual((await pair.read.getReserves())[0], expectedReserve0After);
+    strictEqual((await pair.read.getReserves())[1], reserve1Before);
+  });
+
+  // 模块五：超小额 rounding 与 full unwind 后的最小流动性
+  // 对应 README 已覆盖点：
+  // - 超小额 swap 的协议费 rounding 行为必须稳定。
+  // - full unwind 后 Pair 仍保留最小流动性，不会把池子彻底烧空。
   it("should preserve tiny-swap rounding behavior and minimum liquidity after a full LP unwind", async function () {
     const treasury = await viem.deployContract("FluxSwapTreasury", [
       multisigClient.account.address,

@@ -3,9 +3,10 @@ import { beforeEach, describe, it } from "node:test";
 import { ok, strictEqual } from "node:assert";
 
 // 回归目标：
-// 1. 锁住 treasury 暂停时“禁止支出但仍可继续收协议费”的行为。
-// 2. 锁住 approved spender 只能通过 treasury 记账接口拿钱，不能拿到底层 ERC20 allowance。
-// 3. 锁住原生 ETH 额度与 ERC20 额度相互隔离，避免后续改动把两套记账混在一起。
+// 1. 锁住 treasury 的暂停、恢复、operator 变更等治理边界，不让支出权限意外放宽。
+// 2. 锁住 approved spender / daily cap / revoke / burn 这套金库记账链路，避免绕过 treasury 内部会计。
+// 3. 锁住原生 ETH 与 ERC20 的 spend cap、spentToday 统计彼此隔离。
+// 4. 锁住 emergency withdraw 与普通 allocate 的边界，确保事故转移路径仍受 timelock 精确约束。
 describe("FluxTreasuryAccountingRegression", async function () {
   const hardhatNetwork = await network.connect();
   const { viem, networkHelpers } = hardhatNetwork;
@@ -111,6 +112,11 @@ describe("FluxTreasuryAccountingRegression", async function () {
     );
   });
 
+  // 模块一：暂停与治理边界
+  // 对应 README 已覆盖点：
+  // - treasury 暂停后，AMM 交易仍然可以把协议手续费打入 treasury。
+  // - treasury 暂停后，operator 不能继续从 treasury 对外分配资产。
+  // - guardian 可以暂停 treasury，但只有 multisig 可以恢复 treasury。
   it("should keep collecting swap fees while treasury is paused and only allow token spending after unpause", async function () {
     const swapAmount = 100n * 10n ** 18n;
     const expectedProtocolFee = (swapAmount * 5n) / 10000n;
@@ -161,6 +167,59 @@ describe("FluxTreasuryAccountingRegression", async function () {
     strictEqual(await tokenA.read.balanceOf([treasury.address]), 0n);
   });
 
+  it("should keep guardian pause and multisig-only unpause boundaries intact", async function () {
+    const spendAmount = 25n * 10n ** 18n;
+    const allowTokenOp = await treasury.read.hashSetAllowedToken([token.address, true]);
+    await scheduleAndExecute(allowTokenOp, () =>
+      treasury.write.executeSetAllowedToken([token.address, true, allowTokenOp])
+    );
+
+    const allowRecipientOp = await treasury.read.hashSetAllowedRecipient([recipientClient.account.address, true]);
+    await scheduleAndExecute(allowRecipientOp, () =>
+      treasury.write.executeSetAllowedRecipient([recipientClient.account.address, true, allowRecipientOp])
+    );
+
+    const capOp = await treasury.read.hashSetDailySpendCap([token.address, spendAmount]);
+    await scheduleAndExecute(capOp, () =>
+      treasury.write.executeSetDailySpendCap([token.address, spendAmount, capOp])
+    );
+
+    // 锁住 guardian 只能暂停、不能恢复；恢复权必须仍然只属于 multisig。
+    await treasury.write.pause({
+      account: guardianClient.account.address,
+    });
+
+    strictEqual(await treasury.read.paused(), true);
+
+    await expectRevert(
+      treasury.write.unpause({
+        account: guardianClient.account.address,
+      }),
+      "FluxSwapTreasury: FORBIDDEN"
+    );
+
+    await treasury.write.unpause({
+      account: multisigClient.account.address,
+    });
+
+    strictEqual(await treasury.read.paused(), false);
+
+    await treasury.write.allocate([token.address, recipientClient.account.address, spendAmount], {
+      account: operatorClient.account.address,
+    });
+
+    strictEqual(await token.read.balanceOf([recipientClient.account.address]), spendAmount);
+  });
+
+  // 模块二：approved spender、治理调度与 token 支出记账
+  // 对应 README 已覆盖点：
+  // - approved spender 不能通过 ERC20 allowance 直接绕过 treasury 记账。
+  // - approved spender 只能通过 pullApprovedToken 等 treasury 入口消耗额度。
+  // - operator 变更只能由 multisig schedule，且 timelock 未到期前不能提前执行。
+  // - treasury 对非标准 ERC20 的 approved pull 路径也必须继续兼容。
+  // - 仅完成 token / recipient 白名单还不够；如果 daily cap 未配置，allocate 仍必须被阻断。
+  // - burnApprovedToken 会消耗 approved spender 剩余额度，并占用同一套 dailySpendCap 记账。
+  // - executeRevokeSpender 会立即清空剩余额度，防止 spender 继续提走残留资产。
   it("should keep spender-facing ERC20 allowance at zero and only move funds through treasury pull accounting", async function () {
     const approvedAmount = 125n * 10n ** 18n;
     const approveOp = await treasury.read.hashApproveSpender([
@@ -192,6 +251,85 @@ describe("FluxTreasuryAccountingRegression", async function () {
     strictEqual(await token.read.allowance([treasury.address, spenderClient.account.address]), 0n);
   });
 
+  it("should keep operator changes behind multisig scheduling and timelock readiness", async function () {
+    const operationId = await treasury.read.hashSetOperator([recipientClient.account.address]);
+
+    // 这里锁住治理改动的最小安全面：operator 变更只能由 multisig schedule，且 timelock 未到期前绝不能提前执行。
+    await expectRevert(
+      treasury.write.scheduleOperation([operationId, timelockDelay], {
+        account: guardianClient.account.address,
+      }),
+      "FluxSwapTreasury: FORBIDDEN"
+    );
+
+    await treasury.write.scheduleOperation([operationId, timelockDelay], {
+      account: multisigClient.account.address,
+    });
+
+    await expectRevert(
+      treasury.write.executeSetOperator([recipientClient.account.address, operationId]),
+      "FluxSwapTreasury: OPERATION_NOT_READY"
+    );
+
+    await networkHelpers.time.increase(Number(timelockDelay));
+    await treasury.write.executeSetOperator([recipientClient.account.address, operationId]);
+
+    strictEqual((await treasury.read.operator()).toLowerCase(), recipientClient.account.address.toLowerCase());
+  });
+  it("should keep treasury-approved pulls working for tokens whose approve function returns no bool", async function () {
+    const noReturnToken = await viem.deployContract("MockNoReturnERC20", ["No Return Token", "NRT", 18]);
+    const approvedAmount = 250n * 10n ** 18n;
+    const pullAmount = 125n * 10n ** 18n;
+
+    await noReturnToken.write.mint([treasury.address, 1_000n * 10n ** 18n]);
+
+    const approveOp = await treasury.read.hashApproveSpender([
+      noReturnToken.address,
+      spenderClient.account.address,
+      approvedAmount,
+    ]);
+    await scheduleAndExecute(approveOp, () =>
+      treasury.write.executeApproveSpender([noReturnToken.address, spenderClient.account.address, approvedAmount, approveOp])
+    );
+
+    // 这里锁住非标准 ERC20 兼容性：即便 approve 不返回 bool，treasury 的内部额度拉取路径也必须继续可用。
+    await treasury.write.pullApprovedToken([noReturnToken.address, pullAmount], {
+      account: spenderClient.account.address,
+    });
+
+    strictEqual(await noReturnToken.read.allowance([treasury.address, spenderClient.account.address]), 0n);
+    strictEqual(await noReturnToken.read.balanceOf([spenderClient.account.address]), pullAmount);
+    strictEqual(
+      await treasury.read.approvedSpendRemaining([noReturnToken.address, spenderClient.account.address]),
+      approvedAmount - pullAmount
+    );
+  });
+
+  it("should keep token allocations blocked until a daily spend cap is explicitly configured", async function () {
+    const allowTokenOp = await treasury.read.hashSetAllowedToken([token.address, true]);
+    await scheduleAndExecute(allowTokenOp, () =>
+      treasury.write.executeSetAllowedToken([token.address, true, allowTokenOp])
+    );
+
+    const allowRecipientOp = await treasury.read.hashSetAllowedRecipient([recipientClient.account.address, true]);
+    await scheduleAndExecute(allowRecipientOp, () =>
+      treasury.write.executeSetAllowedRecipient([recipientClient.account.address, true, allowRecipientOp])
+    );
+
+    // 这里锁住“白名单不等于可支出”：如果 daily cap 没配，operator 仍然绝不能把资产从 treasury 放出去。
+    await expectRevert(
+      treasury.write.allocate([token.address, recipientClient.account.address, 10n * 10n ** 18n], {
+        account: operatorClient.account.address,
+      }),
+      "FluxSwapTreasury: SPEND_CAP_NOT_SET"
+    );
+  });
+
+  // 模块三：原生 ETH 与 ERC20 双额度隔离
+  // 对应 README 已覆盖点：
+  // - 原生 ETH 使用 address(0) 的单独 spend cap 记账。
+  // - 原生 ETH 的 spend cap 不会污染 ERC20 的 spentToday 统计。
+  // - token 与 native 双 spend cap 在同一天同时消费时仍保持独立。
   it("should account native ETH through the dedicated zero-address cap instead of token caps", async function () {
     const nativeCap = 1n * 10n ** 18n;
     const allowRecipientOp = await treasury.read.hashSetAllowedRecipient([recipientClient.account.address, true]);
@@ -379,6 +517,11 @@ describe("FluxTreasuryAccountingRegression", async function () {
     );
   });
 
+  // 模块四：emergency withdraw 与普通支出隔离
+  // 对应 README 已覆盖点：
+  // - executeEmergencyWithdraw / executeEmergencyWithdrawETH 与普通 allocate 路径隔离，即使 treasury 已暂停也能在 timelock 到期后执行。
+  // - emergency withdraw 的 operationId 与参数强绑定，且执行后不能被直接重放。
+  // - emergency withdraw 被 cancel 后，必须重新 schedule 才能再次执行。
   it("should keep timelocked emergency withdrawals available while paused and isolated from normal spend controls", async function () {
     const tokenEmergencyAmount = 120n * 10n ** 18n;
     const nativeEmergencyAmount = 5n * 10n ** 17n;

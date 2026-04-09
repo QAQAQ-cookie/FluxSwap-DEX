@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="280" viewBox="0 0 1000 280" role="img" aria-labelledby="title desc">
+  <title id="title">FluxPausePropagationFlow</title>
+  <desc id="desc">FluxPausePropagationFlow flow diagram</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#FBFCFE" />
+      <stop offset="100%" stop-color="#F1F5FA" />
+    </linearGradient>
+    <radialGradient id="glowA" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(180 52) rotate(14) scale(340 180)">
+      <stop offset="0%" stop-color="#DCE9FF" stop-opacity="0.82" />
+      <stop offset="100%" stop-color="#DCE9FF" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="glowB" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(860 244) rotate(-10) scale(300 150)">
+      <stop offset="0%" stop-color="#FFE8D8" stop-opacity="0.7" />
+      <stop offset="100%" stop-color="#FFE8D8" stop-opacity="0" />
+    </radialGradient>
+    <pattern id="dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.15" fill="#D7E1ED" opacity="0.48" />
+    </pattern>
+    <filter id="cardShadow" x="-20%" y="-20%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#243B5514" />
+    </filter>
+      <marker id="arrow" markerWidth="13" markerHeight="13" refX="10.4" refY="6.5" orient="auto" markerUnits="userSpaceOnUse">
+        <path d="M 1.2 1.2 L 10.4 6.5 L 1.2 11.8 L 3.8 6.5 Z" fill="#CBD6E3" />
+      </marker>
+  </defs>
+  <rect x="0" y="0" width="1000" height="280" rx="28" fill="url(#bg)" />
+  <rect x="0" y="0" width="1000" height="280" rx="28" fill="url(#dots)" opacity="0.32" />
+  <ellipse cx="180" cy="52" rx="340" ry="180" fill="url(#glowA)" />
+  <ellipse cx="860" cy="244" rx="300" ry="150" fill="url(#glowB)" />
+  <rect x="34" y="28" width="84" height="24" rx="12" fill="#17314D" />
+  <text x="76" y="44" text-anchor="middle" font-family="'Trebuchet MS','Segoe UI','Microsoft YaHei',sans-serif" font-size="11" font-weight="700" letter-spacing="0.6" fill="#FFFFFF">测试流程</text>
+  <text x="34" y="84" font-family="'Trebuchet MS','Segoe UI','Microsoft YaHei',sans-serif" font-size="25" font-weight="700" fill="#1D3148">FluxPausePropagationFlow</text>
+  <text x="34" y="107" font-family="'Trebuchet MS','Segoe UI','Microsoft YaHei',sans-serif" font-size="12" fill="#698096">左到右展示关键执行路径与状态流转</text>
+    <rect x="34" y="118" width="148" height="4" rx="2" fill="#2C4E71" opacity="0.18" />
+    <g>
+      
+      
+      <path d="M 266 169 L 300 169" fill="none" stroke="#EFF4F9" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="0.96" />
+      <path d="M 266 169 L 300 169" fill="none" stroke="#CBD6E3" stroke-width="2.35" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)" opacity="1" />
+      
+      <path d="M 506 169 L 540 169" fill="none" stroke="#EFF4F9" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="0.96" />
+      <path d="M 506 169 L 540 169" fill="none" stroke="#CBD6E3" stroke-width="2.35" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)" opacity="1" />
+      
+      <path d="M 746 169 L 780 169" fill="none" stroke="#EFF4F9" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="0.96" />
+      <path d="M 746 169 L 780 169" fill="none" stroke="#CBD6E3" stroke-width="2.35" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)" opacity="1" />
+    </g>
+  <g>
+
+    <g filter="url(#cardShadow)">
+      <rect x="60" y="120" width="206" height="98" rx="26" fill="#EAF1FF" />
+      <rect x="68" y="128" width="190" height="82" rx="20" fill="#ffffff" stroke="#C9D9FF" stroke-width="1.6" />
+      <rect x="78" y="137" width="170" height="1.6" rx="0.8" fill="#D8E5FF" />
+      <circle cx="88" cy="144" r="12" fill="#4B73F2" />
+      <text x="88" y="148.5" text-anchor="middle" font-family="'Trebuchet MS','Segoe UI','Microsoft YaHei',sans-serif" font-size="12" font-weight="700" fill="#ffffff">A</text>
+      <circle cx="244" cy="144" r="4.5" fill="#4B73F2" opacity="0.18" />
+      <text font-family="'Trebuchet MS','Segoe UI','Microsoft YaHei',sans-serif" font-size="15.5" font-weight="700" fill="#2142A8" text-anchor="start"><tspan x="118" y="163.57500000000002">开启 Treasury</tspan><tspan x="118" y="184.965">或本地 Pause</tspan></text>
+    </g>
+
+    <g filter="url(#cardShadow)">
+      <rect x="300" y="120" width="206" height="98" rx="26" fill="#FFF0EC" />
+      <rect x="308" y="128" width="190" height="82" rx="20" fill="#ffffff" stroke="#F4C1B5" stroke-width="1.6" />
+      <rect x="318" y="137" width="170" height="1.6" rx="0.8" fill="#F7D5CD" />
+      <circle cx="328" cy="144" r="12" fill="#E46644" />
+      <text x="328" y="148.5" text-anchor="middle" font-family="'Trebuchet MS','Segoe UI','Microsoft YaHei',sans-serif" font-size="12" font-weight="700" fill="#ffffff">B</text>
+      <circle cx="484" cy="144" r="4.5" fill="#E46644" opacity="0.18" />
+      <text font-family="'Trebuchet MS','Segoe UI','Microsoft YaHei',sans-serif" font-size="15.5" font-weight="700" fill="#B34A2E" text-anchor="start"><tspan x="358" y="163.57500000000002">奖励 / 回购</tspan><tspan x="358" y="184.965">链路被阻断</tspan></text>
+    </g>
+
+    <g filter="url(#cardShadow)">
+      <rect x="540" y="120" width="206" height="98" rx="26" fill="#FFF5E3" />
+      <rect x="548" y="128" width="190" height="82" rx="20" fill="#ffffff" stroke="#F2D49C" stroke-width="1.6" />
+      <rect x="558" y="137" width="170" height="1.6" rx="0.8" fill="#F7E4BF" />
+      <circle cx="568" cy="144" r="12" fill="#DA9400" />
+      <text x="568" y="148.5" text-anchor="middle" font-family="'Trebuchet MS','Segoe UI','Microsoft YaHei',sans-serif" font-size="12" font-weight="700" fill="#ffffff">C</text>
+      <circle cx="724" cy="144" r="4.5" fill="#DA9400" opacity="0.18" />
+      <text font-family="'Trebuchet MS','Segoe UI','Microsoft YaHei',sans-serif" font-size="15.5" font-weight="700" fill="#9A6100" text-anchor="start"><tspan x="598" y="163.57500000000002">解除</tspan><tspan x="598" y="184.965">Pause</tspan></text>
+    </g>
+
+    <g filter="url(#cardShadow)">
+      <rect x="780" y="120" width="206" height="98" rx="26" fill="#EEF3F8" />
+      <rect x="788" y="128" width="190" height="82" rx="20" fill="#ffffff" stroke="#CAD6E4" stroke-width="1.6" />
+      <rect x="798" y="137" width="170" height="1.6" rx="0.8" fill="#DDE5EF" />
+      <circle cx="808" cy="144" r="12" fill="#647891" />
+      <text x="808" y="148.5" text-anchor="middle" font-family="'Trebuchet MS','Segoe UI','Microsoft YaHei',sans-serif" font-size="12" font-weight="700" fill="#ffffff">D</text>
+      <circle cx="964" cy="144" r="4.5" fill="#647891" opacity="0.18" />
+      <text font-family="'Trebuchet MS','Segoe UI','Microsoft YaHei',sans-serif" font-size="15.5" font-weight="700" fill="#2F425A" text-anchor="start"><tspan x="838" y="163.57500000000002">链路按依赖</tspan><tspan x="838" y="184.965">顺序恢复</tspan></text>
+    </g>
+  </g>
+</svg>

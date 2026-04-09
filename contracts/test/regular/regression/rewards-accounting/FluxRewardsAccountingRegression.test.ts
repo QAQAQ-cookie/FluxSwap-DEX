@@ -3,10 +3,10 @@ import { beforeEach, describe, it } from "node:test";
 import { ok, strictEqual } from "node:assert";
 
 // 回归目标：
-// 1. 锁住同币质押时“本金余额”和“奖励储备”不能串账。
-// 2. 锁住 manager -> pool 的 syncRewards 清账链路，避免 pending 奖励残留。
-// 3. 锁住 recoverUnallocatedRewards 只能回收未分配奖励，不能回收用户已归属奖励。
-// 4. 锁住无质押用户时 queued reward 的回收行为，避免奖励凭空滞留。
+// 1. 锁住同币质押时本金、奖励储备、错峰分账三类会计边界。
+// 2. 锁住 manager -> pool 的 syncRewards、allocPoint 分账、rounding carry-forward 等奖励分发主链路。
+// 3. 锁住 recoverUnallocatedRewards / recoverManagedPoolUnallocatedRewards 只回收未分配奖励，不能吞掉已归属奖励。
+// 4. 锁住普通池与 managed pool 的 queued reward / dust 回收路径，避免奖励资产卡死或被误提。
 describe("FluxRewardsAccountingRegression", async function () {
   const hardhatNetwork = await network.connect();
   const { viem, networkHelpers } = hardhatNetwork;
@@ -120,6 +120,10 @@ describe("FluxRewardsAccountingRegression", async function () {
     });
   });
 
+  // 模块一：同币质押本金、奖励储备与错峰分账
+  // 对应 README 已覆盖点：
+  // - 同币质押时，池子持有的本金与 rewardReserve 的奖励会计必须分离。
+  // - 同币质押存在错峰入场时，先入场用户必须获得更高奖励，同时总奖励仍要严格守恒。
   it("should keep same-token staking principal separate from rewardReserve accounting", async function () {
     const userFunding = 1_000n * 10n ** 18n;
     const stakeAmount = 100n * 10n ** 18n;
@@ -171,6 +175,78 @@ describe("FluxRewardsAccountingRegression", async function () {
     strictEqual(await fluxToken.read.balanceOf([stakingRewards.address]), 0n);
   });
 
+  it("should keep time-weighted same-token rewards favoring the earlier staker while preserving total reward conservation", async function () {
+    const userFunding = 1_000n * 10n ** 18n;
+    const rewardAmount = 700n * 10n ** 18n;
+    const stakeAmount = 100n * 10n ** 18n;
+
+    const stakingRewards = await viem.deployContract("FluxSwapStakingRewards", [
+      multisigClient.account.address,
+      fluxToken.address,
+      fluxToken.address,
+      treasury.address,
+      operatorClient.account.address,
+    ]);
+
+    await configureTreasuryForFlux(
+      [userAClient.account.address, userBClient.account.address],
+      5_000n * 10n ** 18n
+    );
+    await approveTreasurySpender(stakingRewards.address, rewardAmount);
+
+    await treasury.write.allocate([fluxToken.address, userAClient.account.address, userFunding], {
+      account: operatorClient.account.address,
+    });
+    await treasury.write.allocate([fluxToken.address, userBClient.account.address, userFunding], {
+      account: operatorClient.account.address,
+    });
+
+    await fluxToken.write.approve([stakingRewards.address, userFunding], {
+      account: userAClient.account.address,
+    });
+    await fluxToken.write.approve([stakingRewards.address, userFunding], {
+      account: userBClient.account.address,
+    });
+
+    const userABalanceBeforeStake = await fluxToken.read.balanceOf([userAClient.account.address]);
+    const userBBalanceBeforeStake = await fluxToken.read.balanceOf([userBClient.account.address]);
+
+    await stakingRewards.write.stake([stakeAmount], {
+      account: userAClient.account.address,
+    });
+    await stakingRewards.write.notifyRewardAmount([rewardAmount], {
+      account: operatorClient.account.address,
+    });
+
+    // 这里锁住错峰入场分账：先入场用户在奖励开始后先占用时间窗口，最终收益必须高于后入场用户。
+    await networkHelpers.time.increase(2);
+    await stakingRewards.write.stake([stakeAmount], {
+      account: userBClient.account.address,
+    });
+
+    await stakingRewards.write.exit({
+      account: userAClient.account.address,
+    });
+    await stakingRewards.write.exit({
+      account: userBClient.account.address,
+    });
+
+    const userAReward = (await fluxToken.read.balanceOf([userAClient.account.address])) - userABalanceBeforeStake;
+    const userBReward = (await fluxToken.read.balanceOf([userBClient.account.address])) - userBBalanceBeforeStake;
+
+    strictEqual(userAReward + userBReward, rewardAmount);
+    ok(userAReward > userBReward, "earlier staker should receive more rewards");
+    strictEqual(await stakingRewards.read.totalStaked(), 0n);
+    strictEqual(await stakingRewards.read.rewardReserve(), 0n);
+    strictEqual(await stakingRewards.read.pendingUserRewards(), 0n);
+    strictEqual(await fluxToken.read.balanceOf([stakingRewards.address]), 0n);
+  });
+
+  // 模块二：manager -> pool 同步与普通池 recover 边界
+  // 对应 README 已覆盖点：
+  // - syncRewards 之后，manager 的 pendingPoolRewards 必须归零，奖励资产必须进入 pool。
+  // - 用户已经归属但尚未领取的奖励，不能被 recoverUnallocatedRewards 回收走。
+  // - 无质押用户时进入 queuedRewards 的奖励，必须可以被 owner 完整回收。
   it("should clear manager pending rewards as soon as syncRewards claims them into the pool reserve", async function () {
     const stakeAmount = 100n * 10n ** 18n;
     const rewardAmount = 300n * 10n ** 18n;
@@ -291,6 +367,10 @@ describe("FluxRewardsAccountingRegression", async function () {
     strictEqual(await stakingRewards.read.pendingUserRewards(), 0n);
   });
 
+  // 模块三：多池 allocPoint 与 rounding carry-forward
+  // 对应 README 已覆盖点：
+  // - 多池按 allocPoint 分账时，各池分配比例必须正确，且停用池不会继续收到后续奖励。
+  // - 多池小额发奖时，manager 的 rounding carry-forward 必须持续累计，直到小 allocPoint 池也能真正领到奖励。
   it("should keep allocPoint splits stable and stop accruing new rewards to a pool after it is deactivated", async function () {
     const firstReward = 1_000n * 10n ** 18n;
     const secondReward = 700n * 10n ** 18n;
@@ -417,6 +497,10 @@ describe("FluxRewardsAccountingRegression", async function () {
     strictEqual(await fluxToken.read.balanceOf([manager.address]), 2n);
   });
 
+  // 模块四：managed pool queued dust 与 recover 边界
+  // 对应 README 已覆盖点：
+  // - LP 池在用户退出后若仍残留 queuedRewards dust，必须可以通过 recoverManagedPoolUnallocatedRewards 被工厂正确回收。
+  // - managed pool 场景下，recoverManagedPoolUnallocatedRewards 只能回收未分配奖励，不能吞掉用户已归属奖励。
   it("should let the pool factory recover LP reward dust that remains queued after the staker exits", async function () {
     const WETH = await viem.deployContract("MockWETH", []);
     const router = await viem.deployContract("FluxSwapRouter", [dexFactory.address, WETH.address]);
