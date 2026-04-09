@@ -71,6 +71,21 @@ describe("FluxRevenueDistributor", async function () {
     return (await publicClient.getBlock()).timestamp + 3600n;
   }
 
+  async function accrueTreasuryRevenue(swapAmount: bigint) {
+    const treasuryRevenueBefore = await revenueToken.read.balanceOf([treasury.address]);
+    await router.write.swapExactTokensForTokens(
+      [swapAmount, 0n, [revenueToken.address, fluxToken.address], traderClient.account.address, await getDeadline()],
+      { account: traderClient.account.address }
+    );
+    return (await revenueToken.read.balanceOf([treasury.address])) - treasuryRevenueBefore;
+  }
+
+  async function approveBuybackAndDistributionFlow(revenueAmount: bigint) {
+    await approveTreasurySpender(revenueToken.address, buybackExecutor.address, revenueAmount);
+    await approveTreasurySpender(fluxToken.address, manager.address, 10_000n * 10n ** 18n);
+    await approveTreasurySpender(fluxToken.address, distributor.address, 10_000n * 10n ** 18n);
+  }
+
   async function deployManager(
     treasuryAddress: `0x${string}`,
     rewardTokenAddress: `0x${string}`,
@@ -226,6 +241,49 @@ describe("FluxRevenueDistributor", async function () {
     strictEqual(await fluxToken.read.balanceOf([manager.address]), 100n * 10n ** 18n + 1n);
   });
 
+  it("should apply owner or operator gating to executeBuybackAndDistribute and rotate that execution right with setOperator", async function () {
+    const revenueAmount = await accrueTreasuryRevenue(1_000n * 10n ** 18n);
+
+    await approveBuybackAndDistributionFlow(revenueAmount);
+
+    await expectRevert(
+      distributor.write.executeBuybackAndDistribute(
+        [revenueToken.address, revenueAmount, 1n, [revenueToken.address, fluxToken.address], await getDeadline()],
+        { account: traderClient.account.address }
+      ),
+      "FluxRevenueDistributor: FORBIDDEN"
+    );
+
+    await distributor.write.executeBuybackAndDistribute(
+      [revenueToken.address, revenueAmount, 1n, [revenueToken.address, fluxToken.address], await getDeadline()],
+      { account: operatorClient.account.address }
+    );
+
+    ok(await fluxToken.read.balanceOf([manager.address]) > 0n);
+
+    await distributor.write.setOperator([otherClient.account.address], {
+      account: multisigClient.account.address,
+    });
+
+    const secondRevenueAmount = await accrueTreasuryRevenue(1_000n * 10n ** 18n);
+    await approveBuybackAndDistributionFlow(secondRevenueAmount);
+
+    await expectRevert(
+      distributor.write.executeBuybackAndDistribute(
+        [revenueToken.address, secondRevenueAmount, 1n, [revenueToken.address, fluxToken.address], await getDeadline()],
+        { account: operatorClient.account.address }
+      ),
+      "FluxRevenueDistributor: FORBIDDEN"
+    );
+
+    await distributor.write.executeBuybackAndDistribute(
+      [revenueToken.address, secondRevenueAmount, 1n, [revenueToken.address, fluxToken.address], await getDeadline()],
+      { account: otherClient.account.address }
+    );
+
+    ok(await fluxToken.read.balanceOf([manager.address]) > 0n);
+  });
+
   it("should keep governance updates owner-only while allowing aligned manager and executor replacements", async function () {
     const alternateManager = await deployManager(treasury.address, fluxToken.address, distributor.address);
     const alternateExecutor = await deployBuybackExecutor(treasury.address, distributor.address, fluxToken.address);
@@ -287,6 +345,8 @@ describe("FluxRevenueDistributor", async function () {
 
   it("should enforce the pauser role and block distributor execution while paused", async function () {
     await approveTreasurySpender(fluxToken.address, manager.address, 100n * 10n ** 18n);
+    const revenueAmount = await accrueTreasuryRevenue(500n * 10n ** 18n);
+    await approveBuybackAndDistributionFlow(revenueAmount);
 
     await expectRevert(
       distributor.write.pause({ account: otherClient.account.address }),
@@ -300,6 +360,14 @@ describe("FluxRevenueDistributor", async function () {
       distributor.write.distributeTreasuryRewards([1n], {
         account: operatorClient.account.address,
       }),
+      "FluxRevenueDistributor: PAUSED"
+    );
+
+    await expectRevert(
+      distributor.write.executeBuybackAndDistribute(
+        [revenueToken.address, revenueAmount, 1n, [revenueToken.address, fluxToken.address], await getDeadline()],
+        { account: operatorClient.account.address }
+      ),
       "FluxRevenueDistributor: PAUSED"
     );
 

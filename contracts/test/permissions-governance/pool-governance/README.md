@@ -10,7 +10,7 @@
 
 - 验证单币池、LP 池的创建与 manager 自动注册。
 - 验证 duplicate pool、防重复 handoff、同资产替代池重建等治理边界。
-- 验证 managed pool 奖励配置必须按 self-sync 规则原子更新。
+- 验证 managed pool 奖励配置必须按 self-sync 规则原子更新，离开 self-sync 后才允许 `rewardSource` / `rewardNotifier` 细粒度更新。
 - 验证 factory owner 迁移后，对既有 managed pool 的治理能力仍然连续。
 - 验证工厂可以从 managed pool 回收未分配奖励。
 

@@ -2,11 +2,18 @@ import { network } from "hardhat";
 import { beforeEach, describe, it } from "node:test";
 import { ok, strictEqual } from "node:assert";
 
+/*
+ * 权限治理目标：
+ * 1. 锁定 buyback 只能由 owner / operator 执行，且 pause / treasury pause 会阻断执行。
+ * 2. 锁定 `setOperator` 是唯一的 OPERATOR_ROLE 入口，禁止直接 grant / revoke / renounce。
+ * 3. 锁定 `setTreasury`、`setDefaultRecipient`、`recoverToken` 都只能由 owner 治理。
+ * 4. 锁定 ownership handoff 后，admin / pauser / operator 权限会按预期收敛。
+ */
 describe("FluxBuybackExecutor", async function () {
   const hardhatNetwork = await network.connect();
   const { viem, networkHelpers } = hardhatNetwork;
   const publicClient = await viem.getPublicClient();
-  const [multisigClient, guardianClient, operatorClient, lpClient, stakerClient, otherClient] =
+  const [multisigClient, guardianClient, operatorClient, lpClient, stakerClient, otherClient, nextTreasuryClient] =
     await viem.getWalletClients();
 
   const timelockDelay = 3600n;
@@ -228,6 +235,79 @@ describe("FluxBuybackExecutor", async function () {
     );
   });
 
+  it("should keep treasury and default recipient governance owner-only and sync them during treasury rotation", async function () {
+    const alternateTreasury = await viem.deployContract("FluxSwapTreasury", [
+      multisigClient.account.address,
+      guardianClient.account.address,
+      operatorClient.account.address,
+      timelockDelay,
+    ]);
+    const amountIn = 200n * 10n ** 18n;
+    const expectedOut = (await router.read.getAmountsOut([amountIn, [revenueToken.address, fluxToken.address]]))[1];
+
+    await expectRevert(
+      buybackExecutor.write.setTreasury([alternateTreasury.address], {
+        account: otherClient.account.address,
+      }),
+      "OwnableUnauthorizedAccount"
+    );
+
+    await expectRevert(
+      buybackExecutor.write.setDefaultRecipient([stakerClient.account.address], {
+        account: multisigClient.account.address,
+      }),
+      "FluxBuybackExecutor: INVALID_RECIPIENT"
+    );
+
+    await expectRevert(
+      buybackExecutor.write.setDefaultRecipient([alternateTreasury.address], {
+        account: otherClient.account.address,
+      }),
+      "OwnableUnauthorizedAccount"
+    );
+
+    await revenueToken.write.mint([alternateTreasury.address, amountIn]);
+    await approveTreasurySpender(revenueToken.address, buybackExecutor.address, amountIn);
+    await buybackExecutor.write.setTreasury([alternateTreasury.address], {
+      account: multisigClient.account.address,
+    });
+
+    strictEqual((await buybackExecutor.read.treasury()).toLowerCase(), alternateTreasury.address.toLowerCase());
+    strictEqual(
+      (await buybackExecutor.read.defaultRecipient()).toLowerCase(),
+      alternateTreasury.address.toLowerCase()
+    );
+
+    const alternateApproveOp = await alternateTreasury.read.hashApproveSpender([
+      revenueToken.address,
+      buybackExecutor.address,
+      amountIn,
+    ]);
+    await alternateTreasury.write.scheduleOperation([alternateApproveOp, timelockDelay], {
+      account: multisigClient.account.address,
+    });
+    await networkHelpers.time.increase(Number(timelockDelay));
+    await alternateTreasury.write.executeApproveSpender([
+      revenueToken.address,
+      buybackExecutor.address,
+      amountIn,
+      alternateApproveOp,
+    ]);
+
+    await buybackExecutor.write.setDefaultRecipient([alternateTreasury.address], {
+      account: multisigClient.account.address,
+    });
+
+    const fluxBalanceBefore = await fluxToken.read.balanceOf([alternateTreasury.address]);
+    await buybackExecutor.write.executeBuyback(
+      [revenueToken.address, amountIn, expectedOut, [revenueToken.address, fluxToken.address], "0x0000000000000000000000000000000000000000", await getDeadline()],
+      { account: operatorClient.account.address }
+    );
+
+    strictEqual(await fluxToken.read.balanceOf([alternateTreasury.address]), fluxBalanceBefore + expectedOut);
+    strictEqual(await revenueToken.read.balanceOf([alternateTreasury.address]), 0n);
+  });
+
   it("should reject buyback recipients outside treasury", async function () {
     const amountIn = 100n * 10n ** 18n;
     await approveTreasurySpender(revenueToken.address, buybackExecutor.address, amountIn);
@@ -263,6 +343,18 @@ describe("FluxBuybackExecutor", async function () {
     );
   });
 
+  it("should allow only pauser accounts to unpause the executor", async function () {
+    await buybackExecutor.write.pause({ account: multisigClient.account.address });
+
+    await expectRevert(
+      buybackExecutor.write.unpause({ account: otherClient.account.address }),
+      "FluxBuybackExecutor: FORBIDDEN"
+    );
+
+    await buybackExecutor.write.unpause({ account: multisigClient.account.address });
+    strictEqual(await buybackExecutor.read.paused(), false);
+  });
+
   it("should enforce treasury daily spend caps for approved buyback spenders", async function () {
     const amountIn = 100n * 10n ** 18n;
 
@@ -284,6 +376,24 @@ describe("FluxBuybackExecutor", async function () {
     await expectRevert(
       buybackExecutor.write.grantRole([operatorRole, otherClient.account.address], {
         account: multisigClient.account.address,
+      }),
+      "FluxBuybackExecutor: ROLE_MANAGED_BY_SET_OPERATOR"
+    );
+  });
+
+  it("should reject direct operator role revoke and renounce outside setOperator", async function () {
+    const operatorRole = await buybackExecutor.read.OPERATOR_ROLE();
+
+    await expectRevert(
+      buybackExecutor.write.revokeRole([operatorRole, operatorClient.account.address], {
+        account: multisigClient.account.address,
+      }),
+      "FluxBuybackExecutor: ROLE_MANAGED_BY_SET_OPERATOR"
+    );
+
+    await expectRevert(
+      buybackExecutor.write.renounceRole([operatorRole, operatorClient.account.address], {
+        account: operatorClient.account.address,
       }),
       "FluxBuybackExecutor: ROLE_MANAGED_BY_SET_OPERATOR"
     );
@@ -332,5 +442,25 @@ describe("FluxBuybackExecutor", async function () {
 
     strictEqual(await overlappingExecutor.read.operator(), "0x0000000000000000000000000000000000000000");
     strictEqual(await overlappingExecutor.read.hasRole([operatorRole, multisigClient.account.address]), false);
+  });
+
+  it("should restrict token recovery to the current owner", async function () {
+    const strayAmount = 33n * 10n ** 18n;
+
+    await revenueToken.write.mint([buybackExecutor.address, strayAmount]);
+
+    await expectRevert(
+      buybackExecutor.write.recoverToken([revenueToken.address, stakerClient.account.address, strayAmount], {
+        account: otherClient.account.address,
+      }),
+      "OwnableUnauthorizedAccount"
+    );
+
+    await buybackExecutor.write.recoverToken([revenueToken.address, nextTreasuryClient.account.address, strayAmount], {
+      account: multisigClient.account.address,
+    });
+
+    strictEqual(await revenueToken.read.balanceOf([buybackExecutor.address]), 0n);
+    strictEqual(await revenueToken.read.balanceOf([nextTreasuryClient.account.address]), strayAmount);
   });
 });

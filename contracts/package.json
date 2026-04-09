@@ -5,9 +5,11 @@
   "main": "index.js",
   "scripts": {
     "test": "npx hardhat test",
+    "test:economic-security": "node ./scripts/run-economic-security-tests.mjs",
     "test:unit": "node ./scripts/run-unit-tests.mjs",
     "test:integration": "node ./scripts/run-integration-tests.mjs",
-    "test:regression": "node ./scripts/run-regression-tests.mjs"
+    "test:regression": "node ./scripts/run-regression-tests.mjs",
+    "test:permissions-governance": "node ./scripts/run-permissions-governance-tests.mjs"
   },
   "keywords": [],
   "author": "",

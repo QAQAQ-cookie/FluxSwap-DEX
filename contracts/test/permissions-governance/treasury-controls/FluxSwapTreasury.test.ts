@@ -2,6 +2,13 @@ import { network } from "hardhat";
 import { beforeEach, describe, it } from "node:test";
 import { ok, strictEqual } from "node:assert";
 
+/*
+ * 金库治理目标：
+ * 1. 锁定 multisig 是 timelock 操作的唯一调度与取消入口。
+ * 2. 锁定 guardian / operator / minDelay 等治理变更都必须经过 timelock 才能生效。
+ * 3. 锁定 approved spender 的 pull / consume / burn 都会受额度与日限额约束。
+ * 4. 锁定 treasury pause 只影响花费侧，不影响协议费继续沉淀到金库。
+ */
 describe("FluxSwapTreasury", async function () {
   const hardhatNetwork = await network.connect();
   const { viem, networkHelpers } = hardhatNetwork;
@@ -110,6 +117,79 @@ describe("FluxSwapTreasury", async function () {
     strictEqual((await treasury.read.operator()).toLowerCase(), recipientClient.account.address.toLowerCase());
   });
 
+  it("should allow only multisig to cancel a scheduled operation and block later execution", async function () {
+    const operationId = await treasury.read.hashSetGuardian([recipientClient.account.address]);
+
+    await treasury.write.scheduleOperation([operationId, delay], { account: multisigClient.account.address });
+
+    await expectRevert(
+      treasury.write.cancelOperation([operationId], { account: guardianClient.account.address }),
+      "FluxSwapTreasury: FORBIDDEN"
+    );
+
+    await treasury.write.cancelOperation([operationId], { account: multisigClient.account.address });
+    strictEqual(await treasury.read.operationReadyAt([operationId]), 0n);
+
+    await networkHelpers.time.increase(Number(delay));
+
+    await expectRevert(
+      treasury.write.executeSetGuardian([recipientClient.account.address, operationId]),
+      "FluxSwapTreasury: UNKNOWN_OPERATION"
+    );
+  });
+
+  it("should enforce timelock for guardian updates and route pause authority to the new guardian", async function () {
+    const operationId = await treasury.read.hashSetGuardian([recipientClient.account.address]);
+
+    await treasury.write.scheduleOperation([operationId, delay], { account: multisigClient.account.address });
+
+    await expectRevert(
+      treasury.write.executeSetGuardian([recipientClient.account.address, operationId]),
+      "FluxSwapTreasury: OPERATION_NOT_READY"
+    );
+
+    await networkHelpers.time.increase(Number(delay));
+    await treasury.write.executeSetGuardian([recipientClient.account.address, operationId]);
+
+    strictEqual((await treasury.read.guardian()).toLowerCase(), recipientClient.account.address.toLowerCase());
+
+    await expectRevert(
+      treasury.write.pause({ account: guardianClient.account.address }),
+      "FluxSwapTreasury: FORBIDDEN"
+    );
+
+    await treasury.write.pause({ account: recipientClient.account.address });
+    strictEqual(await treasury.read.paused(), true);
+
+    await treasury.write.unpause({ account: multisigClient.account.address });
+    strictEqual(await treasury.read.paused(), false);
+  });
+
+  it("should update minDelay through timelock and enforce the new delay on later governance actions", async function () {
+    const newDelay = 7200n;
+    const minDelayOp = await treasury.read.hashSetMinDelay([newDelay]);
+
+    await treasury.write.scheduleOperation([minDelayOp, delay], { account: multisigClient.account.address });
+
+    await expectRevert(
+      treasury.write.executeSetMinDelay([newDelay, minDelayOp]),
+      "FluxSwapTreasury: OPERATION_NOT_READY"
+    );
+
+    await networkHelpers.time.increase(Number(delay));
+    await treasury.write.executeSetMinDelay([newDelay, minDelayOp]);
+
+    strictEqual(await treasury.read.minDelay(), newDelay);
+
+    const operatorOp = await treasury.read.hashSetOperator([recipientClient.account.address]);
+    await expectRevert(
+      treasury.write.scheduleOperation([operatorOp, delay], { account: multisigClient.account.address }),
+      "FluxSwapTreasury: DELAY_TOO_SHORT"
+    );
+
+    await treasury.write.scheduleOperation([operatorOp, newDelay], { account: multisigClient.account.address });
+  });
+
   it("should allocate whitelisted tokens within daily caps", async function () {
     const allowTokenOp = await treasury.read.hashSetAllowedToken([token.address, true]);
     await scheduleAndExecute(allowTokenOp, () =>
@@ -205,6 +285,41 @@ describe("FluxSwapTreasury", async function () {
     );
   });
 
+  it("should let approved spenders consume governed cap without transferring funds", async function () {
+    const allowanceAmount = 250n * 10n ** 18n;
+    const firstConsume = 100n * 10n ** 18n;
+
+    await token.write.mint([treasury.address, 1_000n * 10n ** 18n]);
+
+    const capOp = await treasury.read.hashSetDailySpendCap([token.address, 200n * 10n ** 18n]);
+    await scheduleAndExecute(capOp, () =>
+      treasury.write.executeSetDailySpendCap([token.address, 200n * 10n ** 18n, capOp])
+    );
+
+    const approveOp = await treasury.read.hashApproveSpender([token.address, spenderClient.account.address, allowanceAmount]);
+    await scheduleAndExecute(approveOp, () =>
+      treasury.write.executeApproveSpender([token.address, spenderClient.account.address, allowanceAmount, approveOp])
+    );
+
+    await treasury.write.consumeApprovedSpenderCap([token.address, firstConsume], {
+      account: spenderClient.account.address,
+    });
+
+    strictEqual(
+      await treasury.read.approvedSpendRemaining([token.address, spenderClient.account.address]),
+      allowanceAmount - firstConsume
+    );
+    strictEqual(await treasury.read.spentToday([token.address]), firstConsume);
+    strictEqual(await token.read.balanceOf([treasury.address]), 1_000n * 10n ** 18n);
+
+    await expectRevert(
+      treasury.write.consumeApprovedSpenderCap([token.address, 101n * 10n ** 18n], {
+        account: spenderClient.account.address,
+      }),
+      "FluxSwapTreasury: DAILY_CAP_EXCEEDED"
+    );
+  });
+
   it("should manage treasury-enforced spender caps through timelocked operations", async function () {
     await token.write.mint([treasury.address, 1000n * 10n ** 18n]);
 
@@ -286,6 +401,31 @@ describe("FluxSwapTreasury", async function () {
     strictEqual(await treasury.read.approvedSpendRemaining([noReturnToken.address, spenderClient.account.address]), 0n);
   });
 
+  it("should burn approved treasury-held tokens under spender caps", async function () {
+    const burnableToken = await viem.deployContract("FluxToken", [
+      "Flux Token",
+      "FLUX",
+      multisigClient.account.address,
+      treasury.address,
+      1_000n * 10n ** 18n,
+      2_000n * 10n ** 18n,
+    ]);
+    const burnAmount = 120n * 10n ** 18n;
+
+    const approveOp = await treasury.read.hashApproveSpender([burnableToken.address, spenderClient.account.address, burnAmount]);
+    await scheduleAndExecute(approveOp, () =>
+      treasury.write.executeApproveSpender([burnableToken.address, spenderClient.account.address, burnAmount, approveOp])
+    );
+
+    await treasury.write.burnApprovedToken([burnableToken.address, burnAmount], {
+      account: spenderClient.account.address,
+    });
+
+    strictEqual(await burnableToken.read.balanceOf([treasury.address]), 880n * 10n ** 18n);
+    strictEqual(await burnableToken.read.totalSupply(), 880n * 10n ** 18n);
+    strictEqual(await treasury.read.approvedSpendRemaining([burnableToken.address, spenderClient.account.address]), 0n);
+  });
+
   it("should release ETH through daily-capped native allocations", async function () {
     const allowRecipientOp = await treasury.read.hashSetAllowedRecipient([recipientClient.account.address, true]);
     await scheduleAndExecute(allowRecipientOp, () =>
@@ -327,6 +467,31 @@ describe("FluxSwapTreasury", async function () {
     await treasury.write.executeEmergencyWithdraw([token.address, recipientClient.account.address, 120n * 10n ** 18n, operationId]);
 
     strictEqual(await token.read.balanceOf([recipientClient.account.address]), 120n * 10n ** 18n);
+  });
+
+  it("should protect native emergency withdrawals behind timelock", async function () {
+    const withdrawalAmount = 1n * 10n ** 18n;
+
+    await multisigClient.sendTransaction({
+      to: treasury.address,
+      value: 2n * 10n ** 18n,
+    });
+
+    const operationId = await treasury.read.hashEmergencyWithdrawETH([recipientClient.account.address, withdrawalAmount]);
+    await treasury.write.scheduleOperation([operationId, delay], { account: multisigClient.account.address });
+
+    await expectRevert(
+      treasury.write.executeEmergencyWithdrawETH([recipientClient.account.address, withdrawalAmount, operationId]),
+      "FluxSwapTreasury: OPERATION_NOT_READY"
+    );
+
+    await networkHelpers.time.increase(Number(delay));
+
+    const balanceBefore = await publicClient.getBalance({ address: recipientClient.account.address });
+    await treasury.write.executeEmergencyWithdrawETH([recipientClient.account.address, withdrawalAmount, operationId]);
+    const balanceAfter = await publicClient.getBalance({ address: recipientClient.account.address });
+
+    strictEqual(balanceAfter - balanceBefore, withdrawalAmount);
   });
 
   it("should collect swap fees into treasury and distribute them through governed allocation", async function () {

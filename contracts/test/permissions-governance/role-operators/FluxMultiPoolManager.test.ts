@@ -2,11 +2,18 @@ import { network } from "hardhat";
 import { beforeEach, describe, it } from "node:test";
 import { ok, strictEqual } from "node:assert";
 
+/*
+ * 权限治理目标：
+ * 1. 锁定奖励分发只允许 owner / operator 执行，且 pause / treasury pause 会阻断执行。
+ * 2. 锁定 `setOperator` 是唯一的 OPERATOR_ROLE 入口，禁止直接 grant / revoke / renounce。
+ * 3. 锁定 `setTreasury`、`setPoolFactory`、`recoverToken` 都只能由 owner 治理。
+ * 4. 锁定 ownership handoff 后，admin / pauser / operator 权限会按预期收敛。
+ */
 describe("FluxMultiPoolManager", async function () {
   const hardhatNetwork = await network.connect();
   const { viem, networkHelpers } = hardhatNetwork;
   const publicClient = await viem.getPublicClient();
-  const [multisigClient, guardianClient, operatorClient, lpClient, stakerAClient, stakerBClient] =
+  const [multisigClient, guardianClient, operatorClient, lpClient, stakerAClient, stakerBClient, otherClient, nextOwnerClient] =
     await viem.getWalletClients();
 
   const timelockDelay = 3600n;
@@ -224,6 +231,62 @@ describe("FluxMultiPoolManager", async function () {
     );
   });
 
+  it("should keep treasury and poolFactory governance owner-only and allow delegated pool management only from the configured factory", async function () {
+    const extraPool = await viem.deployContract("FluxSwapStakingRewards", [
+      multisigClient.account.address,
+      fluxToken.address,
+      fluxToken.address,
+      manager.address,
+      manager.address,
+    ]);
+    await extraPool.write.setRewardConfiguration([manager.address, extraPool.address], {
+      account: multisigClient.account.address,
+    });
+
+    await expectRevert(
+      manager.write.setTreasury([nextOwnerClient.account.address], {
+        account: otherClient.account.address,
+      }),
+      "OwnableUnauthorizedAccount"
+    );
+
+    await expectRevert(
+      manager.write.setPoolFactory([otherClient.account.address], {
+        account: stakerAClient.account.address,
+      }),
+      "OwnableUnauthorizedAccount"
+    );
+
+    await expectRevert(
+      manager.write.addPool([extraPool.address, 25n, true], {
+        account: otherClient.account.address,
+      }),
+      "FluxMultiPoolManager: FORBIDDEN"
+    );
+
+    await manager.write.setTreasury([nextOwnerClient.account.address], {
+      account: multisigClient.account.address,
+    });
+    await manager.write.setPoolFactory([otherClient.account.address], {
+      account: multisigClient.account.address,
+    });
+
+    strictEqual((await manager.read.treasury()).toLowerCase(), nextOwnerClient.account.address.toLowerCase());
+    strictEqual((await manager.read.poolFactory()).toLowerCase(), otherClient.account.address.toLowerCase());
+
+    await manager.write.addPool([extraPool.address, 25n, true], {
+      account: otherClient.account.address,
+    });
+    strictEqual(await manager.read.poolLength(), 3n);
+    strictEqual(await manager.read.totalAllocPoint(), 125n);
+
+    await manager.write.deactivatePool([extraPool.address], {
+      account: otherClient.account.address,
+    });
+    strictEqual(await manager.read.totalAllocPoint(), 100n);
+    strictEqual((await manager.read.pools([2n]))[2], false);
+  });
+
   it("should let each pool pull its own pending rewards without manager-side iteration", async function () {
     const totalReward = 100n * 10n ** 18n;
 
@@ -288,12 +351,42 @@ describe("FluxMultiPoolManager", async function () {
     );
   });
 
+  it("should allow only pauser accounts to unpause the manager", async function () {
+    await manager.write.pause({ account: multisigClient.account.address });
+
+    await expectRevert(
+      manager.write.unpause({ account: otherClient.account.address }),
+      "FluxMultiPoolManager: FORBIDDEN"
+    );
+
+    await manager.write.unpause({ account: multisigClient.account.address });
+    strictEqual(await manager.read.paused(), false);
+  });
+
   it("should reject direct operator role grants outside setOperator", async function () {
     const operatorRole = await manager.read.OPERATOR_ROLE();
 
     await expectRevert(
       manager.write.grantRole([operatorRole, stakerAClient.account.address], {
         account: multisigClient.account.address,
+      }),
+      "FluxMultiPoolManager: ROLE_MANAGED_BY_SET_OPERATOR"
+    );
+  });
+
+  it("should reject direct operator role revoke and renounce outside setOperator", async function () {
+    const operatorRole = await manager.read.OPERATOR_ROLE();
+
+    await expectRevert(
+      manager.write.revokeRole([operatorRole, operatorClient.account.address], {
+        account: multisigClient.account.address,
+      }),
+      "FluxMultiPoolManager: ROLE_MANAGED_BY_SET_OPERATOR"
+    );
+
+    await expectRevert(
+      manager.write.renounceRole([operatorRole, operatorClient.account.address], {
+        account: operatorClient.account.address,
       }),
       "FluxMultiPoolManager: ROLE_MANAGED_BY_SET_OPERATOR"
     );
@@ -344,6 +437,37 @@ describe("FluxMultiPoolManager", async function () {
 
     strictEqual(await extraToken.read.balanceOf([manager.address]), 0n);
     strictEqual(await extraToken.read.balanceOf([multisigClient.account.address]), strayAmount);
+  });
+
+  it("should restrict stray token recovery to the current owner after ownership transfer", async function () {
+    const strayAmount = 15n * 10n ** 18n;
+
+    await extraToken.write.mint([manager.address, strayAmount]);
+
+    await expectRevert(
+      manager.write.recoverToken([extraToken.address, stakerAClient.account.address, strayAmount], {
+        account: otherClient.account.address,
+      }),
+      "OwnableUnauthorizedAccount"
+    );
+
+    await manager.write.transferOwnership([nextOwnerClient.account.address], {
+      account: multisigClient.account.address,
+    });
+
+    await expectRevert(
+      manager.write.recoverToken([extraToken.address, stakerAClient.account.address, strayAmount], {
+        account: multisigClient.account.address,
+      }),
+      "OwnableUnauthorizedAccount"
+    );
+
+    await manager.write.recoverToken([extraToken.address, nextOwnerClient.account.address, strayAmount], {
+      account: nextOwnerClient.account.address,
+    });
+
+    strictEqual(await extraToken.read.balanceOf([manager.address]), 0n);
+    strictEqual(await extraToken.read.balanceOf([nextOwnerClient.account.address]), strayAmount);
   });
 
   it("should reject setting the same operator again", async function () {

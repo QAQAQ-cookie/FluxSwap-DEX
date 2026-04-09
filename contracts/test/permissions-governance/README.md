@@ -32,6 +32,13 @@
 - 角色治理：`FluxBuybackExecutor`、`FluxMultiPoolManager`、`FluxRevenueDistributor`、`FluxToken`
 - 池治理：`FluxPoolFactory`、`FluxSwapFactory`、`FluxSwapStakingRewards`
 
+## 执行方式
+
+- 运行全部权限治理测试：
+  - `npm run test:permissions-governance`
+- 运行单个权限治理测试文件：
+  - `npx hardhat test test/permissions-governance/role-operators/FluxRevenueDistributor.test.ts`
+
 ## 当前状态
 
 - `permissions-governance` 目录下的每个现有层级都应维护自己的 README，并把本层测试文件登记完整。

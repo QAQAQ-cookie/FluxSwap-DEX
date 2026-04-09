@@ -2,6 +2,13 @@ import { network } from "hardhat";
 import { beforeEach, describe, it } from "node:test";
 import { ok, strictEqual } from "node:assert";
 
+/*
+ * 池治理目标：
+ * 1. 锁定 FluxPoolFactory 的 owner 是唯一可以创建池、变更 managed pool 配置、移交池 ownership 的治理入口。
+ * 2. 锁定 managed pool 在 self-sync 模式下只能通过原子配置切换，离开 self-sync 后才允许细粒度半更新。
+ * 3. 锁定 factory owner 迁移后，对既有 managed pool 的治理能力仍然连续。
+ * 4. 锁定 managed pool handoff 后会正确注销管理权，避免旧池与新池并存时发生静默失配。
+ */
 describe("FluxPoolFactory", async function () {
   const hardhatNetwork = await network.connect();
   const { viem, networkHelpers } = hardhatNetwork;
@@ -195,6 +202,53 @@ describe("FluxPoolFactory", async function () {
 
     strictEqual((await pool.read.rewardSource()).toLowerCase(), treasury.address.toLowerCase());
     strictEqual((await pool.read.rewardNotifier()).toLowerCase(), operatorClient.account.address.toLowerCase());
+  });
+
+  it("should allow fine-grained managed pool reward updates only after leaving self-sync mode", async function () {
+    await poolFactory.write.createSingleTokenPool([fluxToken.address, 40n, true], {
+      account: multisigClient.account.address,
+    });
+
+    const poolAddress = await poolFactory.read.singleTokenPools([fluxToken.address]);
+    const pool = await viem.getContractAt("FluxSwapStakingRewards", poolAddress);
+
+    await expectRevert(
+      poolFactory.write.setManagedPoolRewardSource([poolAddress, treasury.address], {
+        account: operatorClient.account.address,
+      }),
+      "OwnableUnauthorizedAccount"
+    );
+
+    await poolFactory.write.setManagedPoolRewardConfiguration([poolAddress, treasury.address, operatorClient.account.address], {
+      account: multisigClient.account.address,
+    });
+
+    await poolFactory.write.setManagedPoolRewardSource([poolAddress, multisigClient.account.address], {
+      account: multisigClient.account.address,
+    });
+    await poolFactory.write.setManagedPoolRewardNotifier([poolAddress, lpClient.account.address], {
+      account: multisigClient.account.address,
+    });
+
+    strictEqual((await pool.read.rewardSource()).toLowerCase(), multisigClient.account.address.toLowerCase());
+    strictEqual((await pool.read.rewardNotifier()).toLowerCase(), lpClient.account.address.toLowerCase());
+
+    await poolFactory.write.transferOwnership([operatorClient.account.address], {
+      account: multisigClient.account.address,
+    });
+
+    await expectRevert(
+      poolFactory.write.setManagedPoolRewardNotifier([poolAddress, treasury.address], {
+        account: multisigClient.account.address,
+      }),
+      "OwnableUnauthorizedAccount"
+    );
+
+    await poolFactory.write.setManagedPoolRewardNotifier([poolAddress, treasury.address], {
+      account: operatorClient.account.address,
+    });
+
+    strictEqual((await pool.read.rewardNotifier()).toLowerCase(), treasury.address.toLowerCase());
   });
 
   it("should allow the factory owner to hand off pool ownership explicitly", async function () {
