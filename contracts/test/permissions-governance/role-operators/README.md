@@ -29,7 +29,14 @@
 - 验证 manager 与 buybackExecutor 的 reward token / treasury 指针必须保持一致。
 - 验证 ownership 迁移后 admin / pauser 权限收敛，以及 owner 与 operator 重叠时的权限清理。
 
+### `FluxToken.test.ts`
+
+- 验证 `setMinter` 只能由当前 owner 调用，ownership handoff 后旧 owner 会失去 minter 管理权。
+- 验证只有持有 `MINTER_ROLE` 的账户可以执行 `mint`，撤权后会立即失效。
+- 验证 `DEFAULT_ADMIN_ROLE` 会随 ownership handoff 迁移，当前 owner 仍可通过 `grantRole` / `revokeRole` 直接治理 `MINTER_ROLE`。
+- 验证 delegated minter 可以主动 `renounceRole`，且 owner 能按治理意图重新授予该角色。
+
 ## 当前状态
 
-- `role-operators` 目录下的核心治理测试已覆盖 `FluxBuybackExecutor`、`FluxMultiPoolManager`、`FluxRevenueDistributor` 三个关键操作员合约。
+- `role-operators` 目录下的核心治理测试已覆盖 `FluxBuybackExecutor`、`FluxMultiPoolManager`、`FluxRevenueDistributor`、`FluxToken` 四个关键角色治理合约。
 - 后续若新增 operator-bearing 合约，或补充新的角色收敛规则，应同步更新这里的清单。
