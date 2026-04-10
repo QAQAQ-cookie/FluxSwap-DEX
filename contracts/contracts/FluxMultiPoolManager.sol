@@ -8,11 +8,6 @@ import "../interfaces/IFluxSwapTreasury.sol";
 import "../libraries/TransferHelper.sol";
 
 contract FluxMultiPoolManager is Ownable, AccessControl {
-    uint256 private constant PRECISION = 1e18;
-
-    bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
-    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
-
     struct PoolInfo {
         address pool;
         uint256 allocPoint;
@@ -21,10 +16,15 @@ contract FluxMultiPoolManager is Ownable, AccessControl {
         uint256 pendingRewards;
     }
 
+    uint256 private constant PRECISION = 1e18;
+
+    bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+
+    address public immutable rewardToken;
     address public treasury;
     address public operator;
     address public poolFactory;
-    address public immutable rewardToken;
     uint256 public totalAllocPoint;
     uint256 public accRewardPerAllocStored;
     uint256 public undistributedRewards;
@@ -74,10 +74,6 @@ contract FluxMultiPoolManager is Ownable, AccessControl {
         rewardToken = _rewardToken;
     }
 
-    function poolLength() external view returns (uint256) {
-        return pools.length;
-    }
-
     function setTreasury(address newTreasury) external onlyOwner {
         require(newTreasury != address(0), "FluxMultiPoolManager: ZERO_ADDRESS");
         emit TreasuryUpdated(treasury, newTreasury);
@@ -99,28 +95,6 @@ contract FluxMultiPoolManager is Ownable, AccessControl {
         poolFactory = newPoolFactory;
     }
 
-    function transferOwnership(address newOwner) public override onlyOwner {
-        require(newOwner != address(0), "FluxMultiPoolManager: ZERO_ADDRESS");
-
-        address previousOwner = owner();
-        super.transferOwnership(newOwner);
-
-        if (newOwner != previousOwner) {
-            _grantRole(DEFAULT_ADMIN_ROLE, newOwner);
-            _grantRole(PAUSER_ROLE, newOwner);
-            _revokeRole(PAUSER_ROLE, previousOwner);
-            _revokeRole(DEFAULT_ADMIN_ROLE, previousOwner);
-
-            if (hasRole(OPERATOR_ROLE, previousOwner)) {
-                _revokeRole(OPERATOR_ROLE, previousOwner);
-            }
-            if (operator == previousOwner) {
-                emit OperatorUpdated(previousOwner, address(0));
-                operator = address(0);
-            }
-        }
-    }
-
     function pause() external {
         require(hasRole(PAUSER_ROLE, msg.sender), "FluxMultiPoolManager: FORBIDDEN");
         require(!paused, "FluxMultiPoolManager: PAUSED");
@@ -135,20 +109,6 @@ contract FluxMultiPoolManager is Ownable, AccessControl {
         emit Unpaused(msg.sender);
     }
 
-    function grantRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
-        require(role != OPERATOR_ROLE, "FluxMultiPoolManager: ROLE_MANAGED_BY_SET_OPERATOR");
-        super.grantRole(role, account);
-    }
-
-    function revokeRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
-        require(role != OPERATOR_ROLE, "FluxMultiPoolManager: ROLE_MANAGED_BY_SET_OPERATOR");
-        super.revokeRole(role, account);
-    }
-
-    function renounceRole(bytes32 role, address callerConfirmation) public override {
-        require(role != OPERATOR_ROLE, "FluxMultiPoolManager: ROLE_MANAGED_BY_SET_OPERATOR");
-        super.renounceRole(role, callerConfirmation);
-    }
 
     function addPool(address pool, uint256 allocPoint, bool active) external onlyOwnerOrPoolFactory {
         require(pool != address(0), "FluxMultiPoolManager: ZERO_ADDRESS");
@@ -229,17 +189,6 @@ contract FluxMultiPoolManager is Ownable, AccessControl {
         emit RewardsDistributed(totalReward, rewardDelta, msg.sender);
     }
 
-    function pendingPoolRewards(address pool) external view returns (uint256 reward) {
-        uint256 pidPlusOne = poolPidPlusOne[pool];
-        require(pidPlusOne != 0, "FluxMultiPoolManager: INVALID_POOL");
-
-        PoolInfo storage poolInfo = pools[pidPlusOne - 1];
-        reward = poolInfo.pendingRewards;
-
-        if (poolInfo.active && poolInfo.allocPoint > 0) {
-            reward += ((poolInfo.allocPoint * accRewardPerAllocStored) / PRECISION) - poolInfo.rewardDebt;
-        }
-    }
 
     function claimPoolRewards(address pool) external returns (uint256 reward) {
         uint256 pidPlusOne = poolPidPlusOne[pool];
@@ -267,6 +216,63 @@ contract FluxMultiPoolManager is Ownable, AccessControl {
         TransferHelper.safeTransfer(token, to, amount);
         emit TokenRecovered(token, to, amount);
     }
+    function pendingPoolRewards(address pool) external view returns (uint256 reward) {
+        uint256 pidPlusOne = poolPidPlusOne[pool];
+        require(pidPlusOne != 0, "FluxMultiPoolManager: INVALID_POOL");
+
+        PoolInfo storage poolInfo = pools[pidPlusOne - 1];
+        reward = poolInfo.pendingRewards;
+
+        if (poolInfo.active && poolInfo.allocPoint > 0) {
+            reward += ((poolInfo.allocPoint * accRewardPerAllocStored) / PRECISION) - poolInfo.rewardDebt;
+        }
+    }
+
+    function poolLength() external view returns (uint256) {
+        return pools.length;
+    }
+
+    function transferOwnership(address newOwner) public override onlyOwner {
+        require(newOwner != address(0), "FluxMultiPoolManager: ZERO_ADDRESS");
+
+        address previousOwner = owner();
+        super.transferOwnership(newOwner);
+
+        if (newOwner != previousOwner) {
+            _grantRole(DEFAULT_ADMIN_ROLE, newOwner);
+            _grantRole(PAUSER_ROLE, newOwner);
+            _revokeRole(PAUSER_ROLE, previousOwner);
+            _revokeRole(DEFAULT_ADMIN_ROLE, previousOwner);
+
+            if (hasRole(OPERATOR_ROLE, previousOwner)) {
+                _revokeRole(OPERATOR_ROLE, previousOwner);
+            }
+            if (operator == previousOwner) {
+                emit OperatorUpdated(previousOwner, address(0));
+                operator = address(0);
+            }
+        }
+    }
+
+
+    function grantRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
+        require(role != OPERATOR_ROLE, "FluxMultiPoolManager: ROLE_MANAGED_BY_SET_OPERATOR");
+        super.grantRole(role, account);
+    }
+
+    function revokeRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
+        require(role != OPERATOR_ROLE, "FluxMultiPoolManager: ROLE_MANAGED_BY_SET_OPERATOR");
+        super.revokeRole(role, account);
+    }
+
+    function renounceRole(bytes32 role, address callerConfirmation) public override {
+        require(role != OPERATOR_ROLE, "FluxMultiPoolManager: ROLE_MANAGED_BY_SET_OPERATOR");
+        super.renounceRole(role, callerConfirmation);
+    }
+
+    function supportsInterface(bytes4 interfaceId) public view override(AccessControl) returns (bool) {
+        return super.supportsInterface(interfaceId);
+    }
 
     function _accruePool(PoolInfo storage poolInfo) private returns (uint256 reward) {
         reward = poolInfo.pendingRewards;
@@ -288,7 +294,5 @@ contract FluxMultiPoolManager is Ownable, AccessControl {
         }
     }
 
-    function supportsInterface(bytes4 interfaceId) public view override(AccessControl) returns (bool) {
-        return super.supportsInterface(interfaceId);
-    }
+
 }

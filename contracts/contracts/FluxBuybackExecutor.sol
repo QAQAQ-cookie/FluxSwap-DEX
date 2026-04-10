@@ -9,15 +9,13 @@ import "../interfaces/IFluxSwapRouter.sol";
 import "../libraries/TransferHelper.sol";
 
 contract FluxBuybackExecutor is Ownable, AccessControl {
-    error InvalidRecipient(address recipient);
-
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
-    address public treasury;
-    address public operator;
     address public immutable router;
     address public immutable buyToken;
+    address public treasury;
+    address public operator;
     address public defaultRecipient;
     bool public paused;
 
@@ -34,6 +32,8 @@ contract FluxBuybackExecutor is Ownable, AccessControl {
         address indexed executor
     );
     event TokenRecovered(address indexed token, address indexed to, uint256 amount);
+
+    error InvalidRecipient(address recipient);
 
     modifier onlyOperatorOrOwner() {
         require(hasRole(OPERATOR_ROLE, msg.sender) || msg.sender == owner(), "FluxBuybackExecutor: FORBIDDEN");
@@ -95,28 +95,6 @@ contract FluxBuybackExecutor is Ownable, AccessControl {
         defaultRecipient = newDefaultRecipient;
     }
 
-    function transferOwnership(address newOwner) public override onlyOwner {
-        require(newOwner != address(0), "FluxBuybackExecutor: ZERO_ADDRESS");
-
-        address previousOwner = owner();
-        super.transferOwnership(newOwner);
-
-        if (newOwner != previousOwner) {
-            _grantRole(DEFAULT_ADMIN_ROLE, newOwner);
-            _grantRole(PAUSER_ROLE, newOwner);
-            _revokeRole(PAUSER_ROLE, previousOwner);
-            _revokeRole(DEFAULT_ADMIN_ROLE, previousOwner);
-
-            if (hasRole(OPERATOR_ROLE, previousOwner)) {
-                _revokeRole(OPERATOR_ROLE, previousOwner);
-            }
-            if (operator == previousOwner) {
-                emit OperatorUpdated(previousOwner, address(0));
-                operator = address(0);
-            }
-        }
-    }
-
     function pause() external {
         require(hasRole(PAUSER_ROLE, msg.sender), "FluxBuybackExecutor: FORBIDDEN");
         require(!paused, "FluxBuybackExecutor: PAUSED");
@@ -131,20 +109,6 @@ contract FluxBuybackExecutor is Ownable, AccessControl {
         emit Unpaused(msg.sender);
     }
 
-    function grantRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
-        require(role != OPERATOR_ROLE, "FluxBuybackExecutor: ROLE_MANAGED_BY_SET_OPERATOR");
-        super.grantRole(role, account);
-    }
-
-    function revokeRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
-        require(role != OPERATOR_ROLE, "FluxBuybackExecutor: ROLE_MANAGED_BY_SET_OPERATOR");
-        super.revokeRole(role, account);
-    }
-
-    function renounceRole(bytes32 role, address callerConfirmation) public override {
-        require(role != OPERATOR_ROLE, "FluxBuybackExecutor: ROLE_MANAGED_BY_SET_OPERATOR");
-        super.renounceRole(role, callerConfirmation);
-    }
 
     function executeBuyback(
         address spendToken,
@@ -191,6 +155,48 @@ contract FluxBuybackExecutor is Ownable, AccessControl {
         emit TokenRecovered(token, to, amount);
     }
 
+    function transferOwnership(address newOwner) public override onlyOwner {
+        require(newOwner != address(0), "FluxBuybackExecutor: ZERO_ADDRESS");
+
+        address previousOwner = owner();
+        super.transferOwnership(newOwner);
+
+        if (newOwner != previousOwner) {
+            _grantRole(DEFAULT_ADMIN_ROLE, newOwner);
+            _grantRole(PAUSER_ROLE, newOwner);
+            _revokeRole(PAUSER_ROLE, previousOwner);
+            _revokeRole(DEFAULT_ADMIN_ROLE, previousOwner);
+
+            if (hasRole(OPERATOR_ROLE, previousOwner)) {
+                _revokeRole(OPERATOR_ROLE, previousOwner);
+            }
+            if (operator == previousOwner) {
+                emit OperatorUpdated(previousOwner, address(0));
+                operator = address(0);
+            }
+        }
+    }
+
+
+    function grantRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
+        require(role != OPERATOR_ROLE, "FluxBuybackExecutor: ROLE_MANAGED_BY_SET_OPERATOR");
+        super.grantRole(role, account);
+    }
+
+    function revokeRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
+        require(role != OPERATOR_ROLE, "FluxBuybackExecutor: ROLE_MANAGED_BY_SET_OPERATOR");
+        super.revokeRole(role, account);
+    }
+
+    function renounceRole(bytes32 role, address callerConfirmation) public override {
+        require(role != OPERATOR_ROLE, "FluxBuybackExecutor: ROLE_MANAGED_BY_SET_OPERATOR");
+        super.renounceRole(role, callerConfirmation);
+    }
+
+    function supportsInterface(bytes4 interfaceId) public view override(AccessControl) returns (bool) {
+        return super.supportsInterface(interfaceId);
+    }
+
     function _safeApprove(address token, address spender, uint256 amount) private {
         (bool success, bytes memory data) = token.call(
             abi.encodeWithSignature("approve(address,uint256)", spender, amount)
@@ -208,7 +214,5 @@ contract FluxBuybackExecutor is Ownable, AccessControl {
         }
     }
 
-    function supportsInterface(bytes4 interfaceId) public view override(AccessControl) returns (bool) {
-        return super.supportsInterface(interfaceId);
-    }
+
 }
