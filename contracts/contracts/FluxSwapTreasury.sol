@@ -84,10 +84,6 @@ contract FluxSwapTreasury {
         emit NativeReceived(msg.sender, msg.value);
     }
 
-    function isFluxSwapTreasury() external pure returns (bool) {
-        return true;
-    }
-
     function pause() external onlyGuardianOrMultisig {
         require(!paused, "FluxSwapTreasury: PAUSED");
         paused = true;
@@ -224,6 +220,10 @@ contract FluxSwapTreasury {
         _consumeOperation(operationId, hashEmergencyWithdrawETH(to, amount));
         TransferHelper.safeTransferETH(to, amount);
         emit NativeEmergencyWithdraw(to, amount);
+    }
+
+    function isFluxSwapTreasury() external pure returns (bool) {
+        return true;
     }
 
     function hashSetOperator(address newOperator) public pure returns (bytes32) {

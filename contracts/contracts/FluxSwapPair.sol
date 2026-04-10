@@ -16,6 +16,7 @@ contract FluxSwapPair is FluxSwapERC20 {
     uint256 private constant TOTAL_SWAP_FEE_BPS = 30;
     uint256 private constant PROTOCOL_SWAP_FEE_BPS = 5;
     uint256 private constant LP_SWAP_FEE_BPS = TOTAL_SWAP_FEE_BPS - PROTOCOL_SWAP_FEE_BPS;
+    bytes4 private constant SELECTOR = bytes4(keccak256(bytes("transfer(address,uint256)")));
 
     address public factory;
     address public token0;
@@ -30,13 +31,6 @@ contract FluxSwapPair is FluxSwapERC20 {
 
     uint256 private unlocked = 1;
 
-    modifier lock() {
-        require(unlocked == 1, "FluxSwap: LOCKED");
-        unlocked = 0;
-        _;
-        unlocked = 1;
-    }
-
     event Mint(address indexed sender, uint256 amount0, uint256 amount1);
     event Burn(address indexed sender, uint256 amount0, uint256 amount1, address indexed to);
     event Swap(
@@ -50,14 +44,15 @@ contract FluxSwapPair is FluxSwapERC20 {
     event ProtocolFeePaid(address indexed treasury, uint256 amount0, uint256 amount1);
     event Sync(uint112 reserve0, uint112 reserve1);
 
-    constructor() {
-        factory = msg.sender;
+    modifier lock() {
+        require(unlocked == 1, "FluxSwap: LOCKED");
+        unlocked = 0;
+        _;
+        unlocked = 1;
     }
 
-    function getReserves() public view returns (uint112 _reserve0, uint112 _reserve1, uint32 _blockTimestampLast) {
-        _reserve0 = reserve0;
-        _reserve1 = reserve1;
-        _blockTimestampLast = blockTimestampLast;
+    constructor() {
+        factory = msg.sender;
     }
 
     function initialize(address _token0, address _token1) external {
@@ -184,6 +179,12 @@ contract FluxSwapPair is FluxSwapERC20 {
         );
     }
 
+    function getReserves() public view returns (uint112 _reserve0, uint112 _reserve1, uint32 _blockTimestampLast) {
+        _reserve0 = reserve0;
+        _reserve1 = reserve1;
+        _blockTimestampLast = blockTimestampLast;
+    }
+
     function _update(uint256 balance0, uint256 balance1, uint112 _reserve0, uint112 _reserve1) private {
         require(balance0 <= type(uint112).max && balance1 <= type(uint112).max, "FluxSwap: OVERFLOW");
         uint32 blockTimestamp = uint32(block.timestamp % 2**32);
@@ -198,8 +199,6 @@ contract FluxSwapPair is FluxSwapERC20 {
         blockTimestampLast = blockTimestamp;
         emit Sync(reserve0, reserve1);
     }
-
-    bytes4 private constant SELECTOR = bytes4(keccak256(bytes("transfer(address,uint256)")));
 
     function _safeTransfer(address token, address to, uint256 value) private {
         (bool success, bytes memory data) = token.call(abi.encodeWithSelector(SELECTOR, to, value));

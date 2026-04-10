@@ -121,10 +121,6 @@ contract FluxPoolFactory is Ownable {
         emit ManagedPoolUnallocatedRewardsRecovered(pool, to, amount);
     }
 
-    function _requireManagedPool(address pool) private view {
-        require(managedPools[pool], "FluxPoolFactory: POOL_NOT_MANAGED");
-    }
-
     function _clearManagedPoolAssetRegistration(address pool) private {
         address stakingAsset = managedPoolStakingAsset[pool];
         if (stakingAsset == address(0)) {
@@ -139,5 +135,9 @@ contract FluxPoolFactory is Ownable {
 
         delete managedPoolStakingAsset[pool];
         delete managedPoolIsLP[pool];
+    }
+
+    function _requireManagedPool(address pool) private view {
+        require(managedPools[pool], "FluxPoolFactory: POOL_NOT_MANAGED");
     }
 }

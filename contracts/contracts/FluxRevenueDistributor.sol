@@ -15,10 +15,10 @@ contract FluxRevenueDistributor is Ownable, AccessControl {
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
+    address public immutable rewardToken;
     address public operator;
     address public buybackExecutor;
     address public manager;
-    address public immutable rewardToken;
     uint256 public buybackBps;
     uint256 public burnBps;
     bool public paused;
@@ -130,28 +130,6 @@ contract FluxRevenueDistributor is Ownable, AccessControl {
         burnBps = newBurnBps;
     }
 
-    function transferOwnership(address newOwner) public override onlyOwner {
-        require(newOwner != address(0), "FluxRevenueDistributor: ZERO_ADDRESS");
-
-        address previousOwner = owner();
-        super.transferOwnership(newOwner);
-
-        if (newOwner != previousOwner) {
-            _grantRole(DEFAULT_ADMIN_ROLE, newOwner);
-            _grantRole(PAUSER_ROLE, newOwner);
-            _revokeRole(PAUSER_ROLE, previousOwner);
-            _revokeRole(DEFAULT_ADMIN_ROLE, previousOwner);
-
-            if (hasRole(OPERATOR_ROLE, previousOwner)) {
-                _revokeRole(OPERATOR_ROLE, previousOwner);
-            }
-            if (operator == previousOwner) {
-                emit OperatorUpdated(previousOwner, address(0));
-                operator = address(0);
-            }
-        }
-    }
-
     function pause() external {
         require(hasRole(PAUSER_ROLE, msg.sender), "FluxRevenueDistributor: FORBIDDEN");
         require(!paused, "FluxRevenueDistributor: PAUSED");
@@ -164,21 +142,6 @@ contract FluxRevenueDistributor is Ownable, AccessControl {
         require(paused, "FluxRevenueDistributor: NOT_PAUSED");
         paused = false;
         emit Unpaused(msg.sender);
-    }
-
-    function grantRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
-        require(role != OPERATOR_ROLE, "FluxRevenueDistributor: ROLE_MANAGED_BY_SET_OPERATOR");
-        super.grantRole(role, account);
-    }
-
-    function revokeRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
-        require(role != OPERATOR_ROLE, "FluxRevenueDistributor: ROLE_MANAGED_BY_SET_OPERATOR");
-        super.revokeRole(role, account);
-    }
-
-    function renounceRole(bytes32 role, address callerConfirmation) public override {
-        require(role != OPERATOR_ROLE, "FluxRevenueDistributor: ROLE_MANAGED_BY_SET_OPERATOR");
-        super.renounceRole(role, callerConfirmation);
     }
 
     function executeBuybackAndDistribute(
@@ -241,6 +204,43 @@ contract FluxRevenueDistributor is Ownable, AccessControl {
         require(to != address(0), "FluxRevenueDistributor: ZERO_ADDRESS");
         TransferHelper.safeTransfer(token, to, amount);
         emit TokenRecovered(token, to, amount);
+    }
+
+    function transferOwnership(address newOwner) public override onlyOwner {
+        require(newOwner != address(0), "FluxRevenueDistributor: ZERO_ADDRESS");
+
+        address previousOwner = owner();
+        super.transferOwnership(newOwner);
+
+        if (newOwner != previousOwner) {
+            _grantRole(DEFAULT_ADMIN_ROLE, newOwner);
+            _grantRole(PAUSER_ROLE, newOwner);
+            _revokeRole(PAUSER_ROLE, previousOwner);
+            _revokeRole(DEFAULT_ADMIN_ROLE, previousOwner);
+
+            if (hasRole(OPERATOR_ROLE, previousOwner)) {
+                _revokeRole(OPERATOR_ROLE, previousOwner);
+            }
+            if (operator == previousOwner) {
+                emit OperatorUpdated(previousOwner, address(0));
+                operator = address(0);
+            }
+        }
+    }
+
+    function grantRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
+        require(role != OPERATOR_ROLE, "FluxRevenueDistributor: ROLE_MANAGED_BY_SET_OPERATOR");
+        super.grantRole(role, account);
+    }
+
+    function revokeRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
+        require(role != OPERATOR_ROLE, "FluxRevenueDistributor: ROLE_MANAGED_BY_SET_OPERATOR");
+        super.revokeRole(role, account);
+    }
+
+    function renounceRole(bytes32 role, address callerConfirmation) public override {
+        require(role != OPERATOR_ROLE, "FluxRevenueDistributor: ROLE_MANAGED_BY_SET_OPERATOR");
+        super.renounceRole(role, callerConfirmation);
     }
 
     function supportsInterface(bytes4 interfaceId) public view override(AccessControl) returns (bool) {

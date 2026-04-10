@@ -9,12 +9,6 @@ import "../interfaces/IWETH.sol";
 import "../libraries/TransferHelper.sol";
 
 contract FluxSwapRouter is IFluxSwapRouter {
-    uint256 private constant FEE_BPS_BASE = 10000;
-    uint256 private constant TOTAL_SWAP_FEE_BPS = 30;
-
-    address public immutable override factory;
-    address public immutable override WETH;
-
     struct RemoveLiquidityPermitParams {
         address tokenA;
         address tokenB;
@@ -61,10 +55,11 @@ contract FluxSwapRouter is IFluxSwapRouter {
         uint256 value;
     }
 
-    // 仅在 WETH 解包回 ETH 时接收原生 ETH，避免误转资金留在 Router 中。
-    receive() external payable {
-        assert(msg.sender == WETH);
-    }
+    uint256 private constant FEE_BPS_BASE = 10000;
+    uint256 private constant TOTAL_SWAP_FEE_BPS = 30;
+
+    address public immutable override factory;
+    address public immutable override WETH;
 
     modifier ensure(uint256 deadline) {
         require(deadline >= block.timestamp, "FluxSwapRouter: EXPIRED");
@@ -76,6 +71,11 @@ contract FluxSwapRouter is IFluxSwapRouter {
         require(_WETH != address(0), "FluxSwapRouter: ZERO_ADDRESS");
         factory = _factory;
         WETH = _WETH;
+    }
+
+    // 仅在 WETH 解包回 ETH 时接收原生 ETH，避免误转资金留在 Router 中。
+    receive() external payable {
+        assert(msg.sender == WETH);
     }
 
     function addLiquidity(
@@ -125,7 +125,7 @@ contract FluxSwapRouter is IFluxSwapRouter {
         uint256 amountBMin,
         address to,
         uint256 deadline
-    ) public override ensure(deadline) returns (uint256 amountA, uint256 amountB) {
+    ) external override ensure(deadline) returns (uint256 amountA, uint256 amountB) {
         return _removeLiquidity(tokenA, tokenB, liquidity, amountAMin, amountBMin, to);
     }
 
@@ -136,7 +136,7 @@ contract FluxSwapRouter is IFluxSwapRouter {
         uint256 amountETHMin,
         address to,
         uint256 deadline
-    ) public override ensure(deadline) returns (uint256 amountToken, uint256 amountETH) {
+    ) external override ensure(deadline) returns (uint256 amountToken, uint256 amountETH) {
         return _removeLiquidityETH(token, liquidity, amountTokenMin, amountETHMin, to);
     }
 
@@ -343,6 +343,32 @@ contract FluxSwapRouter is IFluxSwapRouter {
         TransferHelper.safeTransferETH(to, amountOut);
     }
 
+
+    function getAmountsOut(
+        uint256 amountIn,
+        address[] memory path
+    ) public view override returns (uint256[] memory amounts) {
+        require(path.length >= 2, "FluxSwapRouter: INVALID_PATH");
+        amounts = new uint256[](path.length);
+        amounts[0] = amountIn;
+        for (uint256 i = 0; i < path.length - 1; i++) {
+            (uint256 reserveIn, uint256 reserveOut) = _getReserves(path[i], path[i + 1]);
+            amounts[i + 1] = getAmountOut(amounts[i], reserveIn, reserveOut);
+        }
+    }
+
+    function getAmountsIn(
+        uint256 amountOut,
+        address[] memory path
+    ) public view override returns (uint256[] memory amounts) {
+        require(path.length >= 2, "FluxSwapRouter: INVALID_PATH");
+        amounts = new uint256[](path.length);
+        amounts[amounts.length - 1] = amountOut;
+        for (uint256 i = path.length - 1; i > 0; i--) {
+            (uint256 reserveIn, uint256 reserveOut) = _getReserves(path[i - 1], path[i]);
+            amounts[i - 1] = getAmountIn(amounts[i], reserveIn, reserveOut);
+        }
+    }
     function quote(uint256 amountA, uint256 reserveA, uint256 reserveB) public pure override returns (uint256 amountB) {
         require(amountA > 0, "FluxSwapRouter: INSUFFICIENT_AMOUNT");
         require(reserveA > 0 && reserveB > 0, "FluxSwapRouter: INSUFFICIENT_LIQUIDITY");
@@ -372,32 +398,6 @@ contract FluxSwapRouter is IFluxSwapRouter {
         uint256 numerator = reserveIn * amountOut * FEE_BPS_BASE;
         uint256 denominator = (reserveOut - amountOut) * (FEE_BPS_BASE - TOTAL_SWAP_FEE_BPS);
         amountIn = (numerator / denominator) + 1;
-    }
-
-    function getAmountsOut(
-        uint256 amountIn,
-        address[] memory path
-    ) public view override returns (uint256[] memory amounts) {
-        require(path.length >= 2, "FluxSwapRouter: INVALID_PATH");
-        amounts = new uint256[](path.length);
-        amounts[0] = amountIn;
-        for (uint256 i = 0; i < path.length - 1; i++) {
-            (uint256 reserveIn, uint256 reserveOut) = _getReserves(path[i], path[i + 1]);
-            amounts[i + 1] = getAmountOut(amounts[i], reserveIn, reserveOut);
-        }
-    }
-
-    function getAmountsIn(
-        uint256 amountOut,
-        address[] memory path
-    ) public view override returns (uint256[] memory amounts) {
-        require(path.length >= 2, "FluxSwapRouter: INVALID_PATH");
-        amounts = new uint256[](path.length);
-        amounts[amounts.length - 1] = amountOut;
-        for (uint256 i = path.length - 1; i > 0; i--) {
-            (uint256 reserveIn, uint256 reserveOut) = _getReserves(path[i - 1], path[i]);
-            amounts[i - 1] = getAmountIn(amounts[i], reserveIn, reserveOut);
-        }
     }
 
     function _swap(uint256[] memory amounts, address[] memory path, address _to) internal {
@@ -513,24 +513,6 @@ contract FluxSwapRouter is IFluxSwapRouter {
         }
     }
 
-    function sortTokens(address tokenA, address tokenB) internal pure returns (address token0, address token1) {
-        require(tokenA != tokenB, "FluxSwapRouter: IDENTICAL_ADDRESSES");
-        (token0, token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
-        require(token0 != address(0), "FluxSwapRouter: ZERO_ADDRESS");
-    }
-
-    function _getReserves(address tokenA, address tokenB) internal view returns (uint256 reserveA, uint256 reserveB) {
-        (address token0, ) = sortTokens(tokenA, tokenB);
-        address pair = _getPairOrRevert(tokenA, tokenB);
-        (uint256 reserve0, uint256 reserve1, ) = IFluxSwapPair(pair).getReserves();
-        (reserveA, reserveB) = tokenA == token0 ? (reserve0, reserve1) : (reserve1, reserve0);
-    }
-
-    function _getPairOrRevert(address tokenA, address tokenB) internal view returns (address pair) {
-        pair = IFluxSwapFactory(factory).getPair(tokenA, tokenB);
-        // 用明确的 Router 错误替代底层调用失败，便于定位路径或交易对缺失问题。
-        require(pair != address(0), "FluxSwapRouter: PAIR_NOT_FOUND");
-    }
 
     function _removeLiquidity(
         address tokenA,
@@ -622,5 +604,25 @@ contract FluxSwapRouter is IFluxSwapRouter {
         address pair = IFluxSwapFactory(factory).getPair(tokenA, tokenB);
         uint256 value = approveMax ? type(uint256).max : liquidity;
         IFluxSwapPair(pair).permit(msg.sender, address(this), value, deadline, v, r, s);
+    }
+    function _getReserves(address tokenA, address tokenB) internal view returns (uint256 reserveA, uint256 reserveB) {
+        (address token0, ) = sortTokens(tokenA, tokenB);
+        address pair = _getPairOrRevert(tokenA, tokenB);
+        (uint256 reserve0, uint256 reserve1, ) = IFluxSwapPair(pair).getReserves();
+        (reserveA, reserveB) = tokenA == token0 ? (reserve0, reserve1) : (reserve1, reserve0);
+    }
+
+    function _getPairOrRevert(address tokenA, address tokenB) internal view returns (address pair) {
+        pair = IFluxSwapFactory(factory).getPair(tokenA, tokenB);
+        // 用明确的 Router 错误替代底层调用失败，便于定位路径或交易对缺失问题。
+        require(pair != address(0), "FluxSwapRouter: PAIR_NOT_FOUND");
+    }
+
+
+
+    function sortTokens(address tokenA, address tokenB) internal pure returns (address token0, address token1) {
+        require(tokenA != tokenB, "FluxSwapRouter: IDENTICAL_ADDRESSES");
+        (token0, token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
+        require(token0 != address(0), "FluxSwapRouter: ZERO_ADDRESS");
     }
 }

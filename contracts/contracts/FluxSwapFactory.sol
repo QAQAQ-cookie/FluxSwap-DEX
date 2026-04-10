@@ -21,10 +21,6 @@ contract FluxSwapFactory is IFluxSwapFactory, AccessControl {
         treasurySetter = _treasurySetter;
     }
 
-    function allPairsLength() external view override returns (uint256) {
-        return allPairs.length;
-    }
-
     function createPair(address tokenA, address tokenB) external override returns (address pair) {
         require(tokenA != tokenB, "FluxSwap: IDENTICAL_ADDRESSES");
 
@@ -67,6 +63,10 @@ contract FluxSwapFactory is IFluxSwapFactory, AccessControl {
         _revokeRole(DEFAULT_ADMIN_ROLE, previousTreasurySetter);
         treasurySetter = _treasurySetter;
         emit TreasurySetterUpdated(_treasurySetter);
+    }
+
+    function allPairsLength() external view override returns (uint256) {
+        return allPairs.length;
     }
 
     function grantRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {

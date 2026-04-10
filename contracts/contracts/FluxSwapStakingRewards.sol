@@ -8,11 +8,11 @@ import "../libraries/TransferHelper.sol";
 contract FluxSwapStakingRewards {
     uint256 private constant PRECISION = 1e18;
 
+    address public immutable stakingToken;
+    address public immutable rewardsToken;
     address public owner;
     address public rewardSource;
     address public rewardNotifier;
-    address public immutable stakingToken;
-    address public immutable rewardsToken;
 
     uint256 public rewardPerTokenStored;
     uint256 public totalStaked;
@@ -113,14 +113,6 @@ contract FluxSwapStakingRewards {
         emit RewardConfigurationUpdated(previousRewardSource, newRewardSource, newRewardNotifier);
     }
 
-    function rewardPerToken() public view returns (uint256) {
-        return rewardPerTokenStored;
-    }
-
-    function earned(address account) public view returns (uint256) {
-        return ((balanceOf[account] * (rewardPerToken() - userRewardPerTokenPaid[account])) / PRECISION) + rewards[account];
-    }
-
     function stake(uint256 amount) external lock {
         uint256 previousTotalStaked = totalStaked;
         _syncRewards();
@@ -201,6 +193,14 @@ contract FluxSwapStakingRewards {
 
         TransferHelper.safeTransfer(rewardsToken, to, amount);
         emit UnallocatedRewardsRecovered(to, amount);
+    }
+
+    function rewardPerToken() public view returns (uint256) {
+        return rewardPerTokenStored;
+    }
+
+    function earned(address account) public view returns (uint256) {
+        return ((balanceOf[account] * (rewardPerToken() - userRewardPerTokenPaid[account])) / PRECISION) + rewards[account];
     }
 
     function _payReward(address account) private {

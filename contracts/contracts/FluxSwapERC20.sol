@@ -7,14 +7,14 @@ contract FluxSwapERC20 {
     string public constant name = "FluxSwap LP";
     string public constant symbol = "FLUX-LP";
     uint8 public constant decimals = 18;
+    bytes32 public constant PERMIT_TYPEHASH =
+        keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
     uint256 public totalSupply;
 
     mapping(address => uint256) public balanceOf;
     mapping(address => mapping(address => uint256)) public allowance;
 
     bytes32 public DOMAIN_SEPARATOR;
-    bytes32 public constant PERMIT_TYPEHASH =
-        keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
     mapping(address => uint256) public nonces;
 
     event Approval(address indexed owner, address indexed spender, uint256 value);
@@ -34,34 +34,6 @@ contract FluxSwapERC20 {
                 address(this)
             )
         );
-    }
-
-    function _mint(address to, uint256 value) internal {
-        totalSupply += value;
-        balanceOf[to] += value;
-        emit Transfer(address(0), to, value);
-    }
-
-    function _burn(address from, uint256 value) internal {
-        require(from != address(0), "FluxSwap: BURN_FROM_ZERO_ADDRESS");
-        balanceOf[from] -= value;
-        totalSupply -= value;
-        emit Transfer(from, address(0), value);
-    }
-
-    function _approve(address owner, address spender, uint256 value) private {
-        require(owner != address(0), "FluxSwap: APPROVE_FROM_ZERO_ADDRESS");
-        require(spender != address(0), "FluxSwap: APPROVE_TO_ZERO_ADDRESS");
-        allowance[owner][spender] = value;
-        emit Approval(owner, spender, value);
-    }
-
-    function _transfer(address from, address to, uint256 value) private {
-        require(from != address(0), "FluxSwap: TRANSFER_FROM_ZERO_ADDRESS");
-        require(to != address(0), "FluxSwap: TRANSFER_TO_ZERO_ADDRESS");
-        balanceOf[from] -= value;
-        balanceOf[to] += value;
-        emit Transfer(from, to, value);
     }
 
     function approve(address spender, uint256 value) external returns (bool) {
@@ -103,5 +75,33 @@ contract FluxSwapERC20 {
         address recoveredAddress = ECDSA.recover(digest, v, r, s);
         require(recoveredAddress != address(0) && recoveredAddress == owner, "FluxSwap: INVALID_SIGNATURE");
         _approve(owner, spender, value);
+    }
+
+    function _mint(address to, uint256 value) internal {
+        totalSupply += value;
+        balanceOf[to] += value;
+        emit Transfer(address(0), to, value);
+    }
+
+    function _burn(address from, uint256 value) internal {
+        require(from != address(0), "FluxSwap: BURN_FROM_ZERO_ADDRESS");
+        balanceOf[from] -= value;
+        totalSupply -= value;
+        emit Transfer(from, address(0), value);
+    }
+
+    function _approve(address owner, address spender, uint256 value) private {
+        require(owner != address(0), "FluxSwap: APPROVE_FROM_ZERO_ADDRESS");
+        require(spender != address(0), "FluxSwap: APPROVE_TO_ZERO_ADDRESS");
+        allowance[owner][spender] = value;
+        emit Approval(owner, spender, value);
+    }
+
+    function _transfer(address from, address to, uint256 value) private {
+        require(from != address(0), "FluxSwap: TRANSFER_FROM_ZERO_ADDRESS");
+        require(to != address(0), "FluxSwap: TRANSFER_TO_ZERO_ADDRESS");
+        balanceOf[from] -= value;
+        balanceOf[to] += value;
+        emit Transfer(from, to, value);
     }
 }

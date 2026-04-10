@@ -1,0 +1,33 @@
+{
+  "extends": "solhint:recommended",
+  "excludedFiles": [
+    "contracts/mocks/**/*.sol",
+    "mocks/**/*.sol",
+    "contracts/interfaces/**/*.sol",
+    "interfaces/**/*.sol",
+    "**/node_modules/**/*.sol"
+  ],
+  "rules": {
+    "compiler-version": ["error", "^0.8.28"],
+    "func-visibility": ["warn", { "ignoreConstructors": true }],
+    "immutable-vars-naming": "off",
+    "max-line-length": "off",
+    "no-console": "error",
+    "no-global-import": "off",
+    "not-rely-on-time": "off",
+    "ordering": "warn",
+    "private-vars-leading-underscore": "off",
+    "reason-string": "off",
+    "state-visibility": "warn",
+    "use-natspec": "off",
+    "gas-custom-errors": "off",
+    "gas-increment-by-one": "off",
+    "gas-indexed-events": "off",
+    "gas-small-strings": "off",
+    "gas-strict-inequalities": "off",
+    "gas-struct-packing": "off",
+    "const-name-snakecase": "off",
+    "var-name-mixedcase": "off",
+    "function-max-lines": "off"
+  }
+}

@@ -41,10 +41,6 @@ contract FluxToken is ERC20, ERC20Burnable, ERC20Capped, Ownable, AccessControl 
         }
     }
 
-    function isMinter(address account) public view returns (bool) {
-        return hasRole(MINTER_ROLE, account);
-    }
-
     function setMinter(address minter, bool allowed) external {
         require(msg.sender == owner(), "FluxToken: FORBIDDEN");
         require(minter != address(0), "FluxToken: ZERO_ADDRESS");
@@ -56,6 +52,13 @@ contract FluxToken is ERC20, ERC20Burnable, ERC20Capped, Ownable, AccessControl 
         }
 
         emit MinterUpdated(minter, allowed);
+    }
+
+    function mint(address to, uint256 amount) external onlyMinter returns (bool) {
+        require(to != address(0), "FluxToken: ZERO_ADDRESS");
+        require(totalSupply() + amount <= cap(), "FluxToken: CAP_EXCEEDED");
+        _mint(to, amount);
+        return true;
     }
 
     function transferOwnership(address newOwner) public override onlyOwner {
@@ -70,18 +73,15 @@ contract FluxToken is ERC20, ERC20Burnable, ERC20Capped, Ownable, AccessControl 
         _revokeRole(MINTER_ROLE, previousOwner);
     }
 
-    function mint(address to, uint256 amount) external onlyMinter returns (bool) {
-        require(to != address(0), "FluxToken: ZERO_ADDRESS");
-        require(totalSupply() + amount <= cap(), "FluxToken: CAP_EXCEEDED");
-        _mint(to, amount);
-        return true;
-    }
-
-    function _update(address from, address to, uint256 value) internal override(ERC20, ERC20Capped) {
-        super._update(from, to, value);
+    function isMinter(address account) public view returns (bool) {
+        return hasRole(MINTER_ROLE, account);
     }
 
     function supportsInterface(bytes4 interfaceId) public view override(AccessControl) returns (bool) {
         return super.supportsInterface(interfaceId);
+    }
+
+    function _update(address from, address to, uint256 value) internal override(ERC20, ERC20Capped) {
+        super._update(from, to, value);
     }
 }
