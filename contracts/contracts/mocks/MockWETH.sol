@@ -16,20 +16,6 @@ contract MockWETH {
 
     receive() external payable {}
 
-    function deposit() public payable {
-        balanceOf[msg.sender] += msg.value;
-        totalSupply += msg.value;
-        emit Deposit(msg.sender, msg.value);
-    }
-
-    function withdraw(uint256 wad) public {
-        require(balanceOf[msg.sender] >= wad, "Insufficient balance");
-        balanceOf[msg.sender] -= wad;
-        totalSupply -= wad;
-        (bool success, ) = payable(msg.sender).call{value: wad}("");
-        require(success, "Transfer failed");
-        emit Withdrawal(msg.sender, wad);
-    }
 
     function transfer(address to, uint256 amount) external returns (bool) {
         return _transfer(msg.sender, to, amount);
@@ -53,6 +39,20 @@ contract MockWETH {
         return true;
     }
 
+    function deposit() external payable {
+        balanceOf[msg.sender] += msg.value;
+        totalSupply += msg.value;
+        emit Deposit(msg.sender, msg.value);
+    }
+
+    function withdraw(uint256 wad) external {
+        require(balanceOf[msg.sender] >= wad, "Insufficient balance");
+        balanceOf[msg.sender] -= wad;
+        totalSupply -= wad;
+        (bool success, ) = payable(msg.sender).call{value: wad}("");
+        require(success, "Transfer failed");
+        emit Withdrawal(msg.sender, wad);
+    }
     function _transfer(address from, address to, uint256 amount) internal returns (bool) {
         require(balanceOf[from] >= amount, "Insufficient balance");
         balanceOf[from] -= amount;

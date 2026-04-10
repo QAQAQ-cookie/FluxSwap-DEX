@@ -6,6 +6,8 @@ import "../../interfaces/IERC20.sol";
 import "../../interfaces/IFluxSwapCallee.sol";
 
 contract MockPartialFlashSwapReceiver is IFluxSwapCallee {
+    receive() external payable {}
+
     function fluxSwapCall(
         address,
         uint256 amount0Out,
@@ -19,6 +21,4 @@ contract MockPartialFlashSwapReceiver is IFluxSwapCallee {
             IERC20(IFluxSwapPair(msg.sender).token1()).transfer(msg.sender, amount1Out);
         }
     }
-
-    receive() external payable {}
 }
