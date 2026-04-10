@@ -4,7 +4,11 @@ import { strictEqual, notEqual, ok } from "node:assert";
 import { encodeAbiParameters } from "viem";
 
 /**
- * FluxSwap DEX 完整功能测试
+ * FluxSwap AMM 综合测试
+ * 说明：
+ * - 本文件当前是“综合 AMM 测试”集合，包含经济安全测试与常规功能测试两部分。
+ * - 真正偏经济安全的重点在：协议费沉淀、价格冲击、价格操纵、储备与 K 值完整性、极端行情下的经济结果。
+ * - 偏常规功能的模块会在对应 describe 上方单独标注，后续如需严格分层，可再迁移到 regular/integration。
  * 测试场景：
  * - 角色：deployer（部署者）、lp（流动性提供者）、trader（交易者）
  * - 代币：tokenA、tokenB（ERC20）、WETH
@@ -130,6 +134,7 @@ describe("v2-FluxSwap", async function () {
    * ETH 交易测试
    * 场景：用户使用 ETH 兑换 token，或 token 兑换 ETH
    */
+  // 分类：偏常规功能/集成测试，主要验证 ETH 路由可用性，不属于核心经济安全断言。
   describe("ETH Swap Tests", function () {
     it("should swap exact ETH for tokens", async function () {
       const traderWethBalanceBefore = await WETH.read.balanceOf([trader]);
@@ -176,6 +181,7 @@ describe("v2-FluxSwap", async function () {
    * 工厂合约测试
    * 场景：创建交易对、设置手续费接收地址、权限控制
    */
+  // 分类：混合测试；建池与基础权限偏常规功能，treasury setter / treasury handoff 与价值归集相关。
   describe("Factory", function () {
     it("should set treasurySetter correctly", async function () {
       strictEqual((await factory.read.treasurySetter()).toLowerCase(), deployer);
@@ -274,6 +280,7 @@ describe("v2-FluxSwap", async function () {
    * 流动性添加与移除测试
    * 场景：LP 添加流动性、移除流动性、验证份额计算
    */
+  // 分类：混合测试；份额、储备与最小值约束涉及经济正确性，基础增减流动性流程偏常规功能。
   describe("Liquidity", function () {
     it("should add initial liquidity correctly", async function () {
       const totalSupply = await pair.read.totalSupply();
@@ -397,6 +404,7 @@ describe("v2-FluxSwap", async function () {
    * ETH 流动性测试
    * 场景：LP 添加 ETH-token 流动性
    */
+  // 分类：偏常规功能/集成测试，主要验证 ETH 流动性入口和参数校验。
   describe("ETH Liquidity", function () {
     it("should add liquidity with ETH", async function () {
       await tokenA.write.approve([await router.address, 1000000n * 10n ** 18n], { account: lp });
@@ -470,6 +478,7 @@ describe("v2-FluxSwap", async function () {
    * 多角色交易测试
    * 场景：LP 提供流动性，trader 进行交易，验证手续费分派
    */
+  // 分类：偏经济安全测试，关注 LP 与 trader 交互后的手续费归集和价值分配结果。
   describe("Multi-Role Trading", function () {
     it("should allow trader to swap with LP providing liquidity", async function () {
       const lpBalanceBefore = await tokenA.read.balanceOf([lp]);
@@ -515,6 +524,7 @@ describe("v2-FluxSwap", async function () {
    * 连续交易价格影响测试
    * 场景：连续多次交易对价格的影响，验证滑点累积
    */
+  // 分类：经济安全测试，关注连续成交后的价格冲击与滑点累积。
   describe("Continuous Trading Price Impact", function () {
     it("should show price impact on consecutive swaps", async function () {
       const [reserve0Before, reserve1Before] = await pair.read.getReserves();
@@ -582,6 +592,7 @@ describe("v2-FluxSwap", async function () {
    * 价格累计值测试
    * 场景：验证 price0CumulativeLast 和 price1CumulativeLast 在交易后正确更新
    */
+  // 分类：偏经济安全测试，关注价格累计器与储备观测值是否持续可对账。
   describe("Cumulative Price", function () {
     it("should track price0CumulativeLast after swaps", async function () {
       const price0Before = await pair.read.price0CumulativeLast();
@@ -623,6 +634,7 @@ describe("v2-FluxSwap", async function () {
    * Swap 交易测试
    * 场景：token-token 兑换、滑点保护、精确输出
    */
+  // 分类：混合测试；基础 swap 成功/失败路径偏常规功能，输出结果与滑点约束属于经济正确性。
   describe("Swap", function () {
     it("should swap tokenA for tokenB", async function () {
       const balanceABefore = await tokenA.read.balanceOf([trader]);
@@ -759,6 +771,7 @@ describe("v2-FluxSwap", async function () {
    * Pair 直接交易测试
    * 场景：绕过 Router 直接与 Pair 交互
    */
+  // 分类：偏常规功能/安全边界测试，验证 pair 直调时的基本约束。
   describe("Pair Direct Swap", function () {
     it("should not allow direct swap on pair without transfer", async function () {
       let errorOccurred = false;
@@ -799,6 +812,7 @@ describe("v2-FluxSwap", async function () {
    * 闪电贷测试
    * 场景：从池子借出代币，必须归还并支付手续费
    */
+  // 分类：偏常规功能/安全机制测试，主要验证 flash swap 回调与偿还约束。
   describe("FlashSwap", function () {
     it("should not allow flash swap with zero output", async function () {
       await expectRevert(
@@ -842,6 +856,7 @@ describe("v2-FluxSwap", async function () {
    * 维护操作测试
    * 场景：skim（提取多余代币）、sync（同步储备）
    */
+  // 分类：偏经济安全测试，关注 skim / sync 后的储备修复与账面一致性。
   describe("Maintenance", function () {
     it("should skim excess tokens", async function () {
       const pairBalanceBefore = await tokenA.read.balanceOf([await pair.address]);
@@ -875,6 +890,7 @@ describe("v2-FluxSwap", async function () {
    * 协议手续费测试
    * 场景：开启 feeTo 后，协议通过新增 LP 份额分享部分手续费增值。
    */
+  // 分类：核心经济安全测试，直接验证协议费沉淀路径和 treasury 收入归集。
   describe("Protocol Fee", function () {
     it("should send protocol fee directly to treasury without minting LP shares", async function () {
       const swapAmount = 100n * 10n ** 18n;
@@ -951,6 +967,7 @@ describe("v2-FluxSwap", async function () {
    * 重入保护测试
    * 场景：验证合约对重入攻击的防护
    */
+  // 分类：偏合约安全机制测试，不属于狭义经济安全，但与 AMM 状态完整性强相关。
   describe("Reentrancy Protection", function () {
     it("should maintain K constant after operations", async function () {
       const [r0Before, r1Before] = await pair.read.getReserves();
@@ -975,6 +992,7 @@ describe("v2-FluxSwap", async function () {
    * Permit 签名测试
    * 场景：EIP-2612 免授权转账功能
    */
+  // 分类：偏常规功能测试，主要验证签名授权流程本身。
   describe("Permit", function () {
     it("should track nonces correctly", async function () {
       const nonce = await pair.read.nonces([lp]);
@@ -1016,6 +1034,7 @@ describe("v2-FluxSwap", async function () {
    * 报价和金额计算测试
    * 场景：验证 getQuote 等辅助函数的正确性
    */
+  // 分类：偏常规功能/数学正确性测试，验证报价与数量计算。
   describe("Quote and Amount Calculations", function () {
     it("should calculate quote correctly", async function () {
       const quote = await router.read.quote([10n * 10n ** 18n, 1000n * 10n ** 18n, 2000n * 10n ** 18n]);
@@ -1027,6 +1046,7 @@ describe("v2-FluxSwap", async function () {
    * 不同精度代币测试
    * 场景：处理 decimals 不同的代币对
    */
+  // 分类：偏经济正确性测试，关注不同 decimals 代币下的撮合与储备行为。
   describe("Different Precision Tokens", function () {
     it("should handle tokens with different decimals", async function () {
       const token6 = await viem.deployContract("MockERC20", ["Token 6", "TKN6", 6]);
@@ -1068,6 +1088,7 @@ describe("v2-FluxSwap", async function () {
    * 价格操纵边缘场景测试
    * 场景：sandwich 攻击、小额交易、大额相对交易
    */
+  // 分类：核心经济安全测试，关注操纵、极端不平衡与连续冲击下的经济结果。
   describe("Price Manipulation Edge Cases", function () {
     it("should resist single large swap manipulation", async function () {
       const reservesBefore = await pair.read.getReserves();
@@ -1397,6 +1418,7 @@ describe("v2-FluxSwap", async function () {
    * 精确输出_swap测试
    * 场景：swapTokensForExactTokens 指定输出计算输入
    */
+  // 分类：偏常规功能测试，主要验证 exact output 路由能力与失败边界。
   describe("Exact Output Swap", function () {
     it("should swap tokens for exact tokens output", async function () {
       const tokenBBalanceBefore = await tokenB.read.balanceOf([trader]);
@@ -1437,6 +1459,7 @@ describe("v2-FluxSwap", async function () {
    * Pair ERC20 函数测试
    * 场景：LP 代币的 transfer、approve、transferFrom
    */
+  // 分类：混合测试；兼容性是主线，但也覆盖 fee-on-transfer 代币下的价值流完整性。
   describe("Fee-On-Transfer Token Support", function () {
     it("should swap exact taxed tokens for tokens with supporting router function", async function () {
       const feeToken = await viem.deployContract("MockFeeOnTransferERC20", ["Tax Token", "TAX", 18, 100n]);
@@ -1592,6 +1615,7 @@ describe("v2-FluxSwap", async function () {
     });
   });
 
+  // 分类：偏常规功能测试，验证 LP Token 的 ERC20 语义。
   describe("Pair ERC20 Functions", function () {
     it("should track totalSupply correctly", async function () {
       const totalSupply = await pair.read.totalSupply();
@@ -1695,6 +1719,7 @@ describe("v2-FluxSwap", async function () {
    * 工厂所有交易对长度测试
    * 场景：验证 allPairsLength 函数正确性
    */
+  // 分类：偏常规功能测试，验证工厂索引与长度统计。
   describe("Factory AllPairsLength", function () {
     it("should return correct pairs length", async function () {
       const pairsLength = await factory.read.allPairsLength();
