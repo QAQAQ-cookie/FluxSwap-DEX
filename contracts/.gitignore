@@ -19,5 +19,10 @@
 # Hardhat coverage reports
 /coverage
 
+# Foundry build output
+/out
+/cache_forge
+/broadcast
+
 # Local diagram preview outputs
 /tmp-diagram-preview

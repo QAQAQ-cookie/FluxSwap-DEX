@@ -1,0 +1,12 @@
+[profile.default]
+src = "contracts"
+test = "test"
+script = "scripts"
+out = "out"
+libs = ["node_modules", "lib"]
+cache_path = "cache_forge"
+solc_version = "0.8.28"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+fs_permissions = []
