@@ -175,6 +175,48 @@ describe("FluxRewardsAccountingRegression", async function () {
     strictEqual(await fluxToken.read.balanceOf([stakingRewards.address]), 0n);
   });
 
+  it("should clear queued dust once a later reward batch makes it fully claimable", async function () {
+    const stakeAmount = 6n;
+    const firstReward = 5n;
+    const secondReward = 1n;
+
+    const stakingRewards = await viem.deployContract("FluxSwapStakingRewards", [
+      multisigClient.account.address,
+      stakeToken.address,
+      fluxToken.address,
+      treasury.address,
+      operatorClient.account.address,
+    ]);
+
+    await approveTreasurySpender(stakingRewards.address, firstReward + secondReward);
+    await stakeToken.write.approve([stakingRewards.address, stakeAmount], {
+      account: userAClient.account.address,
+    });
+    await stakingRewards.write.stake([stakeAmount], {
+      account: userAClient.account.address,
+    });
+
+    // 锁住“前一批 reward 的 rounding dust，会在后一批 reward 到来时变成可领取奖励”这条边界。
+    await stakingRewards.write.notifyRewardAmount([firstReward], {
+      account: operatorClient.account.address,
+    });
+    strictEqual(await stakingRewards.read.queuedRewards(), 1n);
+
+    await stakingRewards.write.notifyRewardAmount([secondReward], {
+      account: operatorClient.account.address,
+    });
+
+    strictEqual(await stakingRewards.read.earned([userAClient.account.address]), firstReward + secondReward);
+
+    await stakingRewards.write.getReward({
+      account: userAClient.account.address,
+    });
+
+    strictEqual(await fluxToken.read.balanceOf([userAClient.account.address]), firstReward + secondReward);
+    strictEqual(await stakingRewards.read.rewardReserve(), 0n);
+    strictEqual(await stakingRewards.read.queuedRewards(), 0n);
+    strictEqual(await fluxToken.read.balanceOf([stakingRewards.address]), 0n);
+  });
   it("should keep time-weighted same-token rewards favoring the earlier staker while preserving total reward conservation", async function () {
     const userFunding = 1_000n * 10n ** 18n;
     const rewardAmount = 700n * 10n ** 18n;

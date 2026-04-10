@@ -249,13 +249,11 @@ contract FluxSwapStakingRewards {
         uint256 updatedRewardPerTokenStored = previousRewardPerTokenStored + rewardPerTokenIncrement;
         rewardPerTokenStored = updatedRewardPerTokenStored;
 
-        if (reward == 0) {
-            accountedReward =
-                ((updatedRewardPerTokenStored * totalStaked) / PRECISION) -
-                ((previousRewardPerTokenStored * totalStaked) / PRECISION);
-        } else {
-            accountedReward = (rewardPerTokenIncrement * totalStaked) / PRECISION;
-        }
+        // Use the delta of floored global entitlement so previously queued dust
+        // is released as soon as later reward batches make it actually claimable.
+        accountedReward =
+            ((updatedRewardPerTokenStored * totalStaked) / PRECISION) -
+            ((previousRewardPerTokenStored * totalStaked) / PRECISION);
         queuedRewards = distributable - accountedReward;
     }
 
@@ -275,6 +273,11 @@ contract FluxSwapStakingRewards {
                 pendingUserRewards += accruedReward;
             }
             userRewardPerTokenPaid[account] = rewardPerTokenStored;
+
+            uint256 unallocatedRewards = rewardReserve - pendingUserRewards;
+            if (queuedRewards > unallocatedRewards) {
+                queuedRewards = unallocatedRewards;
+            }
         }
     }
 
