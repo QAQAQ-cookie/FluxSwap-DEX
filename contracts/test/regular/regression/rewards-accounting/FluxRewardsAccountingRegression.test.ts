@@ -482,6 +482,86 @@ describe("FluxRewardsAccountingRegression", async function () {
     strictEqual(await manager.read.totalAllocPoint(), 70n);
   });
 
+  it("should not let deactivated pools overbook manager reserves after multiple reward rounds", async function () {
+    const stakeTokenB = await viem.deployContract("MockERC20", ["Stake Token B", "STB", 18]);
+    const stakeTokenC = await viem.deployContract("MockERC20", ["Stake Token C", "STC", 18]);
+
+    const poolA = await viem.deployContract("FluxSwapStakingRewards", [
+      multisigClient.account.address,
+      stakeToken.address,
+      fluxToken.address,
+      manager.address,
+      manager.address,
+    ]);
+    const poolB = await viem.deployContract("FluxSwapStakingRewards", [
+      multisigClient.account.address,
+      stakeTokenB.address,
+      fluxToken.address,
+      manager.address,
+      manager.address,
+    ]);
+    const poolC = await viem.deployContract("FluxSwapStakingRewards", [
+      multisigClient.account.address,
+      stakeTokenC.address,
+      fluxToken.address,
+      manager.address,
+      manager.address,
+    ]);
+
+    await poolA.write.setRewardConfiguration([manager.address, poolA.address], {
+      account: multisigClient.account.address,
+    });
+    await poolB.write.setRewardConfiguration([manager.address, poolB.address], {
+      account: multisigClient.account.address,
+    });
+    await poolC.write.setRewardConfiguration([manager.address, poolC.address], {
+      account: multisigClient.account.address,
+    });
+
+    await manager.write.addPool([poolA.address, 100n, true], {
+      account: multisigClient.account.address,
+    });
+    await manager.write.addPool([poolB.address, 200n, true], {
+      account: multisigClient.account.address,
+    });
+    await manager.write.addPool([poolC.address, 300n, true], {
+      account: multisigClient.account.address,
+    });
+
+    await approveTreasurySpender(manager.address, 2_854n);
+
+    // 锁住“多轮分发 + 停用池 materialize pendingRewards 后，不得把 manager 储备超额预订”这条边界。
+    await manager.write.distributeRewards([2_851n], {
+      account: operatorClient.account.address,
+    });
+
+    await manager.write.deactivatePool([poolA.address], {
+      account: multisigClient.account.address,
+    });
+    await manager.write.setPool([1n, 100n, false], {
+      account: multisigClient.account.address,
+    });
+
+    await manager.write.distributeRewards([3n], {
+      account: operatorClient.account.address,
+    });
+
+    strictEqual(await manager.read.totalPendingRewards(), 1_425n);
+    strictEqual(await manager.read.undistributedRewards(), 1n);
+    strictEqual(await fluxToken.read.balanceOf([manager.address]), 2_854n);
+
+    await poolA.write.syncRewards();
+    await poolB.write.syncRewards();
+    await poolC.write.syncRewards();
+
+    strictEqual(await fluxToken.read.balanceOf([poolA.address]), 475n);
+    strictEqual(await fluxToken.read.balanceOf([poolB.address]), 950n);
+    strictEqual(await fluxToken.read.balanceOf([poolC.address]), 1_428n);
+    strictEqual(await manager.read.totalPendingRewards(), 0n);
+    strictEqual(await manager.read.undistributedRewards(), 1n);
+    strictEqual(await fluxToken.read.balanceOf([manager.address]), 1n);
+  });
+
   it("should keep tiny multi-pool rewards carrying forward until the smaller pool can finally claim them", async function () {
     const tinyReward = 1n;
     const stakeAmount = 1n;
