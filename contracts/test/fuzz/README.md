@@ -35,6 +35,12 @@ forge test --match-path test/fuzz/FluxSwapLPStakingPoolFuzz.t.sol -vv
 forge test --match-path test/fuzz/FluxSwapRouterFeeOnTransferFuzz.t.sol -vv
 forge test --match-path test/fuzz/FluxRevenuePipelineStatefulFuzz.t.sol -vv
 forge test --match-path test/fuzz/FluxManagedPoolLifecycleStatefulFuzz.t.sol -vv
+forge test --match-path test/fuzz/FluxSwapTreasuryGovernanceFuzz.t.sol -vv
+forge test --match-path test/fuzz/FluxAmmLifecycleStatefulFuzz.t.sol -vv
+forge test --match-path test/fuzz/FluxAmmEthLifecycleStatefulFuzz.t.sol -vv
+forge test --match-path test/fuzz/FluxManagedPoolRecreationStatefulFuzz.t.sol -vv
+forge test --match-path test/fuzz/FluxRevenueManagedPoolsStatefulFuzz.t.sol -vv
+forge test --match-path test/fuzz/FluxRevenueTreasuryManagerLongSequenceFuzz.t.sol -vv
 ```
 
 说明：
@@ -48,8 +54,8 @@ forge test --match-path test/fuzz/FluxManagedPoolLifecycleStatefulFuzz.t.sol -vv
 
 截至当前版本，`npm run test:fuzz` 已覆盖：
 
-- `14` 个 Foundry fuzz / stateful fuzz 套件
-- `50` 个测试用例
+- `22` 个 Foundry fuzz / stateful fuzz 套件
+- `65` 个测试用例
 - 覆盖 Router、Pair、Token、Treasury、RevenueDistributor、BuybackExecutor、SwapFactory、PoolFactory、LP Staking Pool、MultiPoolManager 以及跨合约流水线 / managed pool 生命周期
 
 ### `FluxSwapRouterFuzz.t.sol`
@@ -70,6 +76,42 @@ forge test --match-path test/fuzz/FluxManagedPoolLifecycleStatefulFuzz.t.sol -vv
 - 已有池子的 `addLiquidity` 不得超过用户给定的 `desired` 数量
 - `swapETHForExactTokens` 在超额付款时必须正确退款
 - `removeLiquidity` 必须按 LP 份额精确返还底层资产
+
+### `FluxAmmLifecycleStatefulFuzz.t.sol`
+
+覆盖 token-token AMM 在多步连续状态下的跨合约生命周期：
+
+- 首个 LP 建池
+- 第二个 LP 按已有价格继续加池
+- `tokenA -> tokenB` exact-input swap
+- `tokenB -> tokenA` exact-input swap
+- 第二个 LP 部分撤池
+
+当前重点验证的性质：
+
+- 二次加池时 router 只能消耗价格对齐后的最优数量，不得超出用户给定的 `desired`
+- 两个方向的 swap 都必须按输入资产精确给 treasury 沉淀协议费
+- 多步操作结束后，pair 储备必须继续与真实余额同步
+- 整条 token-token 生命周期里，`tokenA / tokenB` 总量都必须能被完整解释为“用户余额 + pair 余额 + treasury 余额”
+- router 在整条链路结束后不得残留 `tokenA / tokenB`
+
+### `FluxAmmEthLifecycleStatefulFuzz.t.sol`
+
+覆盖 token-ETH AMM 在多步连续状态下的跨合约生命周期：
+
+- 首个 LP 建池
+- 第二个 LP 再次 `addLiquidityETH`，并故意多付 ETH 触发 refund
+- `ETH -> token` exact-input swap
+- `token -> ETH` exact-input swap
+- 第二个 LP 部分 `removeLiquidityETH`
+
+当前重点验证的性质：
+
+- 第二个 LP 的 `addLiquidityETH` 只能消耗价格对齐后的最优 ETH 数量，超付部分必须原路退回
+- `ETH -> token` 路径必须给 treasury 沉淀精确的 `WETH` 协议费，`token -> ETH` 路径必须给 treasury 沉淀精确的 token 协议费
+- 多步操作结束后，pair 储备必须继续与真实 `token / WETH` 余额同步
+- router 在整条链路结束后不得残留 `ETH / WETH / token`
+- WETH 的 `totalSupply` 最终只能由“pair 内剩余 WETH + treasury 持有 WETH”解释
 
 ### `FluxSwapStakingRewardsFuzz.t.sol`
 
@@ -116,6 +158,28 @@ forge test --match-path test/fuzz/FluxManagedPoolLifecycleStatefulFuzz.t.sol -vv
 - 配置了 daily cap 时，`spentToday` 必须与当日真实消耗一致
 - 跨天后 `spentToday` 必须重置为新一天的消费累计
 - pause 后 approved spender 的三条消费路径都必须拒绝执行
+
+### `FluxSwapTreasuryGovernanceFuzz.t.sol`
+
+覆盖 treasury 里 timelock 治理执行与运营支出联动的另一组高风险路径：
+
+- `executeSetAllowedToken`
+- `executeSetAllowedRecipient`
+- `executeSetDailySpendCap`
+- `executeSetMinDelay`
+- `executeSetOperator`
+- `allocate`
+- `allocateETH`
+- `executeEmergencyWithdraw`
+- `executeEmergencyWithdrawETH`
+
+当前重点验证的性质：
+
+- 只有 timelock 生效后的 allowlist 与 cap 配置才能真正放行 token / ETH 支出
+- token cap 与 native cap 必须各自独立累计，`spentToday[token]` 与 `spentToday[address(0)]` 不得串账
+- `minDelay` 更新后，后续新操作必须立即遵守新的最小调度延迟
+- operator 轮换后，旧 operator 必须立即失权，新 operator 必须可以继续执行 allocate
+- treasury 暂停后普通 `allocate / allocateETH` 必须继续被拦截，但到期的 `emergency withdraw` 仍应可执行
 
 ### `FluxRevenueDistributorFuzz.t.sol`
 
@@ -233,13 +297,17 @@ forge test --match-path test/fuzz/FluxManagedPoolLifecycleStatefulFuzz.t.sol -vv
 - `swapExactETHForTokensSupportingFeeOnTransferTokens`
 - `swapExactTokensForETHSupportingFeeOnTransferTokens`
 - `token -> token -> token` 多跳 supporting 路径
+- `token(fee) -> token -> token(fee) -> token -> token` 四跳双 fee token supporting 路径
+- `amountOutMin` 按最终 recipient 实际净到账量结算的边界成功 / 失败路径
 
 当前重点验证的性质：
 
 - fee-on-transfer 输入资产的协议费必须按真实净输入计费，而不是按名义输入计费
 - 多跳路径里每一跳都必须只按该跳真实到达 Pair 的输入计费
 - 当中间资产本身是 fee-on-transfer token 时，后一跳必须按跨 hop 后的净输入继续结算
+- 当路径里出现两个 fee-on-transfer token 且总 hop 数增加到四跳时，每一跳 treasury 仍必须只拿到该 hop 真实输入资产对应的协议费
 - fee-on-transfer 输出资产的实际到账量必须等于 pair 输出再扣一次转账税后的结果
+- supporting 路径里的 `amountOutMin` 必须对齐 recipient 的最终净到账量，等于边界值时应成功，超过 `1 wei` 时必须回退
 - ETH supporting 路径里的协议费必须记在真实输入资产 `WETH` 上
 - `token -> ETH` supporting 路径不得误用 Router 里预存的 `WETH`
 
@@ -257,6 +325,45 @@ forge test --match-path test/fuzz/FluxManagedPoolLifecycleStatefulFuzz.t.sol -vv
 - pool 领取总额必须等于 pool 实际到账余额
 - manager 剩余余额必须被 `pending + undistributed` 覆盖，允许最多 `1 wei` 级别残余 dust
 - treasury 侧在整条流水线结束后只允许保留最多 `1 wei` 级别残余 dust
+
+### `FluxRevenueTreasuryManagerStatefulFuzz.t.sol`
+
+覆盖真实 `Treasury -> RevenueDistributor -> MultiPoolManager -> Pool claim` 的长序列状态机：
+
+- timelock 批准 `manager / distributor` 作为 treasury approved spender
+- 首轮 `buybackAndDistribute`
+- `treasury pause / unpause`
+- 同一天 direct treasury reward 因 daily cap 超限失败
+- 跨天后 cap 重置，再次 direct treasury reward 成功
+- `manager pause / unpause`
+- 第二轮 `buybackAndDistribute`
+
+当前重点验证的性质：
+
+- distributor 的 burn 与 manager 的 pull 都必须精确消耗 treasury 的 approved allowance，不得串账
+- treasury 的 `dailySpendCap` 必须跨 spender 累计生效，并在跨天后正确重置
+- `treasury paused` 和 `manager paused` 插入到长链路中时，失败操作不能污染后续总账
+- 恢复执行后，全链路仍需满足 `inflow = burned + treasury/manager/pool 持仓`
+
+### `FluxRevenueTreasuryManagerLongSequenceFuzz.t.sol`
+
+覆盖真实 `Treasury -> RevenueDistributor -> MultiPoolManager -> Pool claim` 的 8 步混合随机序列：
+
+- `buybackAndDistribute`
+- `direct treasury reward`
+- `treasury pause / unpause`
+- `manager pause / unpause`
+- `distributor pause / unpause`
+- `pool0 / pool1 claim`
+- `warp` 推进时间
+
+当前重点验证的性质：
+
+- `buyback / direct reward / claim / pause` 在随机顺序下交错执行时，全链路总账仍必须持续守恒
+- 失败的分发操作只能整笔回退，或者把资金留在 treasury，不能污染 `approvedSpendRemaining`
+- `approvedSpendRemaining[distributor]` 与 `approvedSpendRemaining[manager]` 必须分别按实际 burn / distribute 精确递减
+- 任意中间态下 `manager` 实际余额都必须覆盖 `totalPendingRewards + undistributedRewards`
+- 序列结束并 `syncAllPools` 后，manager 剩余余额必须重新收敛到 `pending + undistributed + 最多 1 wei dust`
 
 ### `FluxManagedPoolLifecycleStatefulFuzz.t.sol`
 
@@ -278,6 +385,59 @@ forge test --match-path test/fuzz/FluxManagedPoolLifecycleStatefulFuzz.t.sol -vv
 - `pendingPoolRewards()` 视图值与真实 claim 值允许存在最多 `1 wei` 的 clamp 差异，但总账仍必须守恒
 - treasury 暂停时 `distributeRewards` 必须整体拒绝，恢复后 single / LP pool 的记账仍需重新对齐
 
+### `FluxManagedPoolRecreationStatefulFuzz.t.sol`
+
+覆盖 managed pool 在 ownership 移交后的“同资产重建新池”状态机：
+
+- 旧 `single pool` 移交后，对同一 `stakingToken` 重建新的 managed single pool
+- 旧 `LP pool` 移交后，对同一 `lpToken / pair` 重建新的 managed LP pool
+- 重建后的新池继续参与后续奖励分发与未分配奖励回收
+
+当前重点验证的性质：
+
+- 旧池移交后，`singleTokenPools / lpTokenPools / managedPools / managedPoolStakingAsset / managedPoolIsLP` 必须先被彻底清空
+- 同一 `stakingToken` 或 `lpToken` 上重建新池后，工厂映射必须立即切到新池
+- manager 的 `totalAllocPoint` 必须先扣掉旧池，再加上新池，不能出现旧新池重复计权
+- 后续新一轮奖励只能继续流向新池，旧池的 `pendingPoolRewards` 不得再增长
+- 新池 `syncRewards + recoverManagedPoolUnallocatedRewards` 后，实际回收金额必须与真实 claim 值对齐，允许最多 `1 wei` 视图误差
+
+### `FluxRevenueManagedPoolsStatefulFuzz.t.sol`
+
+覆盖 `RevenueDistributor -> Treasury -> MultiPoolManager -> 真实 managed pools` 的跨合约状态机：
+
+- `buybackAndDistribute` 进入真实 `single pool / LP pool`
+- `distributeTreasuryRewards` 进入真实 `single pool / LP pool`
+- 无 staker 状态下通过 `pool.syncRewards + recoverManagedPoolUnallocatedRewards` 结清奖励
+- distributor 路径下旧 LP pool 移交后，同一 pair 上重建新的 managed LP pool
+- `buyback / direct reward / sync / recover / treasury pause / LP 重建` 的 8 步混排长序列
+
+当前重点验证的性质：
+
+- buyback round 与 direct treasury round 的总 inflow，最终必须由 `burned + treasury/manager 残余 + recipient 回收` 完整解释
+- 真实 `single pool / LP pool` 在无 staker 场景下，`sync + recover` 后必须能把奖励完整回收，不留下脏的 `rewardReserve`
+- distributor 路径下旧 LP pool 移交后，后续奖励只能继续流向新建 LP pool，旧池的 `pendingPoolRewards` 不得再增长
+- 长序列混排下，失败的分发操作只能把资金留在 treasury 或整笔回退，不能破坏全链路守恒
+- manager 侧最终仍只能保留最多 `1 wei` 级别的未解释 dust
+
+### `FluxFactoryPoolManagerStatefulFuzz.t.sol`
+
+覆盖 `FluxSwapFactory -> FluxPoolFactory -> FluxMultiPoolManager` 的创建、移交、重建与激活切换状态机：
+
+- 创建 active / inactive 混合的 single / LP pools
+- 旧 `single pool / LP pool` ownership 移交并退出 managed 注册
+- 对同一 `stakingToken / LP token` 重建新的 managed pool
+- owner 侧对 dormant pool 执行 `setPool(..., true)` 激活
+- owner 侧对 survivor LP pool 执行 `setPool(..., false)` 停用
+- 第二轮奖励只发给仍 active 且 managed 的新状态集合
+
+当前重点验证的性质：
+
+- 旧池移交后，`singleTokenPools / lpTokenPools / managedPools / managedPoolStakingAsset / managedPoolIsLP` 必须被清空
+- 同资产重建新池后，工厂映射必须立即切到新池，`poolLength()` 也必须继续单调增长
+- 被移交池与被停用池在第二轮奖励后 `pendingPoolRewards` 不得继续增长
+- manager 的 `totalAllocPoint` 必须和“当前仍 active 的 managed pools”严格一致
+- 第二轮奖励回收后，总 inflow 必须仍然能由 `manager 持仓 + recipient 回收` 完整解释，允许最多 `3 wei` 级别残余 dust
+
 ## 本轮新增补强点
 
 这一轮除了原先的 Router、StakingRewards、MultiPoolManager 外，继续把 fuzz 补到了以下核心合约：
@@ -293,6 +453,15 @@ forge test --match-path test/fuzz/FluxManagedPoolLifecycleStatefulFuzz.t.sol -vv
 - `FluxSwapRouter` 的 fee-on-transfer supporting 分支
 - `RevenueDistributor -> Treasury -> MultiPoolManager` 的跨合约状态流水线
 - `managed pool` 的创建、配置、移交、回收与暂停恢复生命周期
+- treasury 的 timelock 配置变更、operator 轮换、token / ETH allocate 与紧急提现闭环
+- token-token AMM 的建池、续池、双向 swap、部分撤池与协议费沉淀生命周期
+- token-ETH AMM 的建池、续池、ETH refund、双向 swap、部分撤池与 WETH/token 协议费沉淀生命周期
+- managed pool 在 ownership 移交后按同一 staking asset / LP token 重建新池的映射与奖励隔离生命周期
+- 分红分发器通过真实 managed pools 落地后的 buyback/direct-reward/conservation/recreation 跨合约生命周期
+- 真实 managed pools 在 `buyback / direct reward / sync / recover / treasury pause / LP 重建` 混排长序列下的状态机会计验证
+- 真实 treasury 参与下的 approved spender、daily cap、跨天重置、pause/unpause 与 revenue pipeline 交错执行长序列
+- 真实 treasury / distributor / manager / claim 在 8 步随机 selector 序列下的长状态机会计验证
+- factory / poolFactory / manager 串联的“创建 -> 移交 -> 同资产重建 -> 激活/停用 -> 再分发”多合约状态机
 
 这样当前 fuzz 已经不只覆盖 AMM 路由和奖励会计，也把金库、分红、代币权限、managed pool 工厂、buyback 执行链路都纳入了随机边界输入验证。
 
@@ -300,6 +469,4 @@ forge test --match-path test/fuzz/FluxManagedPoolLifecycleStatefulFuzz.t.sol -vv
 
 如果后面还要继续加深 fuzz，优先级比较高的方向还有：
 
-- Router fee-on-transfer 更复杂的多跳路径与 quote 偏差边界
-- 更长操作序列的 stateful fuzz，例如 manager / treasury / distributor 串联多轮交替执行
-- 更复杂的多合约状态机 fuzz，例如 factory / poolFactory / manager 串联创建与移交流程
+- 从当前“固定 8 步 selector 序列”继续升级到 Foundry `Handler + targetContract()` 风格的 invariant/fuzz 混合 harness

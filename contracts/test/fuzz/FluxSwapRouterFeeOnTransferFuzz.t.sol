@@ -22,6 +22,34 @@ contract FluxSwapRouterFeeOnTransferFuzzTest is Test {
         uint256 recipientOut;
     }
 
+    struct FourHopExpectations {
+        uint256 treasuryFirstHop;
+        uint256 treasurySecondHop;
+        uint256 treasuryThirdHop;
+        uint256 treasuryFourthHop;
+        uint256 recipientOut;
+    }
+
+    struct FourHopScenario {
+        uint256 feeBpsOne;
+        uint256 feeBpsTwo;
+        uint256 liquidityFeeOne;
+        uint256 liquidityMidOneA;
+        uint256 liquidityMidOneB;
+        uint256 liquidityFeeTwoA;
+        uint256 liquidityFeeTwoB;
+        uint256 liquidityMidTwo;
+        uint256 liquidityOut;
+        uint256 amountIn;
+    }
+
+    struct BoundaryScenario {
+        uint256 feeBps;
+        uint256 liquidityIn;
+        uint256 liquidityOut;
+        uint256 amountIn;
+    }
+
     FluxSwapFactory private factory;
     FluxSwapRouter private router;
     MockWETH private weth;
@@ -256,6 +284,102 @@ contract FluxSwapRouterFeeOnTransferFuzzTest is Test {
         assertEq(weth.balanceOf(address(router)), routerWethBefore);
     }
 
+    function testFuzz_swapExactTokensForTokensSupportingFeeOnTransfer_fourHopPathTaxesEveryRealHopInput(
+        uint16 rawFeeBpsOne,
+        uint16 rawFeeBpsTwo,
+        uint96 rawLiquidityFeeOne,
+        uint96 rawLiquidityMidOneA,
+        uint96 rawLiquidityMidOneB,
+        uint96 rawLiquidityFeeTwoA,
+        uint96 rawLiquidityFeeTwoB,
+        uint96 rawLiquidityMidTwo,
+        uint96 rawLiquidityOut,
+        uint96 rawAmountIn
+    ) public {
+        FourHopScenario memory scenario = _boundFourHopScenario(
+            rawFeeBpsOne,
+            rawFeeBpsTwo,
+            rawLiquidityFeeOne,
+            rawLiquidityMidOneA,
+            rawLiquidityMidOneB,
+            rawLiquidityFeeTwoA,
+            rawLiquidityFeeTwoB,
+            rawLiquidityMidTwo,
+            rawLiquidityOut,
+            rawAmountIn
+        );
+        _runDualFeeFourHopScenario(scenario);
+    }
+
+    function _runDualFeeFourHopScenario(FourHopScenario memory scenario) private {
+        feeToken = new MockFeeOnTransferERC20("Fee Token One", "FEE1", 18, scenario.feeBpsOne);
+        MockERC20 midTokenOne = new MockERC20("Mid Token One", "MID1", 18);
+        MockFeeOnTransferERC20 feeTokenTwo =
+            new MockFeeOnTransferERC20("Fee Token Two", "FEE2", 18, scenario.feeBpsTwo);
+        MockERC20 midTokenTwo = new MockERC20("Mid Token Two", "MID2", 18);
+        MockERC20 outToken = new MockERC20("Out Token", "OUT", 18);
+        factory.setTreasury(treasury);
+
+        FluxSwapPair[4] memory pairs;
+        pairs[0] = _seedGenericPair(feeToken, midTokenOne, scenario.liquidityFeeOne, scenario.liquidityMidOneA);
+        pairs[1] = _seedGenericPair(midTokenOne, feeTokenTwo, scenario.liquidityMidOneB, scenario.liquidityFeeTwoA);
+        pairs[2] = _seedGenericPair(feeTokenTwo, midTokenTwo, scenario.liquidityFeeTwoB, scenario.liquidityMidTwo);
+        pairs[3] = _seedGenericPair(midTokenTwo, outToken, scenario.liquidityMidTwo, scenario.liquidityOut);
+
+        address[5] memory tokens;
+        tokens[0] = address(feeToken);
+        tokens[1] = address(midTokenOne);
+        tokens[2] = address(feeTokenTwo);
+        tokens[3] = address(midTokenTwo);
+        tokens[4] = address(outToken);
+
+        FourHopExpectations memory expected = _computeDualFeeFourHopExpectations(pairs, tokens, scenario);
+        vm.assume(expected.treasuryFirstHop > 0);
+        vm.assume(expected.treasurySecondHop > 0);
+        vm.assume(expected.treasuryThirdHop > 0);
+        vm.assume(expected.treasuryFourthHop > 0);
+        vm.assume(expected.recipientOut > 0);
+
+        feeToken.mint(trader, scenario.amountIn);
+        vm.prank(trader);
+        feeToken.approve(address(router), type(uint256).max);
+
+        uint256 feeOneTreasuryBefore = feeToken.balanceOf(treasury);
+        uint256 midOneTreasuryBefore = midTokenOne.balanceOf(treasury);
+        uint256 feeTwoTreasuryBefore = feeTokenTwo.balanceOf(treasury);
+        uint256 midTwoTreasuryBefore = midTokenTwo.balanceOf(treasury);
+        uint256 recipientBefore = outToken.balanceOf(recipient);
+
+        vm.prank(trader);
+        router.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+            scenario.amountIn,
+            1,
+            _dynamicPathFromFixed(tokens),
+            recipient,
+            _deadline()
+        );
+
+        assertEq(feeToken.balanceOf(treasury) - feeOneTreasuryBefore, expected.treasuryFirstHop);
+        assertEq(midTokenOne.balanceOf(treasury) - midOneTreasuryBefore, expected.treasurySecondHop);
+        assertEq(feeTokenTwo.balanceOf(treasury) - feeTwoTreasuryBefore, expected.treasuryThirdHop);
+        assertEq(midTokenTwo.balanceOf(treasury) - midTwoTreasuryBefore, expected.treasuryFourthHop);
+        assertEq(outToken.balanceOf(recipient) - recipientBefore, expected.recipientOut);
+    }
+
+    function testFuzz_swapExactTokensForTokensSupportingFeeOnTransfer_amountOutMinUsesNetRecipientOutput(
+        uint16 rawFeeBps,
+        uint96 rawLiquidityIn,
+        uint96 rawLiquidityOut,
+        uint96 rawAmountIn
+    ) public {
+        BoundaryScenario memory scenario;
+        scenario.feeBps = bound(uint256(rawFeeBps), 1, 1_000);
+        scenario.liquidityIn = bound(uint256(rawLiquidityIn), MIN_LIQUIDITY, MAX_LIQUIDITY);
+        scenario.liquidityOut = bound(uint256(rawLiquidityOut), MIN_LIQUIDITY, MAX_LIQUIDITY);
+        scenario.amountIn = bound(uint256(rawAmountIn), 2_000, (scenario.liquidityIn / 20) + 2_000);
+        _runAmountOutMinBoundaryScenario(scenario);
+    }
+
     function _deployFeeToken(uint256 feeBps) private {
         feeToken = new MockFeeOnTransferERC20("Tax Token", "TAX", 18, feeBps);
         quoteToken = new MockERC20("Quote Token", "QUOTE", 18);
@@ -365,6 +489,136 @@ contract FluxSwapRouterFeeOnTransferFuzzTest is Test {
         expected.recipientOut = router.getAmountOut(netSecondHopInput, reserveTaxIn, reserveOutput);
     }
 
+    function _computeDualFeeFourHopExpectations(
+        FluxSwapPair[4] memory pairs,
+        address[5] memory tokens,
+        FourHopScenario memory scenario
+    ) private view returns (FourHopExpectations memory expected) {
+        uint256 netFirstHopInput = _applyTransferFee(scenario.amountIn, scenario.feeBpsOne);
+        if (netFirstHopInput == 0) {
+            return expected;
+        }
+
+        uint256 firstHopAmountOut;
+        {
+            (uint256 reserveFeeOneIn, uint256 reserveMidOneOut) = _reservesFor(tokens[0], tokens[1], pairs[0]);
+            firstHopAmountOut = router.getAmountOut(netFirstHopInput, reserveFeeOneIn, reserveMidOneOut);
+        }
+        if (firstHopAmountOut == 0) {
+            return expected;
+        }
+
+        uint256 secondHopAmountOut;
+        {
+            (uint256 reserveMidOneIn, uint256 reserveFeeTwoOut) = _reservesFor(tokens[1], tokens[2], pairs[1]);
+            secondHopAmountOut = router.getAmountOut(firstHopAmountOut, reserveMidOneIn, reserveFeeTwoOut);
+        }
+        if (secondHopAmountOut == 0) {
+            return expected;
+        }
+
+        uint256 netThirdHopInput = _applyTransferFee(secondHopAmountOut, scenario.feeBpsTwo);
+        if (netThirdHopInput == 0) {
+            return expected;
+        }
+
+        uint256 thirdHopAmountOut;
+        {
+            (uint256 reserveFeeTwoIn, uint256 reserveMidTwoOut) = _reservesFor(tokens[2], tokens[3], pairs[2]);
+            thirdHopAmountOut = router.getAmountOut(netThirdHopInput, reserveFeeTwoIn, reserveMidTwoOut);
+        }
+        if (thirdHopAmountOut == 0) {
+            return expected;
+        }
+
+        expected.treasuryFirstHop =
+            _applyTransferFee((netFirstHopInput * PROTOCOL_FEE_BPS) / FEE_BASE, scenario.feeBpsOne);
+        expected.treasurySecondHop = (firstHopAmountOut * PROTOCOL_FEE_BPS) / FEE_BASE;
+        expected.treasuryThirdHop =
+            _applyTransferFee((netThirdHopInput * PROTOCOL_FEE_BPS) / FEE_BASE, scenario.feeBpsTwo);
+        expected.treasuryFourthHop = (thirdHopAmountOut * PROTOCOL_FEE_BPS) / FEE_BASE;
+        {
+            (uint256 reserveMidTwoIn, uint256 reserveOut) = _reservesFor(tokens[3], tokens[4], pairs[3]);
+            expected.recipientOut = router.getAmountOut(thirdHopAmountOut, reserveMidTwoIn, reserveOut);
+        }
+    }
+
+    function _runAmountOutMinBoundaryScenario(BoundaryScenario memory scenario) private {
+        factory.setTreasury(treasury);
+
+        MockERC20 successInput = new MockERC20("Boundary Input", "BIN", 18);
+        MockFeeOnTransferERC20 successFeeToken =
+            new MockFeeOnTransferERC20("Boundary Fee Out", "BFOUT", 18, scenario.feeBps);
+        FluxSwapPair successPair =
+            _seedGenericPair(successInput, successFeeToken, scenario.liquidityIn, scenario.liquidityOut);
+        (uint256 successReserveInput, uint256 successReserveOutput) =
+            _reservesFor(address(successInput), address(successFeeToken), successPair);
+
+        uint256 grossAmountOut = router.getAmountOut(scenario.amountIn, successReserveInput, successReserveOutput);
+        uint256 exactNetRecipientOut = _applyTransferFee(grossAmountOut, scenario.feeBps);
+        vm.assume(grossAmountOut > 0 && exactNetRecipientOut > 0);
+
+        successInput.mint(trader, scenario.amountIn);
+        vm.prank(trader);
+        successInput.approve(address(router), type(uint256).max);
+
+        uint256 recipientBefore = successFeeToken.balanceOf(recipient);
+
+        vm.prank(trader);
+        router.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+            scenario.amountIn,
+            exactNetRecipientOut,
+            _twoHopPath(address(successInput), address(successFeeToken)),
+            recipient,
+            _deadline()
+        );
+
+        assertEq(successFeeToken.balanceOf(recipient) - recipientBefore, exactNetRecipientOut);
+
+        MockERC20 failingInput = new MockERC20("Boundary Input Fail", "BINF", 18);
+        MockFeeOnTransferERC20 failingFeeToken =
+            new MockFeeOnTransferERC20("Boundary Fee Out Fail", "BFOF", 18, scenario.feeBps);
+        _seedGenericPair(failingInput, failingFeeToken, scenario.liquidityIn, scenario.liquidityOut);
+
+        failingInput.mint(trader, scenario.amountIn);
+        vm.prank(trader);
+        failingInput.approve(address(router), type(uint256).max);
+
+        vm.prank(trader);
+        vm.expectRevert(bytes("FluxSwapRouter: INSUFFICIENT_OUTPUT_AMOUNT"));
+        router.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+            scenario.amountIn,
+            exactNetRecipientOut + 1,
+            _twoHopPath(address(failingInput), address(failingFeeToken)),
+            recipient,
+            _deadline()
+        );
+    }
+
+    function _boundFourHopScenario(
+        uint16 rawFeeBpsOne,
+        uint16 rawFeeBpsTwo,
+        uint96 rawLiquidityFeeOne,
+        uint96 rawLiquidityMidOneA,
+        uint96 rawLiquidityMidOneB,
+        uint96 rawLiquidityFeeTwoA,
+        uint96 rawLiquidityFeeTwoB,
+        uint96 rawLiquidityMidTwo,
+        uint96 rawLiquidityOut,
+        uint96 rawAmountIn
+    ) private pure returns (FourHopScenario memory scenario) {
+        scenario.feeBpsOne = bound(uint256(rawFeeBpsOne), 1, 1_000);
+        scenario.feeBpsTwo = bound(uint256(rawFeeBpsTwo), 1, 1_000);
+        scenario.liquidityFeeOne = bound(uint256(rawLiquidityFeeOne), MIN_LIQUIDITY, MAX_LIQUIDITY);
+        scenario.liquidityMidOneA = bound(uint256(rawLiquidityMidOneA), MIN_LIQUIDITY, MAX_LIQUIDITY);
+        scenario.liquidityMidOneB = bound(uint256(rawLiquidityMidOneB), MIN_LIQUIDITY, MAX_LIQUIDITY);
+        scenario.liquidityFeeTwoA = bound(uint256(rawLiquidityFeeTwoA), MIN_LIQUIDITY, MAX_LIQUIDITY);
+        scenario.liquidityFeeTwoB = bound(uint256(rawLiquidityFeeTwoB), MIN_LIQUIDITY, MAX_LIQUIDITY);
+        scenario.liquidityMidTwo = bound(uint256(rawLiquidityMidTwo), MIN_LIQUIDITY, MAX_LIQUIDITY);
+        scenario.liquidityOut = bound(uint256(rawLiquidityOut), MIN_LIQUIDITY, MAX_LIQUIDITY);
+        scenario.amountIn = bound(uint256(rawAmountIn), 2_000, (scenario.liquidityFeeOne / 20) + 2_000);
+    }
+
     function _applyTransferFee(uint256 amount, uint256 feeBps) private pure returns (uint256) {
         return amount - ((amount * feeBps) / FEE_BASE);
     }
@@ -396,6 +650,32 @@ contract FluxSwapRouterFeeOnTransferFuzzTest is Test {
         path[0] = tokenIn;
         path[1] = tokenMid;
         path[2] = tokenOut;
+    }
+
+    function _twoHopPath(address tokenIn, address tokenOut) private pure returns (address[] memory path) {
+        path = new address[](2);
+        path[0] = tokenIn;
+        path[1] = tokenOut;
+    }
+
+    function _fiveHopPath(address tokenA, address tokenB, address tokenC, address tokenD, address tokenE)
+        private
+        pure
+        returns (address[] memory path)
+    {
+        path = new address[](5);
+        path[0] = tokenA;
+        path[1] = tokenB;
+        path[2] = tokenC;
+        path[3] = tokenD;
+        path[4] = tokenE;
+    }
+
+    function _dynamicPathFromFixed(address[5] memory fixedPath) private pure returns (address[] memory path) {
+        path = new address[](5);
+        for (uint256 i = 0; i < fixedPath.length; i++) {
+            path[i] = fixedPath[i];
+        }
     }
 
     function _deadline() private view returns (uint256) {
