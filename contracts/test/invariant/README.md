@@ -5,7 +5,13 @@
 
 ## 当前运行方式
 
-推荐在 `WSL Ubuntu` 终端中，先进入项目的 `contracts` 目录，再执行：
+先进入项目的 `contracts` 目录，再执行：
+
+```bash
+npm run test:invariant
+```
+
+如果当前终端环境已经能直接调用 `forge`，也可以执行：
 
 ```bash
 forge test --match-path 'test/invariant/*.t.sol' -vv
@@ -15,9 +21,24 @@ forge test --match-path 'test/invariant/*.t.sol' -vv
 
 ```bash
 forge test --match-path test/invariant/FluxSwapStakingRewardsInvariant.t.sol -vv
+forge test --match-path test/invariant/FluxMultiPoolManagerInvariant.t.sol -vv
+forge test --match-path test/invariant/FluxSwapTreasuryInvariant.t.sol -vv
 ```
 
+说明：
+
+- `scripts/run-invariant-tests.mjs` 会自动枚举 `test/invariant` 下的 `*.t.sol` 文件逐个执行。
+- 当 `forge` 已加入当前 shell 的 `PATH` 时，脚本会直接调用本机 `forge`。
+- 在 Windows 下如果当前 shell 找不到 `forge`，脚本会尝试走默认 `WSL Ubuntu` 环境执行。
+- 不需要写死任何本地绝对路径，只要先切到你自己的 `contracts` 目录即可。
+
 ## 当前已覆盖范围
+
+截至当前版本，`npm run test:invariant` 已覆盖：
+
+- `3` 个 Foundry invariant 套件
+- `12` 个不变量断言
+- 覆盖 `FluxSwapStakingRewards`、`FluxMultiPoolManager`、`FluxSwapTreasury`
 
 ### `FluxSwapStakingRewardsInvariant.t.sol`
 
@@ -65,9 +86,46 @@ forge test --match-path test/invariant/FluxSwapStakingRewardsInvariant.t.sol -vv
 - inactive pool 的 `rewardDebt` 必须归零
 - 已注入奖励总量必须由“manager 剩余余额 + 池子已领走奖励”完整解释
 
+### `FluxSwapTreasuryInvariant.t.sol`
+
+当前通过带参考模型的 `handler`，对下列 treasury 动作做随机序列调用：
+
+- `topUpSpendToken`
+- `topUpBurnToken`
+- `configureAllowedToken`
+- `configureAllowedRecipient`
+- `configureDailySpendCap`
+- `approveSpender`
+- `revokeSpender`
+- `allocate`
+- `pullApprovedToken`
+- `burnApprovedToken`
+- `consumeApprovedSpenderCap`
+- `pause / unpause`
+- `advanceTime`
+
+当前锁定的核心不变量：
+
+- `spendToken` 总账必须始终守恒，只能在 `treasury / recipient / spender` 三处流转
+- `burnToken` 总账必须始终闭合，烧毁量只能来自授权 `burn` 路径
+- `approvedSpendRemaining` 必须与参考模型完全一致
+- `spentToday / lastSpendDay` 必须与参考模型完全一致
+
+## 本轮新增补强点
+
+这一轮把 `FluxSwapTreasury` 正式纳入 invariant 覆盖，并且不是只做余额校验，而是把：
+
+- timelock 配置变更
+- spender 授权与撤销
+- daily cap 日切换
+- pause / unpause
+- allocate / pull / burn / consume 四条消费路径
+
+一起放进了同一个随机动作序列里，持续验证 treasury 内部关键账本不会漂移。
+
 ## 后续建议补充的 invariant 方向
 
 下一批优先建议继续补：
 
-- `FluxSwapTreasury`：检查白名单、额度、暂停状态、资金流向限制是否始终不被突破
 - `FluxSwapPair / Router`：检查储备、LP 份额、swap 后储备变化与资产守恒关系
+- `FluxPoolFactory / managed pool`：检查工厂映射、manager allocPoint、pool 所有权迁移后的状态始终闭合
