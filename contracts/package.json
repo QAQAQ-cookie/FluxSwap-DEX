@@ -10,6 +10,7 @@
                     "test:integration":  "node ./scripts/run-integration-tests.mjs",
                     "test:regression":  "node ./scripts/run-regression-tests.mjs",
                     "test:permissions-governance":  "node ./scripts/run-permissions-governance-tests.mjs",
+                    "test:fuzz":  "node ./scripts/run-fuzz-tests.mjs",
                     "static:solhint":  "solhint \"contracts/**/*.sol\"",
                     "test:static-analysis":  "npm run static:solhint"
                 },
