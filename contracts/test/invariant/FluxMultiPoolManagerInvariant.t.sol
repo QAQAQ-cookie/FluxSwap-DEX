@@ -178,8 +178,8 @@ contract FluxMultiPoolManagerInvariantTest is StdInvariant, Test {
         targetContract(address(handler));
     }
 
-    // 不变量 1：manager 必须至少覆盖“totalPendingRewards + undistributedRewards”。
-    // 活跃池的隐式待分配部分由总守恒不变量继续兜底。
+    // 不变量 1：manager 余额必须始终覆盖 totalPendingRewards + undistributedRewards。
+    // 活跃池尚未 materialize 的隐式待分配部分，由整体奖励守恒不变量继续兜底。
     function invariant_managerBalanceCoversStoredPendingAndUndistributed() public view {
         uint256 reservedBalance = manager.undistributedRewards() + manager.totalPendingRewards();
 
@@ -213,7 +213,7 @@ contract FluxMultiPoolManagerInvariantTest is StdInvariant, Test {
         }
     }
 
-    // 不变量 4：已注入奖励必须始终由“manager 剩余余额 + 池子已领走奖励”完整解释。
+    // 不变量 4：已注入奖励总量必须由“manager 剩余余额 + pool 已领取奖励”完整解释。
     function invariant_injectedRewardsAreConserved() public view {
         uint256 managerBalance = rewardToken.balanceOf(address(manager));
         uint256 claimedByPools = handler.totalClaimedByPools();

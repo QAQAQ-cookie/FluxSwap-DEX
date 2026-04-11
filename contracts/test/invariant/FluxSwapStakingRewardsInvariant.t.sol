@@ -135,12 +135,12 @@ contract FluxSwapStakingRewardsInvariantTest is StdInvariant, Test {
         targetContract(address(handler));
     }
 
-    // 不变量 1：奖励储备必须始终与合约内奖励代币余额一致。
+    // 不变量 1：奖励储备必须始终与合约内 rewardToken 余额一致。
     function invariant_rewardReserveMatchesRewardTokenBalance() public view {
         assertEq(stakingRewards.rewardReserve(), rewardToken.balanceOf(address(stakingRewards)));
     }
 
-    // 不变量 2：未支付奖励与未分配奖励都不能超过总储备。
+    // 不变量 2：未支付奖励与未分配奖励都不能超过总奖励储备。
     function invariant_pendingAndQueuedRewardsRemainBounded() public view {
         uint256 rewardReserve = stakingRewards.rewardReserve();
         uint256 pendingUserRewards = stakingRewards.pendingUserRewards();
@@ -150,14 +150,14 @@ contract FluxSwapStakingRewardsInvariantTest is StdInvariant, Test {
         assertLe(queuedRewards, rewardReserve - pendingUserRewards);
     }
 
-    // 不变量 3：池内质押代币余额必须等于 totalStaked，且与已跟踪用户份额相符。
+    // 不变量 3：池内 stakingToken 余额必须等于 totalStaked，且与已跟踪用户份额一致。
     function invariant_totalStakedMatchesTrackedBalances() public view {
         uint256 totalStaked = stakingRewards.totalStaked();
         assertEq(stakeToken.balanceOf(address(stakingRewards)), totalStaked);
         assertEq(handler.trackedStakeBalances(), totalStaked);
     }
 
-    // 不变量 4：已注入的奖励总量必须由“池内剩余奖励 + 已支付给用户的奖励”完整解释。
+    // 不变量 4：已注入奖励总量必须由“池内剩余奖励 + 已支付给用户奖励”完整解释。
     function invariant_injectedRewardsAreConserved() public view {
         uint256 paidToTrackedUsers = handler.trackedRewardBalances();
         uint256 reserve = stakingRewards.rewardReserve();
