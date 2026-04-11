@@ -1,44 +1,57 @@
 # Fuzz 测试说明
 
-本目录用于存放基于 Foundry 的模糊测试（Fuzz Tests）。
-这类测试会对输入做大范围随机化，重点验证“在大量边界条件下，核心性质是否仍然成立”，适合补足常规单元测试和集成测试难以穷举的输入空间。
+本目录用于存放基于 Foundry 的模糊测试。  
+这类测试会在较大的输入空间里随机化参数，重点验证“核心性质在大量边界条件下是否依然成立”，用来补足常规单元、集成、回归测试难以穷举的输入组合。
 
-## 当前运行方式
+## 运行方式
 
-当前不额外提供 `npm script` 或自定义 runner，直接在项目的 `contracts` 目录下使用 Foundry 执行即可。
-推荐在 `WSL Ubuntu` 终端中运行。
+先进入项目的 `contracts` 目录，再执行：
 
-先进入你本地项目的 `contracts` 目录，再执行：
+```bash
+npm run test:fuzz
+```
+
+如果你已经在当前终端环境里配置好了 Foundry，也可以直接执行：
 
 ```bash
 forge test --match-path 'test/fuzz/*.t.sol' -vv
 ```
 
-如果只想跑某一份 fuzz 文件，可以使用：
+如果只想跑单个 fuzz 文件，可以用：
 
 ```bash
 forge test --match-path test/fuzz/FluxSwapRouterFuzz.t.sol -vv
 forge test --match-path test/fuzz/FluxSwapStakingRewardsFuzz.t.sol -vv
+forge test --match-path test/fuzz/FluxMultiPoolManagerFuzz.t.sol -vv
 ```
 
-如果你的项目路径和当前仓库不同，只需要把终端切到你自己的 `contracts` 目录，不需要照抄任何固定绝对路径。
+说明：
 
-## 当前已覆盖范围
+- `scripts/run-fuzz-tests.mjs` 会自动枚举 `test/fuzz` 下的 `*.t.sol` 文件逐个执行。
+- 在 `forge` 已加入当前 shell 的 `PATH` 时，脚本会直接调用本机 `forge`。
+- 在 Windows 下如果当前 shell 找不到 `forge`，脚本会尝试走默认 `WSL Ubuntu` 环境执行。
+- 不需要写死任何本地绝对路径，只要先切到你自己的 `contracts` 目录即可。
+
+## 当前覆盖范围
 
 ### `FluxSwapRouterFuzz.t.sol`
 
-覆盖 Router 最稳定、最核心的交换与加池路径：
+覆盖 Router 最核心、最容易被输入边界打到的 7 条路径：
 
-- `token -> token` 的 `swapExactTokensForTokens`
-- `token -> token` 的 `swapTokensForExactTokens`
-- 既有池子的 `addLiquidity`
-- `ETH -> token` 的 `swapExactETHForTokens`
+- `swapExactTokensForTokens`
+- `swapTokensForExactTokens`
+- `addLiquidity`
+- `removeLiquidity`
+- `swapExactETHForTokens`
+- `swapExactTokensForETH`
+- `swapETHForExactTokens`
 
 当前重点验证的性质：
 
-- 成交输入输出应与 Router quote 一致
-- 既有池子加池时，实际消耗数量不应超过用户给定的 `desired` 数量
-- 在较大输入空间下，上述路径不应因为边界值而异常失败
+- `exact-input / exact-output` 交换执行结果必须与 Router quote 一致
+- 已有池子的 `addLiquidity` 不得超过用户给定的 `desired` 数量
+- `swapETHForExactTokens` 在超额付款时必须正确退款
+- `removeLiquidity` 必须按 LP 份额精确返还底层资产
 
 ### `FluxSwapStakingRewardsFuzz.t.sol`
 
@@ -51,25 +64,39 @@ forge test --match-path test/fuzz/FluxSwapStakingRewardsFuzz.t.sol -vv
 
 当前重点验证的性质：
 
-- `earned()` 与参考会计模型一致
+- `earned()` 必须与参考会计模型一致
 - `rewardReserve` 必须等于“总注入奖励 - 已支付奖励”
 - 合约内实际 `rewardToken` 余额必须与 `rewardReserve` 一致
 - `queuedRewards` 不得脱离真实未分配奖励而漂移
 
-## 本轮 fuzz 额外发现并锁定的问题
+### `FluxMultiPoolManagerFuzz.t.sol`
 
-在补 `FluxSwapStakingRewards` fuzz 的过程中，发现并修复了两类奖励会计边界问题：
+覆盖多池奖励分账最容易出错的几类会计边界：
 
-- 前一批奖励产生的 rounding dust，在后一批奖励到来后已经变得可领取，但旧实现没有及时把它从 `queuedRewards` 中释放出去
-- 多用户 / 部分退出场景下，`queuedRewards` 可能短暂大于真实未分配奖励，形成 1 wei 级别的“幽灵队列”
+- `setPool` 重配 `allocPoint` 后的多轮发奖与 claim
+- 池子停用后的奖励停止累计语义
+- 小额奖励多轮发放下的 `undistributedRewards` / carry-forward dust
 
-对应的确定性回归已补到：
+当前重点验证的性质：
+
+- `totalPendingRewards + undistributedRewards` 始终不能超过 manager 实际余额
+- 停用池在后续发奖后不得继续新增 `pendingPoolRewards`
+- 所有已注入奖励最终都必须能被解释为“pool 已领取 + manager 剩余保留金”
+
+## 本轮 fuzz 锁定的问题
+
+这轮除了延续 `FluxSwapStakingRewards` 的 rounding / dust 检查外，还把 `FluxMultiPoolManager` 新增了一层 fuzz 防线，专门覆盖：
+
+- 多轮 `distributeRewards` 之间穿插 `setPool`
+- claim 时不得提前吞掉 `undistributedRewards`
+- 停用池与活跃池混合切换时，保留金必须始终可覆盖
+
+对应的确定性回归也已经补到：
 
 - `test/regular/regression/rewards-accounting/FluxRewardsAccountingRegression.test.ts`
 
-## 后续建议补充的 fuzz 方向
+## 后续可继续补强的方向
 
-下一批优先建议从下面两条线继续扩展：
-
-- `FluxMultiPoolManager`：重点做多池分账、`allocPoint`、`undistributedRewards`、停用池切换等性质
-- `FluxSwapTreasury / FluxRevenueDistributor`：重点做额度边界、资金去向、分发守恒、暂停状态与角色组合
+- `FluxSwapTreasury / FluxRevenueDistributor`：额度边界、暂停态、资金去向与守恒
+- `FluxPoolFactory / managed pool`：工厂创建后与 manager / pool 的联动模糊场景
+- Router fee-on-transfer 路径：带税代币输入下的滑点、到账与 quote 偏差边界
