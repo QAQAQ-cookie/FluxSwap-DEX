@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import "../interfaces/IFluxSwapTreasury.sol";
 import "../libraries/TransferHelper.sol";
@@ -27,6 +28,7 @@ contract FluxMultiPoolManager is Ownable, AccessControl {
     address public poolFactory;
     uint256 public totalAllocPoint;
     uint256 public accRewardPerAllocStored;
+    uint256 public totalPendingRewards;
     uint256 public undistributedRewards;
     bool public paused;
 
@@ -204,6 +206,7 @@ contract FluxMultiPoolManager is Ownable, AccessControl {
         }
 
         poolInfo.pendingRewards = 0;
+        totalPendingRewards -= reward;
         TransferHelper.safeTransfer(rewardToken, pool, reward);
 
         emit PoolRewardClaimed(pid, pool, reward, msg.sender);
@@ -276,12 +279,28 @@ contract FluxMultiPoolManager is Ownable, AccessControl {
 
     function _accruePool(PoolInfo storage poolInfo) private returns (uint256 reward) {
         reward = poolInfo.pendingRewards;
+        uint256 newlyAccrued;
 
         if (poolInfo.active && poolInfo.allocPoint > 0) {
-            reward += ((poolInfo.allocPoint * accRewardPerAllocStored) / PRECISION) - poolInfo.rewardDebt;
+            newlyAccrued = ((poolInfo.allocPoint * accRewardPerAllocStored) / PRECISION) - poolInfo.rewardDebt;
             poolInfo.rewardDebt = (poolInfo.allocPoint * accRewardPerAllocStored) / PRECISION;
         } else {
             poolInfo.rewardDebt = 0;
+        }
+
+        if (newlyAccrued > 0) {
+            uint256 currentBalance = IERC20(rewardToken).balanceOf(address(this));
+            uint256 reservedBalance = totalPendingRewards + undistributedRewards;
+            uint256 availableUnreservedRewards = currentBalance > reservedBalance
+                ? currentBalance - reservedBalance
+                : 0;
+
+            if (newlyAccrued > availableUnreservedRewards) {
+                newlyAccrued = availableUnreservedRewards;
+            }
+
+            reward += newlyAccrued;
+            totalPendingRewards += newlyAccrued;
         }
 
         poolInfo.pendingRewards = reward;
