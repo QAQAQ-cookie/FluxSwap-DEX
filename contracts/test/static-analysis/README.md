@@ -1,41 +1,90 @@
 # Static Analysis 测试说明
 
-本目录用于存放静态分析相关说明、执行方式与结果记录。
+本目录用于存放静态分析相关说明、执行口径和人工复核结论。
 
-静态分析不依赖业务路径是否跑通，而是直接扫描合约源码结构、权限边界、外部调用模式和常见风险特征。
+静态分析的目标不是替代单元测试或审计，而是尽早把以下几类问题集中暴露出来：
 
-## 当前已接入
+- 权限边界是否清晰
+- 外部调用和状态更新顺序是否存在风险
+- 低级调用、内联汇编、返回值处理等结构性风险点是否可解释
+- 是否存在明显不符合当前编码约束的实现
+
+## 当前接入工具
 
 ### `solhint`
 
-- 作用：执行 Solidity 规则检查与基础静态分析
+- 用途：规则检查、风格约束、基础静态扫描
 - 运行命令：`npm run static:solhint`
 - 聚合命令：`npm run test:static-analysis`
-- 当前扫描范围：主实现合约与库文件
-- 当前排除范围：`contracts/mocks/**/*.sol`、`contracts/interfaces/**/*.sol`、`node_modules/**/*.sol`
+- 当前配置文件：[.solhint.json](/D:/work/CodeLab/FluxSwap-DEX/contracts/.solhint.json)
+
+当前扫描口径：
+
+- 实际命令是 `solhint "contracts/**/*.sol"`
+- 结合 `.solhint.json` 的 `excludedFiles`，当前基线主要覆盖生产实现合约
+- 以下内容不纳入当前 `solhint` 结论：
+  - `contracts/mocks/**/*.sol`
+  - `interfaces/**/*.sol`
+  - `node_modules/**/*.sol`
+
+截至 2026-04-11，本地最新实跑结果为：
+
+- `0 error`
+- `4 warnings`
+
+对应 warning 为：
+
+- [FluxSwapPair.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxSwapPair.sol#L204): `avoid-low-level-calls`
+- [FluxSwapFactory.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxSwapFactory.sol#L34): `no-inline-assembly`
+- [FluxSwapERC20.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxSwapERC20.sol#L25): `no-inline-assembly`
+- [FluxBuybackExecutor.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxBuybackExecutor.sol#L201): `avoid-low-level-calls`
+
+当前判断：
+
+- 上述 4 条均已人工复核
+- 现阶段归类为“可接受 / 可豁免”，不作为阻塞上线的问题
+- 后续若进入外部审计，可把这 4 条作为显式披露项保留
 
 ### `slither`
 
-- 作用：执行审计导向的安全静态分析
+- 用途：偏审计导向的安全静态分析
 - 当前编译入口：`Foundry`
-- 当前运行环境：`WSL Ubuntu`
-- 当前建议命令：在 `contracts` 目录下直接执行 `slither . --print human-summary`
+- 当前建议环境：`WSL Ubuntu`
+- 建议命令：在 `contracts` 目录下执行 `slither . --print human-summary`
 
-### `foundry`
+截至 2026-04-11，本地最新实跑摘要为：
 
-- 当前运行环境：`WSL Ubuntu`
-- 当前建议命令：在 `contracts` 目录下直接执行 `forge build`、`forge test`
-- 当前不建议在 Windows PowerShell 中通过 `npm script` 调用 `forge`
-- 原因：`forge` 当前安装在 WSL 环境内，Windows 侧 `npm run forge:*` 无法直接解析该命令
+- `high`: `5`
+- `medium`: `30`
+- `low`: `99`
+- `informational`: `34`
+- `optimization`: `6`
 
-## 当前规则侧重点
+重要说明：
 
-- 编译器版本约束为 `0.8.28`
-- 检查权限边界、外部调用、返回值处理、重入模式、状态更新顺序
-- 检查实现合约中不应保留的调试导入与结构性问题
-- 保留对审计阶段有帮助的结构性和安全性规则
+- 这个计数是工具原始摘要，不等于“已确认的生产漏洞数量”
+- `Slither` 的统计会包含依赖、接口、测试辅助合约等内容
+- DEX / AMM / lock / flash-callback 这类模式天然容易触发较多结构性提示
+- 因此必须结合人工复核，不能直接按摘要计数下结论
+
+人工复核后的收口报告见：
+
+- [SlitherReport.md](/D:/work/CodeLab/FluxSwap-DEX/contracts/test/static-analysis/SlitherReport.md)
+
+### `Foundry`
+
+当前 `Slither` 依赖 `Foundry` 完成编译，因此静态分析的推荐执行环境仍然是 `WSL Ubuntu`。
+
+建议先确认以下命令可用：
+
+```bash
+forge --version
+slither --version
+```
 
 ## 当前重点扫描合约
+
+本轮人工收口重点关注以下生产实现：
 
 - `contracts/FluxSwapTreasury.sol`
 - `contracts/FluxRevenueDistributor.sol`
@@ -48,13 +97,21 @@
 
 ## 当前状态
 
-- `solhint` 已接入并稳定运行
-- 主实现合约当前基线为 `0 error, 4 warnings`
-- `mocks` 目录的本地 lint 问题已额外清理完成
-- `slither` 已通过 Foundry 兼容配置打通，可在 WSL 中直接执行
-- `foundry` 配置文件可正常被识别，`forge clean && forge build` 已在 WSL 中验证通过
+- `solhint` 已接入并可稳定运行
+- `slither` 已通过 Foundry 编译链跑通
+- 当前静态分析基线已形成，可重复执行
+- 当前未发现需要“立即修复后才能继续测试”的明确高危实现缺陷
 
-## 结果记录
+## 已知限制
 
-- `solhint` 基线：保留 4 条已评估为“可接受 / 可豁免”的 warning
-- `slither` 判定报告：见 `SlitherReport.md`
+- `slither` 目前没有额外封装成 npm runner，仍以命令行执行为主
+- Windows 下若当前 shell 未直接配置 `forge` / `slither`，建议切到 `WSL Ubuntu` 运行
+- 当前 WSL 环境会输出 `/etc/wsl.conf` 中 `user.default` 重复定义的提示
+  - 该提示不影响本次 `slither` 成功执行
+  - 但建议后续清理，避免环境噪音影响排错
+- `slither` 摘要计数会随着工具版本、依赖版本、编译口径变化而波动
+
+## 本目录文件
+
+- [README.md](/D:/work/CodeLab/FluxSwap-DEX/contracts/test/static-analysis/README.md)：静态分析执行口径与当前基线
+- [SlitherReport.md](/D:/work/CodeLab/FluxSwap-DEX/contracts/test/static-analysis/SlitherReport.md)：`Slither` 人工复核后的收口结论
