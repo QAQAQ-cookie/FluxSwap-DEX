@@ -33,6 +33,8 @@ forge test --match-path test/invariant/FluxSwapFeeOnTransferMultiHopInvariant.t.
 forge test --match-path test/invariant/FluxSwapMixedAmmInvariant.t.sol -vv
 forge test --match-path test/invariant/FluxSwapFeeOnTransferWethMixedInvariant.t.sol -vv
 forge test --match-path test/invariant/FluxSwapHybridAmmFeeOnTransferInvariant.t.sol -vv
+forge test --match-path test/invariant/FluxSwapRouterExceptionInvariant.t.sol -vv
+forge test --match-path test/invariant/FluxSwapRouterMixedExceptionInvariant.t.sol -vv
 ```
 
 说明：
@@ -46,8 +48,8 @@ forge test --match-path test/invariant/FluxSwapHybridAmmFeeOnTransferInvariant.t
 
 截至当前版本，`npm run test:invariant` 已覆盖：
 
-- `12` 个 Foundry invariant 套件
-- `64` 个不变量断言
+- `14` 个 Foundry invariant 套件
+- `77` 个不变量断言
 - 覆盖 `FluxSwapStakingRewards`、`FluxMultiPoolManager`、`FluxSwapTreasury`、`FluxRevenueDistributor + FluxPoolFactory + FluxMultiPoolManager + managed pools` 联动链路
 - 额外覆盖 `FluxSwapTreasury + FluxRevenueDistributor + FluxMultiPoolManager + pool claim` 的真实 revenue pipeline 联动链路
 - 额外覆盖 `FluxSwapFactory + FluxSwapRouter + FluxSwapPair` 的 token-token AMM 核心链路
@@ -57,6 +59,8 @@ forge test --match-path test/invariant/FluxSwapHybridAmmFeeOnTransferInvariant.t
 - 额外覆盖 `共享 tokenA 的 token-token + token-ETH` 双 Pair 混排路径下的 Router 资产隔离、协议费累计与总量守恒
 - 额外覆盖 `feeToken-quote + feeToken-WETH` 双 Pair 混排、`quote -> fee` 净到账边界与多 actor 汇总对账
 - 额外覆盖 `普通 AMM + fee-on-transfer supporting + quote 桥接多跳 + 多 LP / 双 Pair 流动性迁移` 混排下的跨 Pair 协议费累计、净到账边界、LP 份额快照与总量闭合
+- 额外覆盖 `FluxSwapRouter` 成功路径与集中式异常路径混排下的失败原子性、资产隔离、协议费模型与总量闭合
+- 额外覆盖 `共享 tokenA 的 token-token + token-WETH` 双 Pair 与集中式异常路径混排下的跨 Pair 失败原子性、共享资产隔离与双路径协议费对账
 
 ## 已覆盖套件
 
@@ -291,6 +295,39 @@ forge test --match-path test/invariant/FluxSwapHybridAmmFeeOnTransferInvariant.t
 - `lpA / lpB / lpC` 的 `feeToken / quoteToken / baseToken` 余额，必须能被 addLiquidity 的实际入池金额与 removeLiquidity 的真实净回款精确解释，不能在 swap 路径里被动漂移
 - `feeQuotePair` 与 `baseQuotePair` 对 LP actor 底层余额的影响必须保持隔离：`feeToken` 只能由 feeQuote 流量解释，`baseToken` 只能由 baseQuote 流量解释，`quoteToken` 必须能被两个 Pair 的净流量精确拼回
 
+### `FluxSwapRouterExceptionInvariant.t.sol`
+
+当前通过真实的 `FluxSwapFactory + FluxSwapRouter + FluxSwapPair + WETH` 组合，把正常成功路径和集中式失败路径一起放进同一套随机长序列：
+
+- 成功路径：`addLiquidity / addLiquidityETH / removeLiquidity / removeLiquidityETH / token-token swap / token-ETH swap`
+- 失败路径：过期 `deadline`、`amountOutMin` 过高、`amountInMax` 过低、缺失 pair、ETH 路径 `INVALID_PATH`、supporting 短路径 `INVALID_PATH`、`swapETHForExactTokens` 资金不足、`addLiquidity` 最小值约束失败、`removeLiquidity` 最小值约束失败
+
+当前锁定的核心不变量：
+
+- `token-token Pair` 的 `reserve` 必须始终等于当前真实余额
+- `token-WETH Pair` 的 `reserve` 必须始终等于当前真实余额
+- 不管成功路径和失败路径如何混排，Router 都不得残留 `token / WETH / ETH / LP`
+- treasury 的 `tokenA / tokenB / WETH` 协议费余额必须与成功 swap 路径累计出来的模型值一致
+- `tokenA / tokenB` 的总量必须都能被已跟踪账户 + Pair + Treasury + Router 完整解释
+- `WETH.totalSupply()` 只能由 `tokenA-WETH Pair + Treasury + Router` 中的余额解释
+- 两个 Pair 的 LP 总供应量都必须能被 LP 持仓 + `address(0)` + Router 完整解释
+
+### `FluxSwapRouterMixedExceptionInvariant.t.sol`
+
+当前通过真实的 `FluxSwapFactory + FluxSwapRouter + FluxSwapPair + WETH` 组合，把共享 `tokenA` 的两条主路径和集中式失败路径一起放进同一套随机长序列：
+
+- 成功路径：`tokenA-tokenB` 与 `tokenA-WETH` 两条 Pair 上的 `addLiquidity / addLiquidityETH / removeLiquidity / removeLiquidityETH / token-token swap / token-ETH swap`
+- 失败路径：过期 `deadline`、`amountOutMin` 过高、`amountInMax` 过低、缺失 pair、ETH 路径 `INVALID_PATH`、supporting 短路径 `INVALID_PATH`、`swapETHForExactTokens` 资金不足、`token-token addLiquidity` 最小值约束失败、`token-token removeLiquidity` 最小值约束失败、`token-WETH removeLiquidityETH` 最小值约束失败
+
+当前锁定的核心不变量：
+
+- 共享 `tokenA` 的 `token-token Pair` 与 `token-WETH Pair` 的 `reserve` 都必须始终等于当前真实余额
+- 不管成功路径和失败路径如何混排，Router 都不得残留 `token / WETH / ETH / LP`
+- treasury 的 `tokenA / tokenB / WETH` 协议费余额必须与双路径成功 swap 累计出来的模型值一致
+- `tokenA / tokenB` 的总量必须都能被已跟踪账户 + 双 Pair + Treasury + Router 完整解释
+- `WETH.totalSupply()` 只能由 `tokenA-WETH Pair + Treasury + Router` 中的余额解释
+- 两个 Pair 的 LP 总供应量都必须能被 LP 持仓 + `address(0)` + Router 完整解释
+
 ## 当前测试价值
 
 这一层 invariant 已经不只是“看余额对不对”，而是在持续随机动作下验证：
@@ -302,7 +339,7 @@ forge test --match-path test/invariant/FluxSwapHybridAmmFeeOnTransferInvariant.t
 
 ## 后续高优先方向
 
-当前 `managed pools`、`Treasury -> Distributor -> Manager`、AMM 主路径、共享 token 的双 Pair 混排、fee-on-transfer supporting 主路径、双 fee token 四跳路径，以及“普通 AMM + supporting + 多跳桥接 + 多 LP 流动性迁移”混合路径都已经纳入 invariant 覆盖，连同 LP 现金流精确记账与跨 Pair 隔离约束也已经补齐。接下来更值得继续补的是：
+当前 `managed pools`、`Treasury -> Distributor -> Manager`、AMM 主路径、共享 token 的双 Pair 混排、fee-on-transfer supporting 主路径、双 fee token 四跳路径、“普通 AMM + supporting + 多跳桥接 + 多 LP 流动性迁移”混合路径，以及 `FluxSwapRouter` 的单 Pair / 双 Pair 成功失败混排异常路径都已经纳入 invariant 覆盖，连同 LP 现金流精确记账与跨 Pair 隔离约束也已经补齐。接下来更值得继续补的是：
 
 - 把现有部分更长的 stateful fuzz 再上提成更标准的 `Handler + targetContract()` 风格，减少“固定序列”测试和“不变量”测试之间的断层
 - 如果还要继续加深，可补更细的经济约束，例如 LP 在极端多轮 add/remove 后的净值归因、以及更多跨合约随机治理动作插入下的长期资金隔离
