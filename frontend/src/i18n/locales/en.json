@@ -1,0 +1,43 @@
+{
+  "nav": {
+    "swap": "Swap",
+    "pools": "Pools"
+  },
+  "home": {
+    "title1": "Trade Crypto",
+    "title2": "Borderless, Decentralized",
+    "desc": "FluxSwap is the next generation decentralized exchange. Swap tokens, provide liquidity and earn yield on the most secure AMM protocol.",
+    "launch": "Launch App",
+    "docs": "Docs",
+    "vol": "Total Volume",
+    "users": "Active Users",
+    "tvl": "Total Value Locked"
+  },
+  "swap": {
+    "title": "Swap",
+    "pay": "You pay",
+    "receive": "You receive",
+    "selectToken": "Select Token",
+    "connectWallet": "Connect Wallet",
+    "button": "Swap",
+    "balance": "Balance",
+    "max": "MAX",
+    "settings": "Transaction Settings",
+    "slippage": "Max Slippage",
+    "deadline": "Transaction Deadline",
+    "minutes": "minutes",
+    "save": "Save",
+    "details": "Transaction Details",
+    "rate": "Rate",
+    "priceImpact": "Price Impact",
+    "fee": "Network Fee",
+    "route": "Route"
+  },
+  "pool": {
+    "title": "Pools",
+    "subtitle": "Provide liquidity to earn trading fees",
+    "newPosition": "+ New Position",
+    "yourPositions": "Your Positions",
+    "noPositions": "Your active liquidity positions will appear here."
+  }
+}

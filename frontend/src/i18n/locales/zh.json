@@ -1,0 +1,43 @@
+{
+  "nav": {
+    "swap": "兑换 (Swap)",
+    "pools": "流动性 (Pools)"
+  },
+  "home": {
+    "title1": "交易加密资产",
+    "title2": "无界限、去中心化",
+    "desc": "FluxSwap 是下一代去中心化交易所。在最安全的 AMM 协议上进行代币兑换、提供流动性并赚取收益。",
+    "launch": "进入应用 (Launch App)",
+    "docs": "阅读文档 (Docs)",
+    "vol": "总交易量",
+    "users": "活跃用户",
+    "tvl": "总锁仓量 (TVL)"
+  },
+  "swap": {
+    "title": "兑换 (Swap)",
+    "pay": "支付 (You pay)",
+    "receive": "收到 (You receive)",
+    "selectToken": "选择代币",
+    "connectWallet": "连接钱包 (Connect Wallet)",
+    "button": "兑换 (Swap)",
+    "balance": "余额",
+    "max": "最大",
+    "settings": "交易设置",
+    "slippage": "最大滑点",
+    "deadline": "交易截止时间",
+    "minutes": "分钟",
+    "save": "保存",
+    "details": "交易详情",
+    "rate": "汇率",
+    "priceImpact": "价格影响",
+    "fee": "网络费用",
+    "route": "路由"
+  },
+  "pool": {
+    "title": "流动性 (Pools)",
+    "subtitle": "提供流动性以赚取交易费",
+    "newPosition": "+ 新建头寸",
+    "yourPositions": "你的头寸",
+    "noPositions": "你活跃的流动性头寸将显示在这里。"
+  }
+}
