@@ -2,16 +2,12 @@
 
 import { useTranslation } from 'react-i18next';
 import { Globe } from 'lucide-react';
-import { useEffect, useState } from 'react';
+
+import { useIsClient } from '@/hooks/useIsClient';
 
 export function LanguageToggle() {
   const { i18n } = useTranslation();
-  const [mounted, setMounted] = useState(false);
-
-  // Prevent hydration mismatch
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useIsClient();
 
   if (!mounted) {
     return <div className="w-10 h-10" />; // placeholder

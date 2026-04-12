@@ -1,17 +1,13 @@
 'use client';
 
 import { useTheme } from 'next-themes';
-import { useEffect, useState } from 'react';
 import { Sun, Moon } from 'lucide-react';
 
-export function ThemeToggle() {
-  const [mounted, setMounted] = useState(false);
-  const { resolvedTheme, setTheme } = useTheme();
+import { useIsClient } from '@/hooks/useIsClient';
 
-  // useEffect only runs on the client, so now we can safely show the UI
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+export function ThemeToggle() {
+  const mounted = useIsClient();
+  const { resolvedTheme, setTheme } = useTheme();
 
   if (!mounted) {
     return <div className="w-10 h-10" />; // placeholder
