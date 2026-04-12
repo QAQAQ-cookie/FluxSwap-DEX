@@ -50,6 +50,15 @@ contract FluxSwapRouterFeeOnTransferFuzzTest is Test {
         uint256 amountIn;
     }
 
+    struct ExactOutputMiddleTaxScenario {
+        uint256 feeBps;
+        uint256 liquidityIn;
+        uint256 liquidityTaxA;
+        uint256 liquidityTaxB;
+        uint256 liquidityOut;
+        uint256 amountOut;
+    }
+
     FluxSwapFactory private factory;
     FluxSwapRouter private router;
     MockWETH private weth;
@@ -380,6 +389,69 @@ contract FluxSwapRouterFeeOnTransferFuzzTest is Test {
         _runAmountOutMinBoundaryScenario(scenario);
     }
 
+    // 这里显式锁住一个容易被误用的边界：
+    // fee-on-transfer 代币不能走普通 exact-output 路径，因为 Router 只会按名义输入把币打进 Pair，
+    // Pair 实际收到更少净输入后，后续 swap 必须整体回退，不能“错着成功”。
+    function testFuzz_swapTokensForExactTokens_revertsWhenInputTokenChargesTransferFee(
+        uint16 rawFeeBps,
+        uint96 rawLiquidityFee,
+        uint96 rawLiquidityQuote,
+        uint96 rawAmountOut
+    ) public {
+        uint256 feeBps = bound(uint256(rawFeeBps), 1, 1_000);
+        uint256 liquidityFee = bound(uint256(rawLiquidityFee), MIN_LIQUIDITY, MAX_LIQUIDITY);
+        uint256 liquidityQuote = bound(uint256(rawLiquidityQuote), MIN_LIQUIDITY, MAX_LIQUIDITY);
+
+        _deployFeeToken(feeBps);
+        _seedTokenPair(liquidityFee, liquidityQuote);
+
+        uint256 amountOut = bound(uint256(rawAmountOut), 1, (liquidityQuote / 20) + 1);
+        FluxSwapPair pair = FluxSwapPair(factory.getPair(address(feeToken), address(quoteToken)));
+        (uint256 reserveInput, uint256 reserveOutput) = _reservesFor(address(feeToken), address(quoteToken), pair);
+        uint256[] memory quoted = router.getAmountsIn(amountOut, _feeToQuotePath());
+        vm.assume(quoted[0] > 0 && quoted[1] == amountOut);
+        uint256 netInput = _applyTransferFee(quoted[0], feeBps);
+        vm.assume(netInput > 0);
+        uint256 netReachableOut = router.getAmountOut(netInput, reserveInput, reserveOutput);
+        vm.assume(netReachableOut + 1 < amountOut);
+
+        feeToken.mint(trader, quoted[0]);
+        vm.prank(trader);
+        feeToken.approve(address(router), type(uint256).max);
+
+        uint256 traderBefore = feeToken.balanceOf(trader);
+        uint256 treasuryBefore = feeToken.balanceOf(treasury);
+        uint256 recipientBefore = quoteToken.balanceOf(recipient);
+
+        vm.prank(trader);
+        vm.expectRevert();
+        router.swapTokensForExactTokens(amountOut, quoted[0], _feeToQuotePath(), recipient, _deadline());
+
+        assertEq(feeToken.balanceOf(trader), traderBefore);
+        assertEq(feeToken.balanceOf(treasury), treasuryBefore);
+        assertEq(quoteToken.balanceOf(recipient), recipientBefore);
+    }
+
+    // 多跳里如果中间桥接资产本身带税，普通 exact-output 同样不能成立：
+    // 第一跳把“名义中间输出”打到第二个 Pair 时会再被扣税，第二跳按原始 quote 执行就必须回退。
+    function testFuzz_swapTokensForExactTokens_revertsWhenMiddleTokenChargesTransferFee(
+        uint16 rawFeeBps,
+        uint96 rawLiquidityIn,
+        uint96 rawLiquidityTaxA,
+        uint96 rawLiquidityTaxB,
+        uint96 rawLiquidityOut,
+        uint96 rawAmountOut
+    ) public {
+        ExactOutputMiddleTaxScenario memory scenario;
+        scenario.feeBps = bound(uint256(rawFeeBps), 1, 1_000);
+        scenario.liquidityIn = bound(uint256(rawLiquidityIn), MIN_LIQUIDITY, MAX_LIQUIDITY);
+        scenario.liquidityTaxA = bound(uint256(rawLiquidityTaxA), MIN_LIQUIDITY, MAX_LIQUIDITY);
+        scenario.liquidityTaxB = bound(uint256(rawLiquidityTaxB), MIN_LIQUIDITY, MAX_LIQUIDITY);
+        scenario.liquidityOut = bound(uint256(rawLiquidityOut), MIN_LIQUIDITY, MAX_LIQUIDITY);
+        scenario.amountOut = bound(uint256(rawAmountOut), 1, (scenario.liquidityOut / 20) + 1);
+        _runMiddleTaxedExactOutputRevertScenario(scenario);
+    }
+
     function _deployFeeToken(uint256 feeBps) private {
         feeToken = new MockFeeOnTransferERC20("Tax Token", "TAX", 18, feeBps);
         quoteToken = new MockERC20("Quote Token", "QUOTE", 18);
@@ -487,6 +559,88 @@ contract FluxSwapRouterFeeOnTransferFuzzTest is Test {
         expected.treasuryFirstHop = (amountIn * PROTOCOL_FEE_BPS) / FEE_BASE;
         expected.treasurySecondHop = _applyTransferFee((netSecondHopInput * PROTOCOL_FEE_BPS) / FEE_BASE, feeBps);
         expected.recipientOut = router.getAmountOut(netSecondHopInput, reserveTaxIn, reserveOutput);
+    }
+
+    function _middleTaxedExactOutputIsUnderfunded(
+        FluxSwapPair firstPair,
+        FluxSwapPair secondPair,
+        uint256 quotedInput,
+        uint256 targetAmountOut,
+        uint256 feeBps,
+        MockERC20 inToken,
+        MockERC20 outToken
+    ) private view returns (bool) {
+        (uint256 reserveInput, uint256 reserveTaxOut) = _reservesFor(address(inToken), address(feeToken), firstPair);
+        (uint256 reserveTaxIn, uint256 reserveOutput) = _reservesFor(address(feeToken), address(outToken), secondPair);
+        uint256 firstHopAmountOut = router.getAmountOut(quotedInput, reserveInput, reserveTaxOut);
+        uint256 netSecondHopInput = _applyTransferFee(firstHopAmountOut, feeBps);
+        if (firstHopAmountOut == 0 || netSecondHopInput == 0) {
+            return false;
+        }
+        uint256 netReachableOut = router.getAmountOut(netSecondHopInput, reserveTaxIn, reserveOutput);
+        return netReachableOut + 1 < targetAmountOut;
+    }
+
+    function _runMiddleTaxedExactOutputRevertScenario(ExactOutputMiddleTaxScenario memory scenario) private {
+        _deployFeeToken(scenario.feeBps);
+        MockERC20 inToken = new MockERC20("Exact Output In", "EOI", 18);
+        MockERC20 outToken = new MockERC20("Exact Output Out", "EOO", 18);
+
+        FluxSwapPair firstPair = _seedGenericPair(inToken, feeToken, scenario.liquidityIn, scenario.liquidityTaxA);
+        FluxSwapPair secondPair = _seedGenericPair(feeToken, outToken, scenario.liquidityTaxB, scenario.liquidityOut);
+
+        scenario.amountOut = _boundMiddleTaxedExactOutputAmountOut(firstPair, secondPair, scenario.amountOut, inToken, outToken);
+        vm.assume(scenario.amountOut > 0);
+
+        address[] memory path = _threeHopPath(address(inToken), address(feeToken), address(outToken));
+        uint256[] memory quoted = router.getAmountsIn(scenario.amountOut, path);
+        vm.assume(quoted[0] > 0 && quoted[2] == scenario.amountOut);
+        vm.assume(
+            _middleTaxedExactOutputIsUnderfunded(
+                firstPair, secondPair, quoted[0], scenario.amountOut, scenario.feeBps, inToken, outToken
+            )
+        );
+
+        inToken.mint(trader, quoted[0]);
+        vm.prank(trader);
+        inToken.approve(address(router), type(uint256).max);
+
+        uint256 traderBefore = inToken.balanceOf(trader);
+        uint256 inTreasuryBefore = inToken.balanceOf(treasury);
+        uint256 feeTreasuryBefore = feeToken.balanceOf(treasury);
+        uint256 recipientBefore = outToken.balanceOf(recipient);
+
+        vm.prank(trader);
+        vm.expectRevert();
+        router.swapTokensForExactTokens(scenario.amountOut, quoted[0], path, recipient, _deadline());
+
+        assertEq(inToken.balanceOf(trader), traderBefore);
+        assertEq(inToken.balanceOf(treasury), inTreasuryBefore);
+        assertEq(feeToken.balanceOf(treasury), feeTreasuryBefore);
+        assertEq(outToken.balanceOf(recipient), recipientBefore);
+    }
+
+    function _boundMiddleTaxedExactOutputAmountOut(
+        FluxSwapPair firstPair,
+        FluxSwapPair secondPair,
+        uint256 rawAmountOut,
+        MockERC20 inToken,
+        MockERC20 outToken
+    ) private view returns (uint256) {
+        (uint256 reserveTaxIn, uint256 reserveOutput) = _reservesFor(address(feeToken), address(outToken), secondPair);
+        (, uint256 reserveTaxOutFromFirstPair) = _reservesFor(address(inToken), address(feeToken), firstPair);
+
+        uint256 boundedOut = bound(rawAmountOut, 1, (reserveOutput / 20) + 1);
+        if (boundedOut >= reserveOutput) {
+            return 0;
+        }
+
+        uint256 requiredSecondHopInput = router.getAmountIn(boundedOut, reserveTaxIn, reserveOutput);
+        if (requiredSecondHopInput == 0 || requiredSecondHopInput >= reserveTaxOutFromFirstPair) {
+            return 0;
+        }
+
+        return boundedOut;
     }
 
     function _computeDualFeeFourHopExpectations(
