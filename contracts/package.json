@@ -5,6 +5,9 @@
     "main":  "index.js",
     "scripts":  {
                     "test":  "npx hardhat test",
+                    "deploy:core":  "npx hardhat ignition deploy ./ignition/modules/FluxCore.ts --network hardhatMainnet --parameters ./ignition/parameters/FluxCore.local.sample.json5",
+                    "deploy:core:local":  "npx hardhat ignition deploy ./ignition/modules/FluxCore.ts --network hardhatMainnet --parameters ./ignition/parameters/FluxCore.local.sample.json5",
+                    "deploy:core:sepolia":  "npx hardhat ignition deploy ./ignition/modules/FluxCore.ts --network sepolia --parameters ./ignition/parameters/FluxCore.sepolia.sample.json5",
                     "test:economic-security":  "node ./scripts/run-economic-security-tests.mjs",
                     "test:unit":  "node ./scripts/run-unit-tests.mjs",
                     "test:integration":  "node ./scripts/run-integration-tests.mjs",
