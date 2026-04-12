@@ -449,6 +449,9 @@ contract FluxHybridAmmFeeOnTransferStatefulFuzzTest is Test {
         if (liquidityToRemove == 0) {
             return;
         }
+        if (!_hasNonZeroBurnOutputs(pair, liquidityToRemove)) {
+            return;
+        }
 
         vm.prank(actor);
         pair.approve(address(router), type(uint256).max);
@@ -850,6 +853,17 @@ contract FluxHybridAmmFeeOnTransferStatefulFuzzTest is Test {
         uint256 liquidityFromA = (usedAmountA * totalSupply) / reserveA;
         uint256 liquidityFromB = (usedAmountB * totalSupply) / reserveB;
         return liquidityFromA < liquidityFromB ? liquidityFromA : liquidityFromB;
+    }
+
+    function _hasNonZeroBurnOutputs(FluxSwapPair pair, uint256 liquidityToRemove) private view returns (bool) {
+        uint256 totalSupply = pair.totalSupply();
+        if (totalSupply == 0) {
+            return false;
+        }
+
+        uint256 amount0 = (liquidityToRemove * _assetBalance(pair.token0(), address(pair))) / totalSupply;
+        uint256 amount1 = (liquidityToRemove * _assetBalance(pair.token1(), address(pair))) / totalSupply;
+        return amount0 > 0 && amount1 > 0;
     }
 
     function _assetBalance(address asset, address owner) private view returns (uint256) {

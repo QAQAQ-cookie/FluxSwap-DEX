@@ -406,14 +406,11 @@ contract FluxSwapRouterFeeOnTransferFuzzTest is Test {
         _seedTokenPair(liquidityFee, liquidityQuote);
 
         uint256 amountOut = bound(uint256(rawAmountOut), 1, (liquidityQuote / 20) + 1);
-        FluxSwapPair pair = FluxSwapPair(factory.getPair(address(feeToken), address(quoteToken)));
-        (uint256 reserveInput, uint256 reserveOutput) = _reservesFor(address(feeToken), address(quoteToken), pair);
         uint256[] memory quoted = router.getAmountsIn(amountOut, _feeToQuotePath());
         vm.assume(quoted[0] > 0 && quoted[1] == amountOut);
         uint256 netInput = _applyTransferFee(quoted[0], feeBps);
         vm.assume(netInput > 0);
-        uint256 netReachableOut = router.getAmountOut(netInput, reserveInput, reserveOutput);
-        vm.assume(netReachableOut + 1 < amountOut);
+        vm.assume(quoted[0] - netInput >= 2);
 
         feeToken.mint(trader, quoted[0]);
         vm.prank(trader);
@@ -561,26 +558,6 @@ contract FluxSwapRouterFeeOnTransferFuzzTest is Test {
         expected.recipientOut = router.getAmountOut(netSecondHopInput, reserveTaxIn, reserveOutput);
     }
 
-    function _middleTaxedExactOutputIsUnderfunded(
-        FluxSwapPair firstPair,
-        FluxSwapPair secondPair,
-        uint256 quotedInput,
-        uint256 targetAmountOut,
-        uint256 feeBps,
-        MockERC20 inToken,
-        MockERC20 outToken
-    ) private view returns (bool) {
-        (uint256 reserveInput, uint256 reserveTaxOut) = _reservesFor(address(inToken), address(feeToken), firstPair);
-        (uint256 reserveTaxIn, uint256 reserveOutput) = _reservesFor(address(feeToken), address(outToken), secondPair);
-        uint256 firstHopAmountOut = router.getAmountOut(quotedInput, reserveInput, reserveTaxOut);
-        uint256 netSecondHopInput = _applyTransferFee(firstHopAmountOut, feeBps);
-        if (firstHopAmountOut == 0 || netSecondHopInput == 0) {
-            return false;
-        }
-        uint256 netReachableOut = router.getAmountOut(netSecondHopInput, reserveTaxIn, reserveOutput);
-        return netReachableOut + 1 < targetAmountOut;
-    }
-
     function _runMiddleTaxedExactOutputRevertScenario(ExactOutputMiddleTaxScenario memory scenario) private {
         _deployFeeToken(scenario.feeBps);
         MockERC20 inToken = new MockERC20("Exact Output In", "EOI", 18);
@@ -595,11 +572,9 @@ contract FluxSwapRouterFeeOnTransferFuzzTest is Test {
         address[] memory path = _threeHopPath(address(inToken), address(feeToken), address(outToken));
         uint256[] memory quoted = router.getAmountsIn(scenario.amountOut, path);
         vm.assume(quoted[0] > 0 && quoted[2] == scenario.amountOut);
-        vm.assume(
-            _middleTaxedExactOutputIsUnderfunded(
-                firstPair, secondPair, quoted[0], scenario.amountOut, scenario.feeBps, inToken, outToken
-            )
-        );
+        uint256 netSecondHopInput = _applyTransferFee(quoted[1], scenario.feeBps);
+        vm.assume(netSecondHopInput > 0);
+        vm.assume(quoted[1] - netSecondHopInput >= 2);
 
         inToken.mint(trader, quoted[0]);
         vm.prank(trader);

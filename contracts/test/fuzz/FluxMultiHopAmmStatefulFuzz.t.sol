@@ -352,6 +352,9 @@ contract FluxMultiHopAmmStatefulFuzzTest is Test {
         if (liquidityToRemove == 0) {
             return;
         }
+        if (!_hasNonZeroBurnOutputs(baseQuotePair, liquidityToRemove)) {
+            return;
+        }
 
         vm.prank(actor);
         baseQuotePair.approve(address(router), type(uint256).max);
@@ -372,6 +375,9 @@ contract FluxMultiHopAmmStatefulFuzzTest is Test {
         uint256 shareBps = bound(uint256(rawShareBps), 1, BPS_BASE);
         uint256 liquidityToRemove = (actorLpBalance * shareBps) / BPS_BASE;
         if (liquidityToRemove == 0) {
+            return;
+        }
+        if (!_hasNonZeroBurnOutputs(quoteOutPair, liquidityToRemove)) {
             return;
         }
 
@@ -864,6 +870,17 @@ contract FluxMultiHopAmmStatefulFuzzTest is Test {
         uint256 liquidityFromA = (usedAmountA * totalSupply) / reserveA;
         uint256 liquidityFromB = (usedAmountB * totalSupply) / reserveB;
         return liquidityFromA < liquidityFromB ? liquidityFromA : liquidityFromB;
+    }
+
+    function _hasNonZeroBurnOutputs(FluxSwapPair pair, uint256 liquidityToRemove) private view returns (bool) {
+        uint256 totalSupply = pair.totalSupply();
+        if (totalSupply == 0) {
+            return false;
+        }
+
+        uint256 amount0 = (liquidityToRemove * MockERC20(pair.token0()).balanceOf(address(pair))) / totalSupply;
+        uint256 amount1 = (liquidityToRemove * MockERC20(pair.token1()).balanceOf(address(pair))) / totalSupply;
+        return amount0 > 0 && amount1 > 0;
     }
 
     function _deadline() private view returns (uint256) {
