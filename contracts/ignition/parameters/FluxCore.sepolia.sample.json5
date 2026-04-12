@@ -1,0 +1,31 @@
+{
+  FluxCoreModule: {
+    // 以下地址需要替换成真实测试网角色地址。
+    // 正式环境建议把 bootstrapAdmin、multisig、guardian、operator 分开配置。
+    bootstrapAdmin: "0x1111111111111111111111111111111111111111",
+    treasurySetter: "0x1111111111111111111111111111111111111111",
+    treasuryMultisig: "0x1111111111111111111111111111111111111111",
+    treasuryGuardian: "0x2222222222222222222222222222222222222222",
+    treasuryOperator: "0x3333333333333333333333333333333333333333",
+    rewardsOperator: "0x3333333333333333333333333333333333333333",
+    buybackOperator: "0x3333333333333333333333333333333333333333",
+    revenueOperator: "0x3333333333333333333333333333333333333333",
+
+    // Sepolia 不部署 MockWETH，这里应填写目标网络上实际存在的 WETH 地址。
+    weth: "0x0000000000000000000000000000000000000000",
+
+    // 主代币基础参数。
+    tokenName: "Flux Token",
+    tokenSymbol: "FLUX",
+    initialRecipient: "0x1111111111111111111111111111111111111111",
+    initialSupply: "0",
+    tokenCap: "1000000000000000000000000000",
+
+    // Treasury 最小时间锁延迟，示例为 1 天。
+    treasuryMinDelay: "86400",
+
+    // 收入分配参数，单位均为基点。
+    buybackBps: "10000",
+    burnBps: "0",
+  },
+}

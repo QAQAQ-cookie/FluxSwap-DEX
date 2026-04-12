@@ -1,0 +1,33 @@
+{
+  FluxCoreModule: {
+    // 本地 Hardhat 默认首个测试账户。
+    // 本地样例里直接让同一个地址同时承担 bootstrap 与各类角色，便于快速联调。
+    bootstrapAdmin: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    treasurySetter: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    treasuryMultisig: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    treasuryGuardian: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    treasuryOperator: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    rewardsOperator: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    buybackOperator: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    revenueOperator: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+
+    // 本地联调时直接部署 MockWETH，避免额外依赖外部 WETH 地址。
+    deployMockWeth: true,
+
+    // 主代币基础参数。
+    tokenName: "Flux Token",
+    tokenSymbol: "FLUX",
+    initialRecipient: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    initialSupply: "0",
+    tokenCap: "1000000000000000000000000000",
+
+    // Treasury 最小时间锁延迟，示例为 86400 秒，即 1 天。
+    treasuryMinDelay: "86400",
+
+    // 收入分配参数：
+    // 10000 表示 100% 先进入回购，
+    // 0 表示回购得到的奖励代币暂不额外销毁。
+    buybackBps: "10000",
+    burnBps: "0",
+  },
+}
