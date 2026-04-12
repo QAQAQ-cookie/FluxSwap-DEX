@@ -1,0 +1,58 @@
+{
+  // 如果核心合约是通过 Ignition 部署的，可以继续复用 chain-11155111 下的部署结果。
+  deployment: {
+    source: "ignition",
+    deploymentId: "chain-11155111",
+
+    // 如果 WETH 不是本次部署出来的，而是外部已存在地址，直接在 addresses 里覆盖即可。
+    addresses: {
+      weth: "0x0000000000000000000000000000000000000000",
+    },
+  },
+
+  options: {
+    // Sepolia / 主网不建议用 all 模式做 timelock。
+    // 通常是先 plan，再 schedule，等 delay 结束后 execute。
+    autoMineTimelockOnLocal: false,
+
+    // 这里应填写你真正能签名的 EOA。
+    // 如果 Treasury.multisig 已经是 Safe 多签，脚本只能用于 plan 校对，不应直接发起 schedule。
+    executeCaller: "0x1111111111111111111111111111111111111111",
+    defaultFundingSender: "0x1111111111111111111111111111111111111111",
+  },
+
+  treasury: {
+    allowedTokens: [
+      { token: "token", allowed: true },
+      { token: "weth", allowed: true },
+    ],
+
+    allowedRecipients: [
+      { recipient: "manager", allowed: true },
+      { recipient: "buybackExecutor", allowed: true },
+      { recipient: "revenueDistributor", allowed: true },
+    ],
+
+    dailySpendCaps: [
+      { token: "token", amount: "1000000000000000000000000" },
+      { token: "weth", amount: "1000000000000000000000" },
+    ],
+
+    spenderApprovals: [
+      { token: "token", spender: "manager", amount: "500000000000000000000000" },
+      { token: "token", spender: "revenueDistributor", amount: "500000000000000000000000" },
+      { token: "weth", spender: "buybackExecutor", amount: "1000000000000000000000" },
+    ],
+
+    spenderRevocations: [],
+  },
+
+  funding: {
+    nativeTransfers: [],
+    tokenMints: [],
+    tokenTransfers: [],
+  },
+
+  // 正式环境里，推荐把 ownership 移交放在所有初始化完成之后的最后一步。
+  ownershipTransfers: [],
+}

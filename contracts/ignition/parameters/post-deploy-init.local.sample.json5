@@ -1,0 +1,66 @@
+{
+  // 本地样例默认从 Ignition 的 localhost 部署结果里自动读取核心合约地址。
+  deployment: {
+    source: "ignition",
+    deploymentId: "chain-31337",
+  },
+
+  options: {
+    // 本地链上用 all 模式时，脚本会自动快进到 timelock 到期后再执行。
+    autoMineTimelockOnLocal: true,
+
+    // execute 阶段默认使用的调用者。
+    executeCaller: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+
+    // funding 阶段默认使用的转账 / mint 发送者。
+    defaultFundingSender: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  },
+
+  treasury: {
+    // 允许 Treasury 管理和拨付的资产。
+    allowedTokens: [
+      { token: "token", allowed: true },
+      { token: "weth", allowed: true },
+    ],
+
+    // 允许 Treasury 日常拨付的接收地址。
+    allowedRecipients: [
+      { recipient: "manager", allowed: true },
+      { recipient: "buybackExecutor", allowed: true },
+      { recipient: "revenueDistributor", allowed: true },
+    ],
+
+    // 各资产的日限额。
+    dailySpendCaps: [
+      { token: "token", amount: "1000000000000000000000000" },
+      { token: "weth", amount: "1000000000000000000000" },
+      { token: "native", amount: "10000000000000000000" },
+    ],
+
+    // 让业务模块能从 Treasury 拉取或烧毁对应资产。
+    spenderApprovals: [
+      { token: "token", spender: "manager", amount: "500000000000000000000000" },
+      { token: "token", spender: "revenueDistributor", amount: "500000000000000000000000" },
+      { token: "weth", spender: "buybackExecutor", amount: "1000000000000000000000" },
+    ],
+
+    spenderRevocations: [],
+  },
+
+  funding: {
+    // 给 Treasury 先打一点原生币，便于本地联调 allocateETH / 紧急提取等流程。
+    nativeTransfers: [
+      { to: "treasury", amount: "5000000000000000000" },
+    ],
+
+    // 给 Treasury 铸入一笔 FLUX，便于本地联调奖励分发和回购销毁链路。
+    tokenMints: [
+      { token: "token", to: "treasury", amount: "200000000000000000000000" },
+    ],
+
+    tokenTransfers: [],
+  },
+
+  // 如果后续要把 owner 从 bootstrap 账户移交给多签或治理地址，可以在这里继续补。
+  ownershipTransfers: [],
+}
