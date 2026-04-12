@@ -78,6 +78,8 @@ npm run test:static-analysis
 
 如果后续没有重大架构变更，这里更适合做“维护与收口”，而不是再无上限扩测试面。
 
+当前这轮代码基线下，上述各类测试入口已经重新逐项实跑过一遍，现有 `unit / integration / regression / permissions-governance / economic-security / fuzz / invariant / static-analysis` 均可跑通。
+
 ## 对应文档入口
 
 - `regular/unit/README.md`

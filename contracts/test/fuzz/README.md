@@ -335,7 +335,7 @@ forge test --match-path test/fuzz/FluxSwapRouterExceptionFuzz.t.sol -vv
 - supporting 路径里的 `amountOutMin` 必须对齐 recipient 的最终净到账量，等于边界值时应成功，超过 `1 wei` 时必须回退
 - ETH supporting 路径里的协议费必须记在真实输入资产 `WETH` 上
 - `token -> ETH` supporting 路径不得误用 Router 里预存的 `WETH`
-- 普通 `exact-output` 路径并不支持 fee-on-transfer 语义；当转账税会让真实净输入不足以覆盖目标输出时，交易必须整体回退，且不能留下部分到账或 treasury 脏状态
+- 普通 `exact-output` 路径并不支持 fee-on-transfer 语义；当某一跳的真实税后输入已经明显低于 `getAmountsIn` 推导出来的名义输入上界时，交易必须整体回退，且不能留下部分到账或 treasury 脏状态
 
 ### `FluxHybridAmmFeeOnTransferStatefulFuzz.t.sol`
 
@@ -358,6 +358,7 @@ forge test --match-path test/fuzz/FluxSwapRouterExceptionFuzz.t.sol -vv
 - 多轮 `add/remove liquidity` 之后，`lpA / lpB / lpC` 的 LP 份额与底层余额必须仍能被模型精确解释
 - `feeQuotePair` 与 `baseQuotePair` 对 LP actor 底层余额的影响必须保持隔离，不能在连续换路和流动性迁移后串账
 - 在经历多轮 liquidity churn 后，`base -> quote -> fee` 的 `amountOutMin` 仍然只能按最终净到账放行
+- 对极小 LP 份额的 churn，fuzz 入口会主动跳过“理论上 burn 结果某一侧为 0”的无效撤池步，避免把 Pair 设计上的最小 burn 限制误判成业务失败
 
 ### `FluxMultiHopAmmStatefulFuzz.t.sol`
 
@@ -381,6 +382,7 @@ forge test --match-path test/fuzz/FluxSwapRouterExceptionFuzz.t.sol -vv
 - `lpA / lpB / lpC` 在 `baseQuotePair` 与 `quoteOutPair` 上的 LP 份额必须分别独立记账，连续 churn 后不能串账
 - Router 不得残留 `baseToken / quoteToken / outToken`
 - 三资产总量都必须始终能够被完整解释为“LP / trader / recipient / pair / treasury / router”六类地址余额之和
+- 对极小 LP 份额导致某一侧 burn 结果为 0 的撤池步，fuzz 会在入口处过滤掉该无效序列，避免把 Pair 的最小 burn 约束当成多跳会计错误
 
 ### `FluxRevenuePipelineStatefulFuzz.t.sol`
 
@@ -538,6 +540,15 @@ forge test --match-path test/fuzz/FluxSwapRouterExceptionFuzz.t.sol -vv
 - factory / poolFactory / manager 串联的“创建 -> 移交 -> 同资产重建 -> 激活/停用 -> 再分发”多合约状态机
 
 这样当前 fuzz 已经不只覆盖 AMM 路由和奖励会计，也把金库、分红、代币权限、managed pool 工厂、buyback 执行链路都纳入了随机边界输入验证。
+
+## 当前状态
+
+截至当前代码基线，`test/fuzz` 目录下的 `25` 个 fuzz / stateful fuzz 套件已经重新完成一轮全量执行，`npm run test:fuzz` 可稳定跑通。
+
+本轮额外收口的边界包括：
+
+- 多轮 liquidity churn 下，极小 LP 份额触发 `INSUFFICIENT_LIQUIDITY_BURNED` 的无效撤池序列过滤
+- fee-on-transfer 资产被误用于普通 `exact-output` 路径时，对“确实发生税后输入不足”的反例判定口径收紧
 
 ## 后续仍可继续补强的方向
 
