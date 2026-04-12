@@ -41,6 +41,7 @@ forge test --match-path test/fuzz/FluxAmmEthLifecycleStatefulFuzz.t.sol -vv
 forge test --match-path test/fuzz/FluxManagedPoolRecreationStatefulFuzz.t.sol -vv
 forge test --match-path test/fuzz/FluxRevenueManagedPoolsStatefulFuzz.t.sol -vv
 forge test --match-path test/fuzz/FluxRevenueTreasuryManagerLongSequenceFuzz.t.sol -vv
+forge test --match-path test/fuzz/FluxHybridAmmFeeOnTransferStatefulFuzz.t.sol -vv
 ```
 
 说明：
@@ -54,8 +55,8 @@ forge test --match-path test/fuzz/FluxRevenueTreasuryManagerLongSequenceFuzz.t.s
 
 截至当前版本，`npm run test:fuzz` 已覆盖：
 
-- `22` 个 Foundry fuzz / stateful fuzz 套件
-- `65` 个测试用例
+- `23` 个 Foundry fuzz / stateful fuzz 套件
+- `67` 个测试用例
 - 覆盖 Router、Pair、Token、Treasury、RevenueDistributor、BuybackExecutor、SwapFactory、PoolFactory、LP Staking Pool、MultiPoolManager 以及跨合约流水线 / managed pool 生命周期
 
 ### `FluxSwapRouterFuzz.t.sol`
@@ -311,6 +312,28 @@ forge test --match-path test/fuzz/FluxRevenueTreasuryManagerLongSequenceFuzz.t.s
 - ETH supporting 路径里的协议费必须记在真实输入资产 `WETH` 上
 - `token -> ETH` supporting 路径不得误用 Router 里预存的 `WETH`
 
+### `FluxHybridAmmFeeOnTransferStatefulFuzz.t.sol`
+
+覆盖“普通 AMM + fee-on-transfer supporting + 多 LP + 双 Pair + 多跳桥接”在有限长序列下的混合状态机：
+
+- `feeToken <-> quoteToken` supporting Pair 上的多轮 `addLiquidity / removeLiquidity`
+- `baseToken <-> quoteToken` 普通 Pair 上的多轮 `addLiquidity / removeLiquidity`
+- `fee -> quote`
+- `quote -> fee`
+- `fee -> quote -> base`
+- `base -> quote -> fee` 且 `amountOutMin` 按最终净到账边界结算
+- 上述路径在同一序列里交错执行
+
+当前重点验证的性质：
+
+- 每一步之后两个 Pair 的 `reserve` 都必须继续和真实余额同步
+- treasury 的 `feeToken / quoteToken / baseToken` 协议费累计必须继续与真实输入路径一致
+- `quote / base / fee` 三类 recipient 的累计到账必须继续对齐模型
+- Router 不得残留 `feeToken / quoteToken / baseToken / LP token`
+- 多轮 `add/remove liquidity` 之后，`lpA / lpB / lpC` 的 LP 份额与底层余额必须仍能被模型精确解释
+- `feeQuotePair` 与 `baseQuotePair` 对 LP actor 底层余额的影响必须保持隔离，不能在连续换路和流动性迁移后串账
+- 在经历多轮 liquidity churn 后，`base -> quote -> fee` 的 `amountOutMin` 仍然只能按最终净到账放行
+
 ### `FluxRevenuePipelineStatefulFuzz.t.sol`
 
 覆盖分红流水线的跨合约长序列：
@@ -451,6 +474,7 @@ forge test --match-path test/fuzz/FluxRevenueTreasuryManagerLongSequenceFuzz.t.s
 - `FluxSwapFactory`
 - `FluxSwapLPStakingPool`
 - `FluxSwapRouter` 的 fee-on-transfer supporting 分支
+- `普通 AMM + fee-on-transfer + 多 LP / 双 Pair / 多跳桥接` 的混合状态机
 - `RevenueDistributor -> Treasury -> MultiPoolManager` 的跨合约状态流水线
 - `managed pool` 的创建、配置、移交、回收与暂停恢复生命周期
 - treasury 的 timelock 配置变更、operator 轮换、token / ETH allocate 与紧急提现闭环
