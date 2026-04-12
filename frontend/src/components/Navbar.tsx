@@ -7,7 +7,8 @@ import { LanguageToggle } from './LanguageToggle';
 import { useTranslation } from 'react-i18next';
 
 export function Navbar() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const earnLabel = i18n.language.startsWith('zh') ? '收益 (Earn)' : 'Earn';
 
   return (
     <nav className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md sticky top-0 z-50">
@@ -23,6 +24,9 @@ export function Navbar() {
           </Link>
           <Link href="/pool" className="text-gray-600 hover:text-black dark:text-gray-300 dark:hover:text-white transition-colors">
             {t('nav.pools')}
+          </Link>
+          <Link href="/earn" className="text-gray-600 hover:text-black dark:text-gray-300 dark:hover:text-white transition-colors">
+            {earnLabel}
           </Link>
         </div>
       </div>

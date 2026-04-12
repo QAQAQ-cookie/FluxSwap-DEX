@@ -14,12 +14,12 @@ import {
   ArrowDown,
   ChevronDown,
   Info,
-  LoaderCircle,
   Settings,
   X,
 } from 'lucide-react';
-import { formatUnits, maxUint256, parseUnits, zeroAddress } from 'viem';
+import { formatUnits, maxUint256, zeroAddress } from 'viem';
 
+import { ActionButton } from '@/components/ActionButton';
 import { getContractAddress, isFluxSupportedChain } from '@/config/contracts';
 import { getSwapTokenOptions, type SwapTokenOption } from '@/config/tokens';
 import {
@@ -31,67 +31,17 @@ import {
   useReadFluxTokenAllowance,
 } from '@/lib/contracts';
 import { useIsClient } from '@/hooks/useIsClient';
+import {
+  DECIMAL_INPUT_REGEX,
+  formatBigIntAmount,
+  formatDisplayAmount,
+  parseAmount,
+  parsePercentToBps,
+} from '@/lib/amounts';
+import { formatErrorMessage } from '@/lib/errors';
 
 type SelectorTarget = 'pay' | 'receive' | null;
 type ActionKind = 'approve' | 'swap' | null;
-
-const INPUT_REGEX = /^\d*(\.\d*)?$/;
-
-function formatDisplayAmount(value?: string, fractionDigits = 6): string {
-  if (!value) {
-    return '0.00';
-  }
-
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return '0.00';
-  }
-
-  return numeric.toLocaleString(undefined, {
-    maximumFractionDigits: fractionDigits,
-  });
-}
-
-function formatBigIntAmount(
-  value: bigint | undefined,
-  decimals: number,
-  fractionDigits = 6,
-): string {
-  if (value === undefined) {
-    return '';
-  }
-
-  return formatDisplayAmount(formatUnits(value, decimals), fractionDigits);
-}
-
-function parseAmount(value: string, decimals: number): bigint | undefined {
-  if (!value || !INPUT_REGEX.test(value)) {
-    return undefined;
-  }
-
-  try {
-    return parseUnits(value, decimals);
-  } catch {
-    return undefined;
-  }
-}
-
-function parsePercentToBps(value: string): bigint {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric) || numeric < 0) {
-    return BigInt(50);
-  }
-
-  return BigInt(Math.min(Math.max(Math.round(numeric * 100), 0), 5000));
-}
-
-function formatErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  return 'Unknown error';
-}
 
 function getTokenBySymbol(
   tokens: SwapTokenOption[],
@@ -419,7 +369,7 @@ export default function SwapPage() {
         : formatBigIntAmount(allowance, payToken.decimals, 4);
 
   const handlePayAmountChange = (value: string) => {
-    if (!INPUT_REGEX.test(value)) {
+    if (!DECIMAL_INPUT_REGEX.test(value)) {
       return;
     }
 
@@ -680,25 +630,20 @@ export default function SwapPage() {
             </div>
 
             {!mounted || !isConnected ? (
-              <button
-                onClick={openConnectModal}
-                className="w-full rounded-2xl border border-blue-200 bg-blue-100 py-4 font-bold text-blue-600 transition-colors hover:bg-blue-200 dark:border-blue-900/50 dark:bg-blue-600/20 dark:text-blue-400 dark:hover:bg-blue-600/30"
-              >
-                {t('swap.connectWallet')}
-              </button>
+              <ActionButton
+                label={t('swap.connectWallet')}
+                disabled={false}
+                onClick={() => openConnectModal?.()}
+                variant="ghost"
+                className="border-blue-200 bg-blue-100 text-blue-600 hover:bg-blue-200 dark:border-blue-900/50 dark:bg-blue-600/20 dark:text-blue-400 dark:hover:bg-blue-600/30"
+              />
             ) : (
-              <button
-                onClick={handleAction}
+              <ActionButton
+                label={actionLabel}
                 disabled={actionDisabled}
-                className={`flex w-full items-center justify-center gap-2 rounded-2xl py-4 font-bold transition-colors ${
-                  actionDisabled
-                    ? 'cursor-not-allowed bg-gray-200 text-gray-400 shadow-none dark:bg-gray-700 dark:text-gray-500'
-                    : 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 hover:bg-blue-700'
-                }`}
-              >
-                {isSubmitting && <LoaderCircle size={18} className="animate-spin" />}
-                <span>{actionLabel}</span>
-              </button>
+                loading={isSubmitting}
+                onClick={handleAction}
+              />
             )}
           </div>
         </div>

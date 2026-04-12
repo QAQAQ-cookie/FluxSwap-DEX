@@ -67,6 +67,27 @@ import { fluxSwapRouterAbi, useReadFluxSwapFactory } from '@/lib/contracts'
 - 在卖出 `FLUX` 时先做 `approve`
 - 满足条件后直接发起兑换交易
 
+当前 `/pool` 页面首版也已接入真实链上读取与基础写入流程，默认围绕 `ETH / FLUX`：
+
+- 读取 Pair 地址、储备、总 LP 供应
+- 读取用户 LP 余额
+- 读取 `FLUX` / `LP` 的授权额度
+- 支持 `addLiquidityETH`
+- 支持 `removeLiquidityETH`
+- 在需要时先做 `FLUX` 或 `LP` 授权
+
+当前 `/earn` 页面首版已接入真实链上读取与基础写入流程，默认围绕 `ETH / FLUX` LP 奖励池：
+
+- 读取 LP 地址与关联 staking pool 地址
+- 读取钱包 LP 余额、已质押 LP、总质押量
+- 读取 `earned`、`pendingUserRewards`、`pendingPoolRewards`
+- 读取奖励储备与奖励代币地址
+- 支持 `stake`
+- 支持 `withdraw`
+- 支持 `getReward`
+- 支持 `exit`
+- 在需要时先做 LP 授权
+
 ## 合约地址配置
 
 本地 Hardhat 地址会从上一级 `contracts/ignition/deployments` 自动同步：
