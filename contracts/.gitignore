@@ -26,3 +26,6 @@
 
 # Local diagram preview outputs
 /tmp-diagram-preview
+
+# Local Ignition deployment state generated during localhost verification
+/ignition/deployments/chain-31337
