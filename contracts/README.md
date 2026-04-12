@@ -182,7 +182,82 @@ npm run test:static-analysis
 - `test:fuzz`、`test:invariant` 主要走 Foundry。
 - `test:static-analysis` 当前默认封装的是 `solhint`。
 
-## 7. 工具链说明
+## 7. 部署
+
+当前已提供基于 Hardhat Ignition 的核心合约部署模块：
+
+- `ignition/modules/FluxCore.ts`
+
+该模块会按以下顺序部署并完成基础联动：
+
+1. `FluxToken`
+2. `FluxSwapTreasury`
+3. `FluxSwapFactory`
+4. `FluxSwapRouter`
+5. `FluxMultiPoolManager`
+6. `FluxPoolFactory`
+7. `FluxBuybackExecutor`
+8. `FluxRevenueDistributor`
+9. `FluxSwapFactory.setTreasury(treasury)`
+10. `FluxMultiPoolManager.setPoolFactory(poolFactory)`
+
+### 7.1 本地模拟部署
+
+这里的 `local` 指的是 Hardhat 在本地启动的模拟链，当前对应 `hardhat.config.ts` 里的 `hardhatMainnet` 网络配置，并不是真实公网测试网或主网。
+
+```bash
+npm run deploy:core
+npm run deploy:core:local
+```
+
+本地样例参数文件：
+
+- `ignition/parameters/FluxCore.local.sample.json5`
+
+该样例会额外部署一个 `MockWETH` 供本地联调用。
+
+### 7.2 Sepolia 部署
+
+先准备：
+
+- `SEPOLIA_RPC_URL`
+- `SEPOLIA_PRIVATE_KEY`
+- `ignition/parameters/FluxCore.sepolia.sample.json5`
+
+然后执行：
+
+```bash
+npm run deploy:core:sepolia
+```
+
+### 7.3 部署参数说明
+
+核心参数包括：
+
+- `bootstrapAdmin`
+- `treasurySetter`
+- `treasuryMultisig`
+- `treasuryGuardian`
+- `treasuryOperator`
+- `rewardsOperator`
+- `buybackOperator`
+- `revenueOperator`
+- `weth` 或 `deployMockWeth`
+- `tokenName`
+- `tokenSymbol`
+- `initialRecipient`
+- `initialSupply`
+- `tokenCap`
+- `treasuryMinDelay`
+- `buybackBps`
+- `burnBps`
+
+补充说明：
+
+- 如果你要在部署阶段自动完成 `Factory.setTreasury` 和 `Manager.setPoolFactory`，那么 `treasurySetter` 与 `bootstrapAdmin` 需要与当前部署签名账户权限一致。
+- 如果最终治理地址是外部多签，通常更稳妥的做法是先用可签名的 bootstrap 账户完成部署和基础联动，再做后续权限移交。
+
+## 8. 工具链说明
 
 当前目录采用 Hardhat + Foundry 双工具链：
 
@@ -201,7 +276,7 @@ npm run test:static-analysis
 - EVM 版本：`cancun`
 - 优化器：开启，`runs = 200`
 
-## 8. 当前收口状态
+## 9. 当前收口状态
 
 以目前这轮代码基线来看，合约系统已经形成完整主链路：
 
