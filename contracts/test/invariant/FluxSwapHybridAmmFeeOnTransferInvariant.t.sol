@@ -23,6 +23,7 @@ contract FluxSwapHybridAmmFeeOnTransferInvariantHandler is Test {
 
     address public immutable lpA;
     address public immutable lpB;
+    address public immutable lpC;
     address public immutable traderFeeA;
     address public immutable traderFeeB;
     address public immutable traderPlainA;
@@ -41,12 +42,34 @@ contract FluxSwapHybridAmmFeeOnTransferInvariantHandler is Test {
     uint256 public expectedRecipientQuote;
     uint256 public expectedRecipientBase;
     uint256 public expectedRecipientFee;
+    uint256 public expectedFeeQuoteLpA;
+    uint256 public expectedFeeQuoteLpB;
+    uint256 public expectedFeeQuoteLpC;
+    uint256 public expectedBaseQuoteLpA;
+    uint256 public expectedBaseQuoteLpB;
+    uint256 public expectedBaseQuoteLpC;
+    uint256 public expectedLpAFeeTokenBalance;
+    uint256 public expectedLpAQuoteTokenBalance;
+    uint256 public expectedLpABaseTokenBalance;
+    uint256 public expectedLpBFeeTokenBalance;
+    uint256 public expectedLpBQuoteTokenBalance;
+    uint256 public expectedLpBBaseTokenBalance;
+    uint256 public expectedLpCFeeTokenBalance;
+    uint256 public expectedLpCQuoteTokenBalance;
+    uint256 public expectedLpCBaseTokenBalance;
+    uint256[3] private initialLpFeeTokenBalances;
+    uint256[3] private initialLpQuoteTokenBalances;
+    uint256[3] private initialLpBaseTokenBalances;
+    uint256[3] private feeQuoteModeledFeeTokenBalances;
+    uint256[3] private feeQuoteModeledQuoteTokenBalances;
+    uint256[3] private baseQuoteModeledQuoteTokenBalances;
+    uint256[3] private baseQuoteModeledBaseTokenBalances;
 
     constructor(
         FluxSwapRouter router_,
         address[2] memory pairAddresses,
         address[3] memory tokenAddresses,
-        address[13] memory actors
+        address[14] memory actors
     ) {
         router = router_;
         feeQuotePair = FluxSwapPair(pairAddresses[0]);
@@ -56,20 +79,33 @@ contract FluxSwapHybridAmmFeeOnTransferInvariantHandler is Test {
         baseToken = MockERC20(tokenAddresses[2]);
         lpA = actors[0];
         lpB = actors[1];
-        traderFeeA = actors[2];
-        traderFeeB = actors[3];
-        traderPlainA = actors[4];
-        traderPlainB = actors[5];
-        recipientQuoteA = actors[6];
-        recipientQuoteB = actors[7];
-        recipientBaseA = actors[8];
-        recipientBaseB = actors[9];
-        recipientFeeA = actors[10];
-        recipientFeeB = actors[11];
-        treasury = actors[12];
+        lpC = actors[2];
+        traderFeeA = actors[3];
+        traderFeeB = actors[4];
+        traderPlainA = actors[5];
+        traderPlainB = actors[6];
+        recipientQuoteA = actors[7];
+        recipientQuoteB = actors[8];
+        recipientBaseA = actors[9];
+        recipientBaseB = actors[10];
+        recipientFeeA = actors[11];
+        recipientFeeB = actors[12];
+        treasury = actors[13];
+
+        // 初始 LP 份额直接从已建好的两个 Pair 读取，后续只允许 add/remove liquidity 更新。
+        expectedFeeQuoteLpA = feeQuotePair.balanceOf(lpA);
+        expectedFeeQuoteLpB = feeQuotePair.balanceOf(lpB);
+        expectedFeeQuoteLpC = feeQuotePair.balanceOf(lpC);
+        expectedBaseQuoteLpA = baseQuotePair.balanceOf(lpA);
+        expectedBaseQuoteLpB = baseQuotePair.balanceOf(lpB);
+        expectedBaseQuoteLpC = baseQuotePair.balanceOf(lpC);
+        _syncLpUnderlyingSnapshots(lpA);
+        _syncLpUnderlyingSnapshots(lpB);
+        _syncLpUnderlyingSnapshots(lpC);
+        _recordInitialLpUnderlyingBalances();
     }
 
-    // 这套 hybrid invariant 把普通 AMM、supporting AMM、双 LP actor 以及两条 Pair 的 mint / burn / swap
+    // 这套 hybrid invariant 把普通 AMM、supporting AMM、多 LP actor 以及两条 Pair 的 mint / burn / swap
     // 一起放进同一套路由环境：
     // 1. 普通 Pair：baseToken <-> quoteToken
     // 2. supporting Pair：feeToken <-> quoteToken
@@ -84,14 +120,26 @@ contract FluxSwapHybridAmmFeeOnTransferInvariantHandler is Test {
         uint256 amountQuote = bound(rawQuoteAmount, 2_000, (quoteReserve / 10) + 2_000);
         address actor = _selectLp(actorSeed);
 
+        uint256 usedFee;
+        uint256 usedQuote;
+        uint256 liquidity;
+
         feeToken.mint(actor, amountFee);
         quoteToken.mint(actor, amountQuote);
 
         vm.startPrank(actor);
         feeToken.approve(address(router), type(uint256).max);
         quoteToken.approve(address(router), type(uint256).max);
-        router.addLiquidity(address(feeToken), address(quoteToken), amountFee, amountQuote, 0, 0, actor, _deadline());
+        (usedFee, usedQuote, liquidity) =
+            router.addLiquidity(address(feeToken), address(quoteToken), amountFee, amountQuote, 0, 0, actor, _deadline());
         vm.stopPrank();
+
+        // fee-on-transfer 池子同时约束两层账本：
+        // 1. LP 份额按真实铸造数量增长
+        // 2. 钱包余额按“本次 mint 进去的金额 - Router 实际拿去加池的金额”建模
+        _increaseLpExpectation(actor, true, liquidity);
+        _increaseLpUnderlyingExpectation(actor, amountFee - usedFee, amountQuote - usedQuote, 0);
+        _increaseFeeQuotePairUnderlyingExpectation(actor, amountFee - usedFee, amountQuote - usedQuote);
     }
 
     function addLiquidityBaseQuote(uint8 actorSeed, uint256 rawBaseAmount, uint256 rawQuoteAmount) external {
@@ -102,14 +150,24 @@ contract FluxSwapHybridAmmFeeOnTransferInvariantHandler is Test {
         uint256 amountQuote = bound(rawQuoteAmount, 1, (quoteReserve / 10) + 1);
         address actor = _selectLp(actorSeed);
 
+        uint256 usedBase;
+        uint256 usedQuote;
+        uint256 liquidity;
+
         baseToken.mint(actor, amountBase);
         quoteToken.mint(actor, amountQuote);
 
         vm.startPrank(actor);
         baseToken.approve(address(router), type(uint256).max);
         quoteToken.approve(address(router), type(uint256).max);
-        router.addLiquidity(address(baseToken), address(quoteToken), amountBase, amountQuote, 0, 0, actor, _deadline());
+        (usedBase, usedQuote, liquidity) =
+            router.addLiquidity(address(baseToken), address(quoteToken), amountBase, amountQuote, 0, 0, actor, _deadline());
         vm.stopPrank();
+
+        // 普通池的钱包余额按“mint 进来 - 实际入池”精确累计，避免用事后快照掩盖中间流量。
+        _increaseLpExpectation(actor, false, liquidity);
+        _increaseLpUnderlyingExpectation(actor, 0, amountQuote - usedQuote, amountBase - usedBase);
+        _increaseBaseQuotePairUnderlyingExpectation(actor, amountQuote - usedQuote, amountBase - usedBase);
     }
 
     function removeLiquidityFeeQuote(uint8 actorSeed, uint16 rawShareBps) external {
@@ -339,6 +397,7 @@ contract FluxSwapHybridAmmFeeOnTransferInvariantHandler is Test {
     function trackedFeeTokenSum() external view returns (uint256) {
         return feeToken.balanceOf(lpA)
             + feeToken.balanceOf(lpB)
+            + feeToken.balanceOf(lpC)
             + feeToken.balanceOf(traderFeeA)
             + feeToken.balanceOf(traderFeeB)
             + feeToken.balanceOf(traderPlainA)
@@ -358,6 +417,7 @@ contract FluxSwapHybridAmmFeeOnTransferInvariantHandler is Test {
     function trackedQuoteTokenSum() external view returns (uint256) {
         return quoteToken.balanceOf(lpA)
             + quoteToken.balanceOf(lpB)
+            + quoteToken.balanceOf(lpC)
             + quoteToken.balanceOf(traderFeeA)
             + quoteToken.balanceOf(traderFeeB)
             + quoteToken.balanceOf(traderPlainA)
@@ -377,6 +437,7 @@ contract FluxSwapHybridAmmFeeOnTransferInvariantHandler is Test {
     function trackedBaseTokenSum() external view returns (uint256) {
         return baseToken.balanceOf(lpA)
             + baseToken.balanceOf(lpB)
+            + baseToken.balanceOf(lpC)
             + baseToken.balanceOf(traderFeeA)
             + baseToken.balanceOf(traderFeeB)
             + baseToken.balanceOf(traderPlainA)
@@ -394,13 +455,54 @@ contract FluxSwapHybridAmmFeeOnTransferInvariantHandler is Test {
     }
 
     function trackedFeeQuoteLpSupply() external view returns (uint256) {
-        return feeQuotePair.balanceOf(lpA) + feeQuotePair.balanceOf(lpB) + feeQuotePair.balanceOf(address(0))
-            + feeQuotePair.balanceOf(address(router));
+        return feeQuotePair.balanceOf(lpA) + feeQuotePair.balanceOf(lpB) + feeQuotePair.balanceOf(lpC)
+            + feeQuotePair.balanceOf(address(0)) + feeQuotePair.balanceOf(address(router));
     }
 
     function trackedBaseQuoteLpSupply() external view returns (uint256) {
-        return baseQuotePair.balanceOf(lpA) + baseQuotePair.balanceOf(lpB) + baseQuotePair.balanceOf(address(0))
-            + baseQuotePair.balanceOf(address(router));
+        return baseQuotePair.balanceOf(lpA) + baseQuotePair.balanceOf(lpB) + baseQuotePair.balanceOf(lpC)
+            + baseQuotePair.balanceOf(address(0)) + baseQuotePair.balanceOf(address(router));
+    }
+
+    function lpBalanceExpectationsMatch() external view returns (bool) {
+        return feeQuotePair.balanceOf(lpA) == expectedFeeQuoteLpA && feeQuotePair.balanceOf(lpB) == expectedFeeQuoteLpB
+            && feeQuotePair.balanceOf(lpC) == expectedFeeQuoteLpC
+            && baseQuotePair.balanceOf(lpA) == expectedBaseQuoteLpA
+            && baseQuotePair.balanceOf(lpB) == expectedBaseQuoteLpB
+            && baseQuotePair.balanceOf(lpC) == expectedBaseQuoteLpC;
+    }
+
+    function lpUnderlyingBalanceSnapshotsMatch() external view returns (bool) {
+        return feeToken.balanceOf(lpA) == expectedLpAFeeTokenBalance
+            && quoteToken.balanceOf(lpA) == expectedLpAQuoteTokenBalance
+            && baseToken.balanceOf(lpA) == expectedLpABaseTokenBalance
+            && feeToken.balanceOf(lpB) == expectedLpBFeeTokenBalance
+            && quoteToken.balanceOf(lpB) == expectedLpBQuoteTokenBalance
+            && baseToken.balanceOf(lpB) == expectedLpBBaseTokenBalance
+            && feeToken.balanceOf(lpC) == expectedLpCFeeTokenBalance
+            && quoteToken.balanceOf(lpC) == expectedLpCQuoteTokenBalance
+            && baseToken.balanceOf(lpC) == expectedLpCBaseTokenBalance;
+    }
+
+    function pairIsolatedUnderlyingExpectationsMatch() external view returns (bool) {
+        for (uint256 i = 0; i < 3; i++) {
+            address actor = _lpByIndex(i);
+            if (feeToken.balanceOf(actor) != initialLpFeeTokenBalances[i] + feeQuoteModeledFeeTokenBalances[i]) {
+                return false;
+            }
+            if (baseToken.balanceOf(actor) != initialLpBaseTokenBalances[i] + baseQuoteModeledBaseTokenBalances[i]) {
+                return false;
+            }
+            if (
+                quoteToken.balanceOf(actor)
+                    != initialLpQuoteTokenBalances[i] + feeQuoteModeledQuoteTokenBalances[i]
+                        + baseQuoteModeledQuoteTokenBalances[i]
+            ) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     function recipientQuoteBalanceSum() external view returns (uint256) {
@@ -420,7 +522,14 @@ contract FluxSwapHybridAmmFeeOnTransferInvariantHandler is Test {
     }
 
     function _selectLp(uint8 actorSeed) private view returns (address) {
-        return actorSeed % 2 == 0 ? lpA : lpB;
+        uint8 slot = actorSeed % 3;
+        if (slot == 0) {
+            return lpA;
+        }
+        if (slot == 1) {
+            return lpB;
+        }
+        return lpC;
     }
 
     function _selectPlainTrader(uint8 actorSeed) private view returns (address) {
@@ -456,12 +565,198 @@ contract FluxSwapHybridAmmFeeOnTransferInvariantHandler is Test {
         if (liquidityToRemove == 0) {
             return;
         }
+        uint256 amountA;
+        uint256 amountB;
 
         vm.prank(actor);
         pair.approve(address(router), type(uint256).max);
 
         vm.prank(actor);
-        router.removeLiquidity(tokenA, tokenB, liquidityToRemove, 0, 0, actor, _deadline());
+        (amountA, amountB) = router.removeLiquidity(tokenA, tokenB, liquidityToRemove, 0, 0, actor, _deadline());
+
+        if (address(pair) == address(feeQuotePair)) {
+            _decreaseLpExpectation(actor, true, liquidityToRemove);
+            // feeToken 在 removeLiquidity 时也会扣转账税，因此这里按真实净到账记入钱包模型。
+            _increaseLpUnderlyingExpectation(actor, _applyTransferFee(amountA), amountB, 0);
+            _increaseFeeQuotePairUnderlyingExpectation(actor, _applyTransferFee(amountA), amountB);
+            return;
+        }
+
+        _decreaseLpExpectation(actor, false, liquidityToRemove);
+        _increaseLpUnderlyingExpectation(actor, 0, amountB, amountA);
+        _increaseBaseQuotePairUnderlyingExpectation(actor, amountB, amountA);
+    }
+
+    function _syncFeeQuoteLpExpectation(address actor) private {
+        uint256 currentBalance = feeQuotePair.balanceOf(actor);
+        if (actor == lpA) {
+            expectedFeeQuoteLpA = currentBalance;
+            return;
+        }
+        if (actor == lpB) {
+            expectedFeeQuoteLpB = currentBalance;
+            return;
+        }
+        expectedFeeQuoteLpC = currentBalance;
+    }
+
+    function _syncBaseQuoteLpExpectation(address actor) private {
+        uint256 currentBalance = baseQuotePair.balanceOf(actor);
+        if (actor == lpA) {
+            expectedBaseQuoteLpA = currentBalance;
+            return;
+        }
+        if (actor == lpB) {
+            expectedBaseQuoteLpB = currentBalance;
+            return;
+        }
+        expectedBaseQuoteLpC = currentBalance;
+    }
+
+    function _syncLpUnderlyingSnapshots(address actor) private {
+        if (actor == lpA) {
+            expectedLpAFeeTokenBalance = feeToken.balanceOf(actor);
+            expectedLpAQuoteTokenBalance = quoteToken.balanceOf(actor);
+            expectedLpABaseTokenBalance = baseToken.balanceOf(actor);
+            return;
+        }
+        if (actor == lpB) {
+            expectedLpBFeeTokenBalance = feeToken.balanceOf(actor);
+            expectedLpBQuoteTokenBalance = quoteToken.balanceOf(actor);
+            expectedLpBBaseTokenBalance = baseToken.balanceOf(actor);
+            return;
+        }
+
+        expectedLpCFeeTokenBalance = feeToken.balanceOf(actor);
+        expectedLpCQuoteTokenBalance = quoteToken.balanceOf(actor);
+        expectedLpCBaseTokenBalance = baseToken.balanceOf(actor);
+    }
+
+    function _recordInitialLpUnderlyingBalances() private {
+        initialLpFeeTokenBalances[0] = feeToken.balanceOf(lpA);
+        initialLpQuoteTokenBalances[0] = quoteToken.balanceOf(lpA);
+        initialLpBaseTokenBalances[0] = baseToken.balanceOf(lpA);
+
+        initialLpFeeTokenBalances[1] = feeToken.balanceOf(lpB);
+        initialLpQuoteTokenBalances[1] = quoteToken.balanceOf(lpB);
+        initialLpBaseTokenBalances[1] = baseToken.balanceOf(lpB);
+
+        initialLpFeeTokenBalances[2] = feeToken.balanceOf(lpC);
+        initialLpQuoteTokenBalances[2] = quoteToken.balanceOf(lpC);
+        initialLpBaseTokenBalances[2] = baseToken.balanceOf(lpC);
+    }
+
+    function _increaseLpExpectation(address actor, bool isFeeQuotePair, uint256 liquidityDelta) private {
+        if (liquidityDelta == 0) {
+            return;
+        }
+
+        if (isFeeQuotePair) {
+            if (actor == lpA) {
+                expectedFeeQuoteLpA += liquidityDelta;
+                return;
+            }
+            if (actor == lpB) {
+                expectedFeeQuoteLpB += liquidityDelta;
+                return;
+            }
+            expectedFeeQuoteLpC += liquidityDelta;
+            return;
+        }
+
+        if (actor == lpA) {
+            expectedBaseQuoteLpA += liquidityDelta;
+            return;
+        }
+        if (actor == lpB) {
+            expectedBaseQuoteLpB += liquidityDelta;
+            return;
+        }
+        expectedBaseQuoteLpC += liquidityDelta;
+    }
+
+    function _decreaseLpExpectation(address actor, bool isFeeQuotePair, uint256 liquidityDelta) private {
+        if (liquidityDelta == 0) {
+            return;
+        }
+
+        if (isFeeQuotePair) {
+            if (actor == lpA) {
+                expectedFeeQuoteLpA -= liquidityDelta;
+                return;
+            }
+            if (actor == lpB) {
+                expectedFeeQuoteLpB -= liquidityDelta;
+                return;
+            }
+            expectedFeeQuoteLpC -= liquidityDelta;
+            return;
+        }
+
+        if (actor == lpA) {
+            expectedBaseQuoteLpA -= liquidityDelta;
+            return;
+        }
+        if (actor == lpB) {
+            expectedBaseQuoteLpB -= liquidityDelta;
+            return;
+        }
+        expectedBaseQuoteLpC -= liquidityDelta;
+    }
+
+    function _increaseLpUnderlyingExpectation(address actor, uint256 feeDelta, uint256 quoteDelta, uint256 baseDelta)
+        private
+    {
+        if (actor == lpA) {
+            expectedLpAFeeTokenBalance += feeDelta;
+            expectedLpAQuoteTokenBalance += quoteDelta;
+            expectedLpABaseTokenBalance += baseDelta;
+            return;
+        }
+        if (actor == lpB) {
+            expectedLpBFeeTokenBalance += feeDelta;
+            expectedLpBQuoteTokenBalance += quoteDelta;
+            expectedLpBBaseTokenBalance += baseDelta;
+            return;
+        }
+
+        expectedLpCFeeTokenBalance += feeDelta;
+        expectedLpCQuoteTokenBalance += quoteDelta;
+        expectedLpCBaseTokenBalance += baseDelta;
+    }
+
+    function _increaseFeeQuotePairUnderlyingExpectation(address actor, uint256 feeDelta, uint256 quoteDelta) private {
+        uint256 actorIndex = _lpIndex(actor);
+        feeQuoteModeledFeeTokenBalances[actorIndex] += feeDelta;
+        feeQuoteModeledQuoteTokenBalances[actorIndex] += quoteDelta;
+    }
+
+    function _increaseBaseQuotePairUnderlyingExpectation(address actor, uint256 quoteDelta, uint256 baseDelta) private {
+        uint256 actorIndex = _lpIndex(actor);
+        baseQuoteModeledQuoteTokenBalances[actorIndex] += quoteDelta;
+        baseQuoteModeledBaseTokenBalances[actorIndex] += baseDelta;
+    }
+
+    function _lpIndex(address actor) private view returns (uint256) {
+        if (actor == lpA) {
+            return 0;
+        }
+        if (actor == lpB) {
+            return 1;
+        }
+        require(actor == lpC, "UNKNOWN_LP");
+        return 2;
+    }
+
+    function _lpByIndex(uint256 index) private view returns (address) {
+        if (index == 0) {
+            return lpA;
+        }
+        if (index == 1) {
+            return lpB;
+        }
+        require(index == 2, "INVALID_LP_INDEX");
+        return lpC;
     }
 
     function _twoHopPath(address tokenIn, address tokenOut) private pure returns (address[] memory path) {
@@ -534,9 +829,10 @@ contract FluxSwapHybridAmmFeeOnTransferInvariantTest is StdInvariant, Test {
 
         address[2] memory pairAddresses = [address(feeQuotePair), address(baseQuotePair)];
         address[3] memory tokenAddresses = [address(feeToken), address(quoteToken), address(baseToken)];
-        address[13] memory actors = [
+        address[14] memory actors = [
             makeAddr("lpA"),
             makeAddr("lpB"),
+            makeAddr("lpC"),
             makeAddr("traderFeeA"),
             makeAddr("traderFeeB"),
             makeAddr("traderPlainA"),
@@ -550,12 +846,14 @@ contract FluxSwapHybridAmmFeeOnTransferInvariantTest is StdInvariant, Test {
             treasury
         ];
 
-        handler = new FluxSwapHybridAmmFeeOnTransferInvariantHandler(router, pairAddresses, tokenAddresses, actors);
-
         _seedGenericPair(feeToken, quoteToken, 5e18, 9e18, actors[0]);
         _seedGenericPair(feeToken, quoteToken, 3e18, 5e18, actors[1]);
+        _seedGenericPair(feeToken, quoteToken, 2e18, 4e18, actors[2]);
         _seedGenericPair(baseToken, quoteToken, 7e18, 11e18, actors[0]);
         _seedGenericPair(baseToken, quoteToken, 4e18, 6e18, actors[1]);
+        _seedGenericPair(baseToken, quoteToken, 2e18, 3e18, actors[2]);
+
+        handler = new FluxSwapHybridAmmFeeOnTransferInvariantHandler(router, pairAddresses, tokenAddresses, actors);
 
         targetContract(address(handler));
     }
@@ -600,6 +898,23 @@ contract FluxSwapHybridAmmFeeOnTransferInvariantTest is StdInvariant, Test {
     function invariant_lpSupplyAccountingCloses() public view {
         assertEq(feeQuotePair.totalSupply(), handler.trackedFeeQuoteLpSupply());
         assertEq(baseQuotePair.totalSupply(), handler.trackedBaseQuoteLpSupply());
+    }
+
+    // 不变量 7：三个 LP actor 在两个 Pair 上的 LP 持仓，只能随 add/remove liquidity 按预期变化，不能在其他路径里漂移。
+    function invariant_lpBalanceSnapshotsMatchModel() public view {
+        assertTrue(handler.lpBalanceExpectationsMatch());
+    }
+
+    // 不变量 8：三个 LP actor 的底层 token 余额，只能由 add/remove liquidity 引起变化，不能在 swap 路径里被动漂移。
+    function invariant_lpUnderlyingBalanceSnapshotsMatchModel() public view {
+        assertTrue(handler.lpUnderlyingBalanceSnapshotsMatch());
+    }
+
+    // 不变量 9：feeQuotePair 与 baseQuotePair 对 LP actor 底层余额的影响必须保持隔离。
+    // feeToken 只能由 feeQuotePair 的 add/remove 解释，baseToken 只能由 baseQuotePair 的 add/remove 解释，
+    // quoteToken 则必须能被两个 Pair 各自累计出来的净流量精确拼回。
+    function invariant_pairIsolatedUnderlyingExpectationsMatch() public view {
+        assertTrue(handler.pairIsolatedUnderlyingExpectationsMatch());
     }
 
     function _seedGenericPair(MockERC20 tokenA, MockERC20 tokenB, uint256 amountA, uint256 amountB, address lpAddr)

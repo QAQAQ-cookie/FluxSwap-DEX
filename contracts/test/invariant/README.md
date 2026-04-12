@@ -47,7 +47,7 @@ forge test --match-path test/invariant/FluxSwapHybridAmmFeeOnTransferInvariant.t
 截至当前版本，`npm run test:invariant` 已覆盖：
 
 - `12` 个 Foundry invariant 套件
-- `61` 个不变量断言
+- `64` 个不变量断言
 - 覆盖 `FluxSwapStakingRewards`、`FluxMultiPoolManager`、`FluxSwapTreasury`、`FluxRevenueDistributor + FluxPoolFactory + FluxMultiPoolManager + managed pools` 联动链路
 - 额外覆盖 `FluxSwapTreasury + FluxRevenueDistributor + FluxMultiPoolManager + pool claim` 的真实 revenue pipeline 联动链路
 - 额外覆盖 `FluxSwapFactory + FluxSwapRouter + FluxSwapPair` 的 token-token AMM 核心链路
@@ -56,7 +56,7 @@ forge test --match-path test/invariant/FluxSwapHybridAmmFeeOnTransferInvariant.t
 - 额外覆盖 `双 fee token / 四跳 supporting` 路径下“逐跳按真实净输入计费”的长期随机序列约束
 - 额外覆盖 `共享 tokenA 的 token-token + token-ETH` 双 Pair 混排路径下的 Router 资产隔离、协议费累计与总量守恒
 - 额外覆盖 `feeToken-quote + feeToken-WETH` 双 Pair 混排、`quote -> fee` 净到账边界与多 actor 汇总对账
-- 额外覆盖 `普通 AMM + fee-on-transfer supporting + quote 桥接多跳 + 双 LP / 双 Pair 流动性迁移` 混排下的跨 Pair 协议费累计、净到账边界与总量闭合
+- 额外覆盖 `普通 AMM + fee-on-transfer supporting + quote 桥接多跳 + 多 LP / 双 Pair 流动性迁移` 混排下的跨 Pair 协议费累计、净到账边界、LP 份额快照与总量闭合
 
 ## 已覆盖套件
 
@@ -266,12 +266,12 @@ forge test --match-path test/invariant/FluxSwapHybridAmmFeeOnTransferInvariant.t
 
 ### `FluxSwapHybridAmmFeeOnTransferInvariant.t.sol`
 
-当前通过真实的 `FluxSwapFactory + FluxSwapRouter + FluxSwapPair + MockFeeOnTransferERC20` 组合，把普通 AMM、supporting AMM、共享 `quoteToken` 的多跳桥接，以及两个 LP actor 在两条 Pair 上的流动性增减一起放进同一套随机序列：
+当前通过真实的 `FluxSwapFactory + FluxSwapRouter + FluxSwapPair + MockFeeOnTransferERC20` 组合，把普通 AMM、supporting AMM、共享 `quoteToken` 的多跳桥接，以及多个 LP actor 在两条 Pair 上的流动性增减一起放进同一套随机序列：
 
 - `feeToken <-> quoteToken` 的 supporting Pair
 - `baseToken <-> quoteToken` 的普通 token-token Pair
-- `lpA / lpB` 在 `feeToken <-> quoteToken` 上的 `addLiquidity / removeLiquidity`
-- `lpA / lpB` 在 `baseToken <-> quoteToken` 上的 `addLiquidity / removeLiquidity`
+- `lpA / lpB / lpC` 在 `feeToken <-> quoteToken` 上的 `addLiquidity / removeLiquidity`
+- `lpA / lpB / lpC` 在 `baseToken <-> quoteToken` 上的 `addLiquidity / removeLiquidity`
 - `fee -> quote`
 - `quote -> fee`
 - `base -> quote`
@@ -286,7 +286,10 @@ forge test --match-path test/invariant/FluxSwapHybridAmmFeeOnTransferInvariant.t
 - `quote / base / fee` 三类 recipient 的最终到账总和必须与单跳 / 多跳模型一致
 - Router 不得残留 `feeToken / quoteToken / baseToken / LP token`
 - 三种底层 token 的总量必须都能被已跟踪账户 + 两个 Pair + Treasury + Router 完整解释
-- 两个 Pair 的 LP 总供应量都必须能被 `lpA / lpB` 持仓 + `address(0)` 完整解释
+- 两个 Pair 的 LP 总供应量都必须能被 `lpA / lpB / lpC` 持仓 + `address(0)` 完整解释
+- `lpA / lpB / lpC` 在两个 Pair 上的 LP 持仓，只能由 add/remove liquidity 的真实铸造 / 销毁数量驱动变化，不能在 swap 或其他路径里漂移
+- `lpA / lpB / lpC` 的 `feeToken / quoteToken / baseToken` 余额，必须能被 addLiquidity 的实际入池金额与 removeLiquidity 的真实净回款精确解释，不能在 swap 路径里被动漂移
+- `feeQuotePair` 与 `baseQuotePair` 对 LP actor 底层余额的影响必须保持隔离：`feeToken` 只能由 feeQuote 流量解释，`baseToken` 只能由 baseQuote 流量解释，`quoteToken` 必须能被两个 Pair 的净流量精确拼回
 
 ## 当前测试价值
 
@@ -299,7 +302,7 @@ forge test --match-path test/invariant/FluxSwapHybridAmmFeeOnTransferInvariant.t
 
 ## 后续高优先方向
 
-当前 `managed pools`、`Treasury -> Distributor -> Manager`、AMM 主路径、共享 token 的双 Pair 混排、fee-on-transfer supporting 主路径、双 fee token 四跳路径，以及“普通 AMM + supporting + 多跳桥接 + 多 LP 流动性迁移”混合路径都已经纳入 invariant 覆盖。接下来更值得继续补的是：
+当前 `managed pools`、`Treasury -> Distributor -> Manager`、AMM 主路径、共享 token 的双 Pair 混排、fee-on-transfer supporting 主路径、双 fee token 四跳路径，以及“普通 AMM + supporting + 多跳桥接 + 多 LP 流动性迁移”混合路径都已经纳入 invariant 覆盖，连同 LP 现金流精确记账与跨 Pair 隔离约束也已经补齐。接下来更值得继续补的是：
 
 - 把现有部分更长的 stateful fuzz 再上提成更标准的 `Handler + targetContract()` 风格，减少“固定序列”测试和“不变量”测试之间的断层
-- 如果还要继续加深，可补“多 LP actor + 不同比例加减仓 + 普通 swap / supporting swap / 多跳桥接”联合 invariant，把 LP 份额迁移和路径切换同时压进长期随机序列
+- 如果还要继续加深，可补更细的经济约束，例如 LP 在极端多轮 add/remove 后的净值归因、以及更多跨合约随机治理动作插入下的长期资金隔离
