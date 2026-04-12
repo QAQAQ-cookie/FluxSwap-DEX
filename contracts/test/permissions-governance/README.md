@@ -28,6 +28,7 @@
 
 ## 当前覆盖概览
 
+- 当前共登记 `8` 个权限治理测试文件，分布在 `3` 个子层级
 - 金库治理：`FluxSwapTreasury`
 - 角色治理：`FluxBuybackExecutor`、`FluxMultiPoolManager`、`FluxRevenueDistributor`、`FluxToken`
 - 池治理：`FluxPoolFactory`、`FluxSwapFactory`、`FluxSwapStakingRewards`
@@ -49,6 +50,7 @@ npx hardhat test test/permissions-governance/role-operators/FluxRevenueDistribut
 ## 当前状态
 
 - `permissions-governance` 的三个现有子层级都已经建立 README，并登记了当前测试文件
+- 主 README 与三个子目录 README 已和当前 `8` 个测试文件对齐
 - 当前这一层已形成稳定基线，适合继续在新增治理入口时按目录扩展
 
 ## 后续维护约束

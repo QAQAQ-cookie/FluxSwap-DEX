@@ -16,7 +16,8 @@
 - 用途：规则检查、风格约束、基础静态扫描
 - 运行命令：`npm run static:solhint`
 - 聚合命令：`npm run test:static-analysis`
-- 当前配置文件：[.solhint.json](/D:/work/CodeLab/FluxSwap-DEX/contracts/.solhint.json)
+- 当前配置文件：`contracts/.solhint.json`
+- 说明：当前 npm 脚本层只封装了 `solhint`，因此 `test:static-analysis` 现阶段等价于执行一次 `solhint`
 
 当前扫描口径：
 
@@ -34,10 +35,10 @@
 
 对应 warning 为：
 
-- [FluxSwapPair.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxSwapPair.sol#L204): `avoid-low-level-calls`
-- [FluxSwapFactory.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxSwapFactory.sol#L34): `no-inline-assembly`
-- [FluxSwapERC20.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxSwapERC20.sol#L25): `no-inline-assembly`
-- [FluxBuybackExecutor.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxBuybackExecutor.sol#L201): `avoid-low-level-calls`
+- `contracts/FluxSwapPair.sol:204` - `avoid-low-level-calls`
+- `contracts/FluxSwapFactory.sol:34` - `no-inline-assembly`
+- `contracts/FluxSwapERC20.sol:25` - `no-inline-assembly`
+- `contracts/FluxBuybackExecutor.sol:201` - `avoid-low-level-calls`
 
 当前判断：
 
@@ -51,6 +52,7 @@
 - 当前编译入口：`Foundry`
 - 当前建议环境：`WSL Ubuntu`
 - 建议命令：在 `contracts` 目录下执行 `slither . --print human-summary`
+- 说明：`slither` 当前未封装进 npm runner，保持命令行直跑，避免把环境依赖隐藏在脚本后面
 
 截至 2026-04-11，本地最新实跑摘要为：
 
@@ -69,7 +71,7 @@
 
 人工复核后的收口报告见：
 
-- [SlitherReport.md](/D:/work/CodeLab/FluxSwap-DEX/contracts/test/static-analysis/SlitherReport.md)
+- `test/static-analysis/SlitherReport.md`
 
 ### `Foundry`
 
@@ -100,11 +102,12 @@ slither --version
 - `solhint` 已接入并可稳定运行
 - `slither` 已通过 Foundry 编译链跑通
 - 当前静态分析基线已形成，可重复执行
+- README 与 `test/static-analysis/SlitherReport.md` 的当前口径已对齐
 - 当前未发现需要“立即修复后才能继续测试”的明确高危实现缺陷
 
 ## 已知限制
 
-- `slither` 目前没有额外封装成 npm runner，仍以命令行执行为主
+- `slither` 目前没有额外封装成 npm runner，`npm run test:static-analysis` 也不会代替它执行
 - Windows 下若当前 shell 未直接配置 `forge` / `slither`，建议切到 `WSL Ubuntu` 运行
 - 当前 WSL 环境会输出 `/etc/wsl.conf` 中 `user.default` 重复定义的提示
   - 该提示不影响本次 `slither` 成功执行
@@ -113,5 +116,5 @@ slither --version
 
 ## 本目录文件
 
-- [README.md](/D:/work/CodeLab/FluxSwap-DEX/contracts/test/static-analysis/README.md)：静态分析执行口径与当前基线
-- [SlitherReport.md](/D:/work/CodeLab/FluxSwap-DEX/contracts/test/static-analysis/SlitherReport.md)：`Slither` 人工复核后的收口结论
+- `README.md`：静态分析执行口径与当前基线
+- `SlitherReport.md`：`Slither` 人工复核后的收口结论
