@@ -7,6 +7,7 @@ import {
   useAccount,
   useBalance,
   useChainId,
+  usePublicClient,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from 'wagmi';
@@ -15,12 +16,18 @@ import {
   ChevronDown,
   Info,
   Settings,
+  ShieldOff,
+  Wallet,
   X,
 } from 'lucide-react';
 import { formatUnits, maxUint256, zeroAddress } from 'viem';
 
 import { ActionButton } from '@/components/ActionButton';
-import { getContractAddress, isFluxSupportedChain } from '@/config/contracts';
+import {
+  getContractAddress,
+  getLocalGasOverride,
+  isFluxSupportedChain,
+} from '@/config/contracts';
 import { getSwapTokenOptions, type SwapTokenOption } from '@/config/tokens';
 import {
   fluxSwapRouterAbi,
@@ -39,9 +46,10 @@ import {
   parsePercentToBps,
 } from '@/lib/amounts';
 import { formatErrorMessage } from '@/lib/errors';
+import { watchWalletAsset } from '@/lib/wallet';
 
 type SelectorTarget = 'pay' | 'receive' | null;
-type ActionKind = 'approve' | 'swap' | null;
+type ActionKind = 'approve' | 'revoke' | 'swap' | null;
 
 function getTokenBySymbol(
   tokens: SwapTokenOption[],
@@ -109,6 +117,8 @@ export default function SwapPage() {
     poolState: isZh ? '池子状态' : 'Pool Status',
     approveButton: (symbol: string) => (isZh ? `授权 ${symbol}` : `Approve ${symbol}`),
     approving: isZh ? '授权中...' : 'Approving...',
+    approvalSubmitted: isZh ? '授权已提交' : 'Approval submitted',
+    approvalConfirmed: isZh ? '授权已确认' : 'Approval confirmed',
     swapping: isZh ? '兑换中...' : 'Swapping...',
     readyToSwap: isZh ? '立即兑换' : 'Swap Now',
     liveQuote: isZh ? '链上报价已就绪' : 'Live quote ready',
@@ -118,8 +128,17 @@ export default function SwapPage() {
     loading: isZh ? '加载中...' : 'Loading...',
   };
 
+  const revokeApprovalLabel = (symbol: string) =>
+    isZh ? `撤销 ${symbol} 授权` : `Revoke ${symbol} approval`;
+  const addFluxToWalletLabel = isZh ? '添加 FLUX 到钱包' : 'Add FLUX to wallet';
+  const walletPromptOpenedLabel = isZh ? '已向钱包发起添加请求' : 'Wallet prompt opened';
+  const walletPromptUnavailableLabel = isZh
+    ? '当前钱包不支持添加资产'
+    : 'This wallet does not support adding assets';
+
   const mounted = useIsClient();
   const chainId = useChainId();
+  const publicClient = usePublicClient({ chainId });
   const { address, isConnected } = useAccount();
   const { openConnectModal } = useConnectModal();
   const { writeContractAsync, data: hash, isPending: isWritePending } =
@@ -139,6 +158,7 @@ export default function SwapPage() {
   const [deadline, setDeadline] = useState('20');
   const [openSelector, setOpenSelector] = useState<SelectorTarget>(null);
   const [txError, setTxError] = useState<string | null>(null);
+  const [walletNotice, setWalletNotice] = useState<string | null>(null);
   const [lastAction, setLastAction] = useState<ActionKind>(null);
 
   const deferredPayAmount = useDeferredValue(payAmount);
@@ -294,20 +314,31 @@ export default function SwapPage() {
       allowance !== undefined &&
       parsedPayAmount > allowance,
   );
+  const canRevokeAllowance = Boolean(
+    payToken?.kind === 'erc20' &&
+      allowance !== undefined &&
+      allowance > BigInt(0),
+  );
 
   const slippageBps = parsePercentToBps(slippage);
   const amountOutMin =
     quotedAmountOut !== undefined
       ? (quotedAmountOut * (BigInt(10000) - slippageBps)) / BigInt(10000)
       : undefined;
-  const transactionDeadline =
-    BigInt(Math.floor(Date.now() / 1000)) +
-    BigInt(Math.max(1, Number.parseInt(deadline || '20', 10) || 20) * 60);
   const isSubmitting = isWritePending || isConfirming;
+  const localGasOverride = getLocalGasOverride(chainId);
 
   let actionLabel = copy.readyToSwap;
   let actionDisabled = false;
   let actionKind: ActionKind = 'swap';
+  const statusLabel =
+    lastAction === 'approve' || lastAction === 'revoke'
+      ? isConfirmed
+        ? copy.approvalConfirmed
+        : copy.approvalSubmitted
+      : isConfirmed
+        ? copy.txConfirmed
+        : copy.txSubmitted;
 
   if (!mounted || !isConnected) {
     actionLabel = t('swap.connectWallet');
@@ -345,7 +376,10 @@ export default function SwapPage() {
     actionDisabled = true;
     actionKind = null;
   } else if (isSubmitting) {
-    actionLabel = lastAction === 'approve' ? copy.approving : copy.swapping;
+    actionLabel =
+      lastAction === 'approve' || lastAction === 'revoke'
+        ? copy.approving
+        : copy.swapping;
     actionDisabled = true;
     actionKind = null;
   } else if (needsApproval) {
@@ -366,7 +400,9 @@ export default function SwapPage() {
       ? copy.nativeAsset
       : allowance === undefined
         ? copy.loading
-        : formatBigIntAmount(allowance, payToken.decimals, 4);
+        : allowance === maxUint256
+          ? (isZh ? '无限授权' : 'Unlimited')
+          : formatBigIntAmount(allowance, payToken.decimals, 4);
 
   const handlePayAmountChange = (value: string) => {
     if (!DECIMAL_INPUT_REGEX.test(value)) {
@@ -411,6 +447,55 @@ export default function SwapPage() {
     setPayAmount(payBalanceData.formatted);
   };
 
+  const handleWatchFlux = async () => {
+    if (!fluxTokenAddress) {
+      return;
+    }
+
+    setWalletNotice(null);
+
+    try {
+      const watched = await watchWalletAsset({
+        address: fluxTokenAddress,
+        symbol: 'FLUX',
+        decimals: 18,
+      });
+      setWalletNotice(watched ? walletPromptOpenedLabel : walletPromptUnavailableLabel);
+    } catch (error) {
+      setWalletNotice(
+        formatErrorMessage(error, {
+          rejectedMessage: isZh ? '你已取消本次钱包添加请求' : 'You cancelled the wallet asset request',
+        }),
+      );
+    }
+  };
+
+  const handleRevokeAllowance = async () => {
+    if (!payToken?.address || !routerAddress) {
+      return;
+    }
+
+    setTxError(null);
+    setLastAction('revoke');
+
+    try {
+      await writeContractAsync({
+        address: payToken.address,
+        abi: fluxTokenAbi,
+        functionName: 'approve',
+        args: [routerAddress, BigInt(0)],
+        chainId,
+        ...localGasOverride,
+      });
+    } catch (error) {
+      setTxError(
+        formatErrorMessage(error, {
+          rejectedMessage: isZh ? '你已取消本次授权' : 'You cancelled the approval request',
+        }),
+      );
+    }
+  };
+
   const handleAction = async () => {
     if (!mounted || !isConnected) {
       openConnectModal?.();
@@ -436,6 +521,7 @@ export default function SwapPage() {
           functionName: 'approve',
           args: [routerAddress, maxUint256],
           chainId,
+          ...localGasOverride,
         });
         return;
       }
@@ -443,6 +529,14 @@ export default function SwapPage() {
       if (!parsedPayAmount || amountOutMin === undefined) {
         return;
       }
+
+      if (!publicClient) {
+        throw new Error('Unable to read the latest block timestamp.');
+      }
+
+      const transactionDeadline =
+        (await publicClient.getBlock()).timestamp +
+        BigInt(Math.max(1, Number.parseInt(deadline || '20', 10) || 20) * 60);
 
       if (payToken.kind === 'native') {
         await writeContractAsync({
@@ -452,6 +546,7 @@ export default function SwapPage() {
           args: [amountOutMin, quotePath, address, transactionDeadline],
           value: parsedPayAmount,
           chainId,
+          ...localGasOverride,
         });
         return;
       }
@@ -462,9 +557,17 @@ export default function SwapPage() {
         functionName: 'swapExactTokensForETH',
         args: [parsedPayAmount, amountOutMin, quotePath, address, transactionDeadline],
         chainId,
+        ...localGasOverride,
       });
     } catch (error) {
-      setTxError(formatErrorMessage(error));
+      setTxError(
+        formatErrorMessage(error, {
+          rejectedMessage:
+            actionKind === 'approve'
+              ? '你已取消本次授权'
+              : '你已取消本次交易',
+        }),
+      );
     }
   };
 
@@ -611,10 +714,36 @@ export default function SwapPage() {
                 <span>{copy.allowance}</span>
                 <span className="font-medium">{allowanceStatus}</span>
               </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={handleWatchFlux}
+                  disabled={!fluxTokenAddress}
+                  className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                >
+                  <Wallet size={14} />
+                  <span>{addFluxToWalletLabel}</span>
+                </button>
+
+                {canRevokeAllowance && payToken?.kind === 'erc20' && (
+                  <button
+                    onClick={handleRevokeAllowance}
+                    disabled={isSubmitting}
+                    className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-900/60 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/20"
+                  >
+                    <ShieldOff size={14} />
+                    <span>{revokeApprovalLabel(payToken.symbol)}</span>
+                  </button>
+                )}
+              </div>
               {quoteQuery.error && (
                 <div className="flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
                   <Info size={16} className="mt-0.5 shrink-0" />
                   <span>{copy.quoteError}</span>
+                </div>
+              )}
+              {walletNotice && (
+                <div className="rounded-xl bg-amber-50 px-3 py-2 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+                  {walletNotice}
                 </div>
               )}
               {txError && (
@@ -624,7 +753,7 @@ export default function SwapPage() {
               )}
               {hash && (
                 <div className="rounded-xl bg-blue-50 px-3 py-2 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">
-                  {isConfirmed ? copy.txConfirmed : copy.txSubmitted}: {hash.slice(0, 10)}...
+                  {statusLabel}: {hash.slice(0, 10)}...
                 </div>
               )}
             </div>

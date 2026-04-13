@@ -73,3 +73,14 @@ export function getRequiredContractAddress(
 export function isFluxSupportedChain(chainId?: number | null): boolean {
   return Object.keys(getContractsForChain(chainId)).length > 0
 }
+
+export function getLocalGasOverride(
+  chainId?: number | null,
+  gas: bigint = BigInt(8_000_000),
+): { gas?: bigint } {
+  if (chainId === hardhat.id) {
+    return { gas }
+  }
+
+  return {}
+}

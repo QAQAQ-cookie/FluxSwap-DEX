@@ -1,25 +1,39 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import {
   useAccount,
   useBalance,
   useChainId,
+  usePublicClient,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from 'wagmi';
 import {
   Droplets,
+  History,
   Info,
   Plus,
   ShieldCheck,
+  ShieldOff,
+  Wallet,
 } from 'lucide-react';
-import { formatUnits, maxUint256, zeroAddress } from 'viem';
+import {
+  formatUnits,
+  maxUint256,
+  parseEventLogs,
+  type Address,
+  zeroAddress,
+} from 'viem';
 
-import { getContractAddress, isFluxSupportedChain } from '@/config/contracts';
+import {
+  getContractAddress,
+  getLocalGasOverride,
+  isFluxSupportedChain,
+} from '@/config/contracts';
 import { ActionButton } from '@/components/ActionButton';
 import { TokenAmountCard } from '@/components/TokenAmountCard';
 import { useIsClient } from '@/hooks/useIsClient';
@@ -30,6 +44,11 @@ import {
   parsePercentToBps,
 } from '@/lib/amounts';
 import { formatErrorMessage } from '@/lib/errors';
+import {
+  formatTimestamp,
+  truncateAddress,
+  watchWalletAsset,
+} from '@/lib/wallet';
 import {
   fluxSwapPairAbi,
   fluxSwapRouterAbi,
@@ -45,10 +64,22 @@ import {
 
 type FlowAction =
   | 'approve-token'
+  | 'revoke-token'
   | 'add-liquidity'
   | 'approve-lp'
+  | 'revoke-lp'
   | 'remove-liquidity'
   | null;
+
+type PoolActivityItem = {
+  id: string;
+  title: string;
+  detail: string;
+  actor: Address;
+  txHash: `0x${string}`;
+  timestamp?: number;
+  isMine: boolean;
+};
 
 export default function PoolPage() {
   const { t, i18n } = useTranslation();
@@ -68,6 +99,18 @@ export default function PoolPage() {
     insufficientLp: isZh ? 'LP 余额不足' : 'Insufficient LP balance',
     approveFlux: isZh ? '授权 FLUX' : 'Approve FLUX',
     approveLp: isZh ? '授权 LP' : 'Approve LP',
+    approvalSubmitted: isZh ? '授权已提交' : 'Approval submitted',
+    approvalConfirmed: isZh ? '授权已确认' : 'Approval confirmed',
+    revokeFluxApproval: isZh ? '撤销 FLUX 授权' : 'Revoke FLUX approval',
+    revokeLpApproval: isZh ? '撤销 LP 授权' : 'Revoke LP approval',
+    addFluxToWallet: isZh ? '添加 FLUX 到钱包' : 'Add FLUX to wallet',
+    addLpToWallet: isZh ? '添加 LP 到钱包' : 'Add LP to wallet',
+    walletPromptOpened: isZh ? '已向钱包发起添加请求' : 'Wallet prompt opened',
+    walletPromptUnavailable: isZh ? '当前钱包不支持添加资产' : 'This wallet does not support adding assets',
+    activityTitle: isZh ? '池子最近交易' : 'Recent Pool Activity',
+    activityLoading: isZh ? '正在读取链上交易...' : 'Loading on-chain activity...',
+    activityEmpty: isZh ? '当前池子还没有可展示的链上交易记录' : 'No recent on-chain pool activity yet',
+    mine: isZh ? '我的操作' : 'Mine',
     addNow: isZh ? '添加流动性' : 'Add Liquidity',
     removeNow: isZh ? '移除流动性' : 'Remove Liquidity',
     approving: isZh ? '授权中...' : 'Approving...',
@@ -91,6 +134,7 @@ export default function PoolPage() {
 
   const mounted = useIsClient();
   const chainId = useChainId();
+  const publicClient = usePublicClient({ chainId });
   const { address, isConnected } = useAccount();
   const { openConnectModal } = useConnectModal();
   const { writeContractAsync, data: hash, isPending: isWritePending } =
@@ -104,6 +148,9 @@ export default function PoolPage() {
   const [slippage, setSlippage] = useState('0.5');
   const [txError, setTxError] = useState<string | null>(null);
   const [lastAction, setLastAction] = useState<FlowAction>(null);
+  const [walletNotice, setWalletNotice] = useState<string | null>(null);
+  const [activity, setActivity] = useState<PoolActivityItem[]>([]);
+  const [isActivityLoading, setIsActivityLoading] = useState(false);
 
   const supportedChain = isFluxSupportedChain(chainId);
   const routerAddress = getContractAddress('FluxSwapRouter', chainId);
@@ -227,6 +274,29 @@ export default function PoolPage() {
       reservesData[0] > BigInt(0) &&
       reservesData[1] > BigInt(0),
   );
+  const fluxIsToken0 =
+    Boolean(token0 && fluxTokenAddress) &&
+    token0?.toLowerCase() === fluxTokenAddress?.toLowerCase();
+
+  const unlimitedApprovalLabel = isZh ? '无限授权' : 'Unlimited';
+  const tokenAllowanceDisplay =
+    tokenAllowance === undefined
+      ? '0.00'
+      : tokenAllowance === maxUint256
+        ? unlimitedApprovalLabel
+        : formatBigIntAmount(tokenAllowance, 18, 4);
+  const lpAllowanceDisplay =
+    lpAllowance === undefined
+      ? '0.00'
+      : lpAllowance === maxUint256
+        ? unlimitedApprovalLabel
+        : formatBigIntAmount(lpAllowance, 18, 4);
+  const canRevokeTokenAllowance = Boolean(
+    tokenAllowance !== undefined && tokenAllowance > BigInt(0),
+  );
+  const canRevokeLpAllowance = Boolean(
+    lpAllowance !== undefined && lpAllowance > BigInt(0),
+  );
 
   const reserveFlux =
     reservesData && token0 && fluxTokenAddress
@@ -240,6 +310,135 @@ export default function PoolPage() {
         ? reservesData[1]
         : reservesData[0]
       : undefined;
+
+  useEffect(() => {
+    if (!publicClient || !normalizedPairAddress || !fluxTokenAddress || !token0) {
+      setActivity([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadActivity = async () => {
+      setIsActivityLoading(true);
+
+      try {
+        const latestBlock = await publicClient.getBlockNumber();
+        const fromBlock = latestBlock > BigInt(5000) ? latestBlock - BigInt(5000) : BigInt(0);
+        const rawLogs = await publicClient.getLogs({
+          address: normalizedPairAddress,
+          fromBlock,
+          toBlock: latestBlock,
+        });
+        const parsedLogs = parseEventLogs({
+          abi: fluxSwapPairAbi,
+          logs: rawLogs,
+          eventName: ['Mint', 'Burn', 'Swap'],
+          strict: false,
+        });
+        const recentLogs = parsedLogs
+          .filter((log) => Boolean(log.eventName && log.transactionHash && log.blockNumber !== null))
+          .sort((left, right) => {
+            const blockDiff = Number((right.blockNumber ?? BigInt(0)) - (left.blockNumber ?? BigInt(0)));
+            if (blockDiff !== 0) {
+              return blockDiff;
+            }
+
+            return Number(right.logIndex ?? 0) - Number(left.logIndex ?? 0);
+          })
+          .slice(0, 8);
+
+        const items = await Promise.all(
+          recentLogs.map(async (log) => {
+            const [transaction, block] = await Promise.all([
+              publicClient
+                .getTransaction({ hash: log.transactionHash as `0x${string}` })
+                .catch(() => undefined),
+              publicClient
+                .getBlock({ blockNumber: log.blockNumber ?? undefined })
+                .catch(() => undefined),
+            ]);
+
+            const actor = (transaction?.from ?? zeroAddress) as Address;
+            const args =
+              ((log as unknown as { args?: Record<string, bigint | Address> }).args ?? {});
+            const amount0 =
+              typeof args.amount0 === 'bigint' ? args.amount0 : BigInt(0);
+            const amount1 =
+              typeof args.amount1 === 'bigint' ? args.amount1 : BigInt(0);
+            const tokenAmount = fluxIsToken0 ? amount0 : amount1;
+            const ethAmount = fluxIsToken0 ? amount1 : amount0;
+            let title: string = log.eventName;
+            let detail = '--';
+
+            if (log.eventName === 'Mint') {
+              title = isZh ? '添加流动性' : 'Added liquidity';
+              detail = `${formatBigIntAmount(ethAmount, 18, 4)} ETH + ${formatBigIntAmount(tokenAmount, 18, 4)} FLUX`;
+            }
+
+            if (log.eventName === 'Burn') {
+              title = isZh ? '移除流动性' : 'Removed liquidity';
+              detail = `${formatBigIntAmount(ethAmount, 18, 4)} ETH + ${formatBigIntAmount(tokenAmount, 18, 4)} FLUX`;
+            }
+
+            if (log.eventName === 'Swap') {
+              const amount0In =
+                typeof args.amount0In === 'bigint' ? args.amount0In : BigInt(0);
+              const amount1In =
+                typeof args.amount1In === 'bigint' ? args.amount1In : BigInt(0);
+              const amount0Out =
+                typeof args.amount0Out === 'bigint' ? args.amount0Out : BigInt(0);
+              const amount1Out =
+                typeof args.amount1Out === 'bigint' ? args.amount1Out : BigInt(0);
+              const fluxIn = fluxIsToken0 ? amount0In : amount1In;
+              const ethIn = fluxIsToken0 ? amount1In : amount0In;
+              const fluxOut = fluxIsToken0 ? amount0Out : amount1Out;
+              const ethOut = fluxIsToken0 ? amount1Out : amount0Out;
+
+              if (ethIn > BigInt(0) && fluxOut > BigInt(0)) {
+                title = isZh ? '买入 FLUX' : 'Bought FLUX';
+                detail = `${formatBigIntAmount(ethIn, 18, 4)} ETH -> ${formatBigIntAmount(fluxOut, 18, 4)} FLUX`;
+              } else if (fluxIn > BigInt(0) && ethOut > BigInt(0)) {
+                title = isZh ? '卖出 FLUX' : 'Sold FLUX';
+                detail = `${formatBigIntAmount(fluxIn, 18, 4)} FLUX -> ${formatBigIntAmount(ethOut, 18, 4)} ETH`;
+              } else {
+                title = 'Swap';
+                detail = `${formatBigIntAmount(ethIn + ethOut, 18, 4)} ETH / ${formatBigIntAmount(fluxIn + fluxOut, 18, 4)} FLUX`;
+              }
+            }
+
+            return {
+              id: `${log.transactionHash}-${log.logIndex ?? 0}`,
+              title,
+              detail,
+              actor,
+              txHash: log.transactionHash as `0x${string}`,
+              timestamp: block ? Number(block.timestamp) : undefined,
+              isMine: Boolean(address && actor.toLowerCase() === address.toLowerCase()),
+            } satisfies PoolActivityItem;
+          }),
+        );
+
+        if (!cancelled) {
+          setActivity(items);
+        }
+      } catch {
+        if (!cancelled) {
+          setActivity([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsActivityLoading(false);
+        }
+      }
+    };
+
+    void loadActivity();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [address, fluxIsToken0, fluxTokenAddress, isZh, normalizedPairAddress, publicClient, token0]);
 
   const addEthParsed = parseAmount(addEthAmount);
   const addFluxParsed = parseAmount(addFluxAmount);
@@ -286,8 +485,7 @@ export default function PoolPage() {
       ? (expectedEthOut * (BigInt(10000) - slippageBps)) / BigInt(10000)
       : undefined;
 
-  const deadline =
-    BigInt(Math.floor(Date.now() / 1000)) + BigInt(20 * 60);
+  const localGasOverride = getLocalGasOverride(chainId);
 
   const insufficientEth = Boolean(
     addEthParsed &&
@@ -306,6 +504,17 @@ export default function PoolPage() {
   );
 
   const isSubmitting = isWritePending || isConfirming;
+  const statusLabel =
+    lastAction === 'approve-token' ||
+    lastAction === 'approve-lp' ||
+    lastAction === 'revoke-token' ||
+    lastAction === 'revoke-lp'
+      ? isConfirmed
+        ? copy.approvalConfirmed
+        : copy.approvalSubmitted
+      : isConfirmed
+        ? copy.txConfirmed
+        : copy.txSubmitted;
 
   let addButtonLabel = copy.addNow;
   let addDisabled = false;
@@ -391,6 +600,104 @@ export default function PoolPage() {
     }
   };
 
+  const handleWatchFlux = async () => {
+    if (!fluxTokenAddress) {
+      return;
+    }
+
+    setWalletNotice(null);
+
+    try {
+      const watched = await watchWalletAsset({
+        address: fluxTokenAddress,
+        symbol: 'FLUX',
+        decimals: 18,
+      });
+      setWalletNotice(watched ? copy.walletPromptOpened : copy.walletPromptUnavailable);
+    } catch (error) {
+      setWalletNotice(
+        formatErrorMessage(error, {
+          rejectedMessage: isZh ? '你已取消本次钱包添加请求' : 'You cancelled the wallet asset request',
+        }),
+      );
+    }
+  };
+
+  const handleWatchLp = async () => {
+    if (!normalizedPairAddress) {
+      return;
+    }
+
+    setWalletNotice(null);
+
+    try {
+      const watched = await watchWalletAsset({
+        address: normalizedPairAddress,
+        symbol: 'FLUX-LP',
+        decimals: 18,
+      });
+      setWalletNotice(watched ? copy.walletPromptOpened : copy.walletPromptUnavailable);
+    } catch (error) {
+      setWalletNotice(
+        formatErrorMessage(error, {
+          rejectedMessage: isZh ? '你已取消本次钱包添加请求' : 'You cancelled the wallet asset request',
+        }),
+      );
+    }
+  };
+
+  const handleRevokeTokenApproval = async () => {
+    if (!fluxTokenAddress || !routerAddress) {
+      return;
+    }
+
+    setTxError(null);
+    setLastAction('revoke-token');
+
+    try {
+      await writeContractAsync({
+        address: fluxTokenAddress,
+        abi: fluxTokenAbi,
+        functionName: 'approve',
+        args: [routerAddress, BigInt(0)],
+        chainId,
+        ...localGasOverride,
+      });
+    } catch (error) {
+      setTxError(
+        formatErrorMessage(error, {
+          rejectedMessage: isZh ? '你已取消本次授权' : 'You cancelled the approval request',
+        }),
+      );
+    }
+  };
+
+  const handleRevokeLpApproval = async () => {
+    if (!normalizedPairAddress || !routerAddress) {
+      return;
+    }
+
+    setTxError(null);
+    setLastAction('revoke-lp');
+
+    try {
+      await writeContractAsync({
+        address: normalizedPairAddress,
+        abi: fluxSwapPairAbi,
+        functionName: 'approve',
+        args: [routerAddress, BigInt(0)],
+        chainId,
+        ...localGasOverride,
+      });
+    } catch (error) {
+      setTxError(
+        formatErrorMessage(error, {
+          rejectedMessage: isZh ? '你已取消本次授权' : 'You cancelled the approval request',
+        }),
+      );
+    }
+  };
+
   const handleAddEthChange = (value: string) => {
     setAddEthAmount(value);
 
@@ -456,6 +763,7 @@ export default function PoolPage() {
           functionName: 'approve',
           args: [routerAddress, maxUint256],
           chainId,
+          ...localGasOverride,
         });
         return;
       }
@@ -463,6 +771,12 @@ export default function PoolPage() {
       if (!addEthParsed || !addFluxParsed || !addEthMin || !addFluxMin) {
         return;
       }
+
+      if (!publicClient) {
+        throw new Error('Unable to read the latest block timestamp.');
+      }
+
+      const deadline = (await publicClient.getBlock()).timestamp + BigInt(20 * 60);
 
       await writeContractAsync({
         address: routerAddress,
@@ -478,9 +792,17 @@ export default function PoolPage() {
         ],
         value: addEthParsed,
         chainId,
+        ...localGasOverride,
       });
     } catch (error) {
-      setTxError(formatErrorMessage(error));
+      setTxError(
+        formatErrorMessage(error, {
+          rejectedMessage:
+            addAction === 'approve-token'
+              ? '你已取消本次授权'
+              : '你已取消本次交易',
+        }),
+      );
     }
   };
 
@@ -511,6 +833,7 @@ export default function PoolPage() {
           functionName: 'approve',
           args: [routerAddress, maxUint256],
           chainId,
+          ...localGasOverride,
         });
         return;
       }
@@ -518,6 +841,12 @@ export default function PoolPage() {
       if (!removeLpParsed || !removeFluxMin || !removeEthMin) {
         return;
       }
+
+      if (!publicClient) {
+        throw new Error('Unable to read the latest block timestamp.');
+      }
+
+      const deadline = (await publicClient.getBlock()).timestamp + BigInt(20 * 60);
 
       await writeContractAsync({
         address: routerAddress,
@@ -532,9 +861,17 @@ export default function PoolPage() {
           deadline,
         ],
         chainId,
+        ...localGasOverride,
       });
     } catch (error) {
-      setTxError(formatErrorMessage(error));
+      setTxError(
+        formatErrorMessage(error, {
+          rejectedMessage:
+            removeAction === 'approve-lp'
+              ? '你已取消本次授权'
+              : '你已取消本次交易',
+        }),
+      );
     }
   };
 
@@ -609,11 +946,59 @@ export default function PoolPage() {
                   </div>
                 </div>
                 <div className="text-right text-xs text-gray-500 dark:text-gray-400">
-                  <div>{copy.tokenAllowance}: {formatBigIntAmount(tokenAllowance, 18, 4)}</div>
-                  <div>{copy.lpAllowance}: {formatBigIntAmount(lpAllowance, 18, 4)}</div>
+                  <div>{copy.tokenAllowance}: {tokenAllowanceDisplay}</div>
+                  <div>{copy.lpAllowance}: {lpAllowanceDisplay}</div>
                 </div>
               </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  onClick={handleWatchFlux}
+                  disabled={!fluxTokenAddress}
+                  className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                >
+                  <Wallet size={14} />
+                  <span>{copy.addFluxToWallet}</span>
+                </button>
+
+                <button
+                  onClick={handleWatchLp}
+                  disabled={!normalizedPairAddress}
+                  className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                >
+                  <Wallet size={14} />
+                  <span>{copy.addLpToWallet}</span>
+                </button>
+
+                {canRevokeTokenAllowance && (
+                  <button
+                    onClick={handleRevokeTokenApproval}
+                    disabled={isSubmitting}
+                    className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-900/60 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/20"
+                  >
+                    <ShieldOff size={14} />
+                    <span>{copy.revokeFluxApproval}</span>
+                  </button>
+                )}
+
+                {canRevokeLpAllowance && (
+                  <button
+                    onClick={handleRevokeLpApproval}
+                    disabled={isSubmitting}
+                    className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-900/60 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/20"
+                  >
+                    <ShieldOff size={14} />
+                    <span>{copy.revokeLpApproval}</span>
+                  </button>
+                )}
+              </div>
             </div>
+
+            {walletNotice && (
+              <div className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+                {walletNotice}
+              </div>
+            )}
 
             {txError && (
               <div className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-500/10 dark:text-red-300">
@@ -623,7 +1008,7 @@ export default function PoolPage() {
 
             {hash && (
               <div className="mt-4 rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">
-                {isConfirmed ? copy.txConfirmed : copy.txSubmitted}: {hash.slice(0, 10)}...
+                {statusLabel}: {hash.slice(0, 10)}...
               </div>
             )}
           </div>
@@ -756,7 +1141,7 @@ export default function PoolPage() {
               <div>
                 <div>{copy.bootstrapHint}</div>
                 <div className="mt-1">
-                  {copy.tokenAllowance}: {formatBigIntAmount(tokenAllowance, 18, 4)}
+                  {copy.tokenAllowance}: {tokenAllowanceDisplay}
                 </div>
               </div>
             </div>
@@ -792,6 +1177,70 @@ export default function PoolPage() {
               >
                 {isZh ? '前往 Earn 质押 LP' : 'Go to Earn'}
               </Link>
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-[2rem] border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-800">
+          <div className="mb-4 flex items-center gap-2">
+            <History size={18} className="text-gray-500 dark:text-gray-400" />
+            <div>
+              <div className="text-lg font-semibold text-gray-900 dark:text-white">
+                {copy.activityTitle}
+              </div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">
+                {normalizedPairAddress
+                  ? truncateAddress(normalizedPairAddress, 10, 8)
+                  : copy.poolMissing}
+              </div>
+            </div>
+          </div>
+
+          {!normalizedPairAddress ? (
+            <div className="rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-500 dark:bg-gray-900 dark:text-gray-400">
+              {copy.poolMissing}
+            </div>
+          ) : isActivityLoading ? (
+            <div className="rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-500 dark:bg-gray-900 dark:text-gray-400">
+              {copy.activityLoading}
+            </div>
+          ) : activity.length === 0 ? (
+            <div className="rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-500 dark:bg-gray-900 dark:text-gray-400">
+              {copy.activityEmpty}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {activity.map((item) => (
+                <div
+                  key={item.id}
+                  className="rounded-3xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/60"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">
+                          {item.title}
+                        </span>
+                        {item.isMine && (
+                          <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
+                            {copy.mine}
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-2 text-sm font-medium text-gray-900 dark:text-white">
+                        {item.detail}
+                      </div>
+                      <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                        {truncateAddress(item.actor)} · {truncateAddress(item.txHash, 10, 8)}
+                      </div>
+                    </div>
+
+                    <div className="text-right text-xs text-gray-500 dark:text-gray-400">
+                      {formatTimestamp(item.timestamp, isZh ? 'zh-CN' : 'en-US')}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>

@@ -15,13 +15,19 @@ import {
   Coins,
   Gift,
   Info,
+  ShieldOff,
   ShieldCheck,
   Sparkles,
   Vault,
+  Wallet,
 } from 'lucide-react';
 import { formatUnits, maxUint256, zeroAddress } from 'viem';
 
-import { getContractAddress, isFluxSupportedChain } from '@/config/contracts';
+import {
+  getContractAddress,
+  getLocalGasOverride,
+  isFluxSupportedChain,
+} from '@/config/contracts';
 import { ActionButton } from '@/components/ActionButton';
 import { TokenAmountCard } from '@/components/TokenAmountCard';
 import { useIsClient } from '@/hooks/useIsClient';
@@ -31,6 +37,7 @@ import {
   parseAmount,
 } from '@/lib/amounts';
 import { formatErrorMessage } from '@/lib/errors';
+import { watchWalletAsset } from '@/lib/wallet';
 import {
   fluxSwapLpStakingPoolAbi,
   fluxSwapPairAbi,
@@ -46,7 +53,7 @@ import {
   useReadFluxSwapPairAllowance,
 } from '@/lib/contracts';
 
-type EarnAction = 'approve-lp' | 'stake' | 'withdraw' | 'claim' | 'exit' | null;
+type EarnAction = 'approve-lp' | 'revoke-lp' | 'stake' | 'withdraw' | 'claim' | 'exit' | null;
 
 export default function EarnPage() {
   const { i18n } = useTranslation();
@@ -69,6 +76,8 @@ export default function EarnPage() {
     withdrawTitle: isZh ? '提取 LP' : 'Withdraw LP',
     rewardTitle: isZh ? '奖励中心' : 'Rewards',
     approveLp: isZh ? '授权 LP' : 'Approve LP',
+    approvalSubmitted: isZh ? '授权已提交' : 'Approval submitted',
+    approvalConfirmed: isZh ? '授权已确认' : 'Approval confirmed',
     stakeNow: isZh ? '立即质押' : 'Stake Now',
     withdrawNow: isZh ? '提取质押' : 'Withdraw',
     claimNow: isZh ? '领取奖励' : 'Claim Rewards',
@@ -116,6 +125,13 @@ export default function EarnPage() {
     fluxBalance: 'FLUX Balance',
   };
 
+  const revokeLpApprovalLabel = isZh ? '撤销 LP 授权' : 'Revoke LP approval';
+  const addLpToWalletLabel = isZh ? '添加 LP 到钱包' : 'Add LP to wallet';
+  const walletPromptOpenedLabel = isZh ? '已向钱包发起添加请求' : 'Wallet prompt opened';
+  const walletPromptUnavailableLabel = isZh
+    ? '当前钱包不支持添加资产'
+    : 'This wallet does not support adding assets';
+
   const mounted = useIsClient();
   const chainId = useChainId();
   const { address, isConnected } = useAccount();
@@ -128,6 +144,7 @@ export default function EarnPage() {
   const [stakeAmount, setStakeAmount] = useState('');
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [txError, setTxError] = useState<string | null>(null);
+  const [walletNotice, setWalletNotice] = useState<string | null>(null);
   const [lastAction, setLastAction] = useState<EarnAction>(null);
 
   const supportedChain = isFluxSupportedChain(chainId);
@@ -306,6 +323,9 @@ export default function EarnPage() {
       lpAllowance !== undefined &&
       parsedStakeAmount > lpAllowance,
   );
+  const canRevokeLpAllowance = Boolean(
+    lpAllowance !== undefined && lpAllowance > BigInt(0),
+  );
 
   const insufficientLp = Boolean(
     parsedStakeAmount &&
@@ -328,7 +348,16 @@ export default function EarnPage() {
       : copy.walletNeeded;
 
   const isSubmitting = isWritePending || isConfirming;
+  const statusLabel =
+    lastAction === 'approve-lp' || lastAction === 'revoke-lp'
+      ? isConfirmed
+        ? copy.approvalConfirmed
+        : copy.approvalSubmitted
+      : isConfirmed
+        ? copy.txConfirmed
+        : copy.txSubmitted;
   const handledReceiptHashRef = useRef<string | undefined>(undefined);
+  const localGasOverride = getLocalGasOverride(chainId);
 
   useEffect(() => {
     if (!hash || !isConfirmed || handledReceiptHashRef.current === hash) {
@@ -394,7 +423,7 @@ export default function EarnPage() {
     stakeDisabled = true;
   } else if (isSubmitting) {
     stakeLabel =
-      lastAction === 'approve-lp'
+      lastAction === 'approve-lp' || lastAction === 'revoke-lp'
         ? copy.approving
         : lastAction === 'stake'
           ? copy.staking
@@ -468,6 +497,55 @@ export default function EarnPage() {
     }
   };
 
+  const handleWatchLp = async () => {
+    if (!normalizedPairAddress) {
+      return;
+    }
+
+    setWalletNotice(null);
+
+    try {
+      const watched = await watchWalletAsset({
+        address: normalizedPairAddress,
+        symbol: 'FLUX-LP',
+        decimals: 18,
+      });
+      setWalletNotice(watched ? walletPromptOpenedLabel : walletPromptUnavailableLabel);
+    } catch (error) {
+      setWalletNotice(
+        formatErrorMessage(error, {
+          rejectedMessage: isZh ? '你已取消本次钱包添加请求' : 'You cancelled the wallet asset request',
+        }),
+      );
+    }
+  };
+
+  const handleRevokeLpApproval = async () => {
+    if (!normalizedPairAddress || !normalizedStakingPoolAddress) {
+      return;
+    }
+
+    setTxError(null);
+    setLastAction('revoke-lp');
+
+    try {
+      await writeContractAsync({
+        address: normalizedPairAddress,
+        abi: fluxSwapPairAbi,
+        functionName: 'approve',
+        args: [normalizedStakingPoolAddress, BigInt(0)],
+        chainId,
+        ...localGasOverride,
+      });
+    } catch (error) {
+      setTxError(
+        formatErrorMessage(error, {
+          rejectedMessage: isZh ? '你已取消本次授权' : 'You cancelled the approval request',
+        }),
+      );
+    }
+  };
+
   const handleStake = async () => {
     if (!mounted || !isConnected) {
       openConnectModal?.();
@@ -489,6 +567,7 @@ export default function EarnPage() {
           functionName: 'approve',
           args: [normalizedStakingPoolAddress, maxUint256],
           chainId,
+          ...localGasOverride,
         });
         return;
       }
@@ -503,9 +582,17 @@ export default function EarnPage() {
         functionName: 'stake',
         args: [parsedStakeAmount],
         chainId,
+        ...localGasOverride,
       });
     } catch (error) {
-      setTxError(formatErrorMessage(error));
+      setTxError(
+        formatErrorMessage(error, {
+          rejectedMessage:
+            stakeAction === 'approve-lp'
+              ? '你已取消本次授权'
+              : '你已取消本次交易',
+        }),
+      );
     }
   };
 
@@ -529,6 +616,7 @@ export default function EarnPage() {
         functionName: 'withdraw',
         args: [parsedWithdrawAmount],
         chainId,
+        ...localGasOverride,
       });
     } catch (error) {
       setTxError(formatErrorMessage(error));
@@ -555,6 +643,7 @@ export default function EarnPage() {
         functionName: 'getReward',
         args: [],
         chainId,
+        ...localGasOverride,
       });
     } catch (error) {
       setTxError(formatErrorMessage(error));
@@ -581,6 +670,7 @@ export default function EarnPage() {
         functionName: 'exit',
         args: [],
         chainId,
+        ...localGasOverride,
       });
     } catch (error) {
       setTxError(formatErrorMessage(error));
@@ -727,9 +817,15 @@ export default function EarnPage() {
             </div>
           )}
 
+          {walletNotice && (
+            <div className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+              {walletNotice}
+            </div>
+          )}
+
           {hash && (
             <div className="mt-4 rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">
-              {isConfirmed ? copy.txConfirmed : copy.txSubmitted}: {hash.slice(0, 10)}...
+              {statusLabel}: {hash.slice(0, 10)}...
               {isConfirmed && <span className="ml-2">- {copy.refreshNote}</span>}
             </div>
           )}
@@ -772,6 +868,27 @@ export default function EarnPage() {
               <div className="mt-2 flex items-center justify-between text-gray-600 dark:text-gray-300">
                 <span>{copy.lpAllowance}</span>
                 <span>{formatBigIntAmount(lpAllowance, 18, 4)}</span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  onClick={handleWatchLp}
+                  disabled={!normalizedPairAddress}
+                  className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                >
+                  <Wallet size={14} />
+                  <span>{addLpToWalletLabel}</span>
+                </button>
+
+                {canRevokeLpAllowance && (
+                  <button
+                    onClick={handleRevokeLpApproval}
+                    disabled={isSubmitting}
+                    className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-900/60 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/20"
+                  >
+                    <ShieldOff size={14} />
+                    <span>{revokeLpApprovalLabel}</span>
+                  </button>
+                )}
               </div>
             </div>
 
