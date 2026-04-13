@@ -37,7 +37,7 @@
       { token: "native", amount: "10000000000000000000" },
     ],
 
-    // 让业务模块能从 Treasury 拉取或烧毁对应资产。
+    // 让业务模块能从 Treasury 拉取或销毁对应资产。
     spenderApprovals: [
       { token: "token", spender: "manager", amount: "500000000000000000000000" },
       { token: "token", spender: "revenueDistributor", amount: "500000000000000000000000" },
@@ -48,14 +48,16 @@
   },
 
   funding: {
-    // 给 Treasury 先打一点原生币，便于本地联调 allocateETH / 紧急提取等流程。
+    // 给 Treasury 先打一笔原生币，便于本地联调 allocateETH / 紧急提取等流程。
     nativeTransfers: [
       { to: "treasury", amount: "5000000000000000000" },
     ],
 
-    // 给 Treasury 铸入一笔 FLUX，便于本地联调奖励分发和回购销毁链路。
+    // 本地样例把大部分 FLUX 留在 Treasury 做协议侧联调，
+    // 同时给默认测试钱包预留一部分 FLUX，方便前端直接测试 swap / pool。
     tokenMints: [
-      { token: "token", to: "treasury", amount: "200000000000000000000000" },
+      { token: "token", to: "treasury", amount: "180000000000000000000000" },
+      { token: "token", to: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", amount: "200000000000000000000000000" },
     ],
 
     tokenTransfers: [],
