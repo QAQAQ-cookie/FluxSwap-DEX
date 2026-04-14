@@ -57,7 +57,7 @@
     // 同时给默认测试钱包预留一部分 FLUX，方便前端直接测试 swap / pool。
     tokenMints: [
       { token: "token", to: "treasury", amount: "180000000000000000000000" },
-      { token: "token", to: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", amount: "200000000000000000000000000" },
+      { token: "token", to: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", amount: "200000000000000000000000" },
     ],
 
     tokenTransfers: [],

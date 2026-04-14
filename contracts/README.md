@@ -242,7 +242,7 @@ npm run init:post-deploy:all:local
 - `init:post-deploy:plan:local` 只做校对，不发交易。
 - `init:post-deploy:all:local` 会自动完成 Treasury timelock 的 `schedule -> 本地快进 -> execute`，然后继续执行资金注入等即时初始化动作。
 - 本地初始化样例配置在 `ignition/parameters/post-deploy-init.local.sample.json5`。
-- 当前本地样例会把大部分 `FLUX` 注入 `Treasury`，同时给默认测试钱包预留较大额度的 `FLUX`，便于前端直接联调 `swap / pool`。
+- 当前本地样例会把大部分 `FLUX` 注入 `Treasury`，同时给默认测试钱包预留 `200000 FLUX`，便于前端直接联调 `swap / pool` 且更方便人工核对余额变化。
 
 ### 7.3 Sepolia 部署
 
