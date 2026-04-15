@@ -35,6 +35,7 @@ forge test --match-path test/invariant/FluxSwapFeeOnTransferWethMixedInvariant.t
 forge test --match-path test/invariant/FluxSwapHybridAmmFeeOnTransferInvariant.t.sol -vv
 forge test --match-path test/invariant/FluxSwapRouterExceptionInvariant.t.sol -vv
 forge test --match-path test/invariant/FluxSwapRouterMixedExceptionInvariant.t.sol -vv
+forge test --match-path test/invariant/FluxSignedOrderSettlementInvariant.t.sol -vv
 ```
 
 说明：
@@ -48,8 +49,8 @@ forge test --match-path test/invariant/FluxSwapRouterMixedExceptionInvariant.t.s
 
 截至当前版本，`npm run test:invariant` 已覆盖：
 
-- `14` 个 Foundry invariant 套件
-- `77` 个不变量断言
+- `15` 个 Foundry invariant 套件
+- `81` 个不变量断言
 - 覆盖 `FluxSwapStakingRewards`、`FluxMultiPoolManager`、`FluxSwapTreasury`、`FluxRevenueDistributor + FluxPoolFactory + FluxMultiPoolManager + managed pools` 联动链路
 - 额外覆盖 `FluxSwapTreasury + FluxRevenueDistributor + FluxMultiPoolManager + pool claim` 的真实 revenue pipeline 联动链路
 - 额外覆盖 `FluxSwapFactory + FluxSwapRouter + FluxSwapPair` 的 token-token AMM 核心链路
@@ -61,6 +62,7 @@ forge test --match-path test/invariant/FluxSwapRouterMixedExceptionInvariant.t.s
 - 额外覆盖 `普通 AMM + fee-on-transfer supporting + quote 桥接多跳 + 多 LP / 双 Pair 流动性迁移` 混排下的跨 Pair 协议费累计、净到账边界、LP 份额快照与总量闭合
 - 额外覆盖 `FluxSwapRouter` 成功路径与集中式异常路径混排下的失败原子性、资产隔离、协议费模型与总量闭合
 - 额外覆盖 `共享 tokenA 的 token-token + token-WETH` 双 Pair 与集中式异常路径混排下的跨 Pair 失败原子性、共享资产隔离与双路径协议费对账
+- 额外覆盖 `FluxSignedOrderSettlement` 的签名订单最小状态约束、nonce 单调收紧与 settlement 无残留输入资产
 
 ## 已覆盖套件
 
@@ -164,6 +166,21 @@ forge test --match-path test/invariant/FluxSwapRouterMixedExceptionInvariant.t.s
 - manager 余额必须始终覆盖 `totalPendingRewards + undistributedRewards`
 - treasury 对 `distributor / manager` 的 `approvedSpendRemaining` 必须与真实成功支出严格一致
 - rewardToken 的 `spentToday / lastSpendDay` 必须与参考模型一致，跨天后也不能串账
+
+### `FluxSignedOrderSettlementInvariant.t.sol`
+
+当前通过真实的 `FluxSignedOrderSettlement + FluxSwapRouter + FluxSwapFactory + FluxSwapPair` 组合，对以下 handler 动作做随机序列调用：
+
+- `executeFreshOrder`
+- `cancelFreshOrder`
+- `invalidateNextRange`
+
+当前锁定的核心不变量：
+
+- settlement 合约不应长期滞留 maker 输入资产
+- `minValidNonce` 只能单调上升，不能回退
+- 低于 `minValidNonce` 的 nonce 必须永久不可用
+- 已消费 nonce 的数量必须始终受当前执行 / 取消历史边界约束
 
 ### `FluxSwapAmmInvariant.t.sol`
 

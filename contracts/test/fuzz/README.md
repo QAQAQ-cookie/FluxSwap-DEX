@@ -44,6 +44,7 @@ forge test --match-path test/fuzz/FluxRevenueTreasuryManagerLongSequenceFuzz.t.s
 forge test --match-path test/fuzz/FluxHybridAmmFeeOnTransferStatefulFuzz.t.sol -vv
 forge test --match-path test/fuzz/FluxMultiHopAmmStatefulFuzz.t.sol -vv
 forge test --match-path test/fuzz/FluxSwapRouterExceptionFuzz.t.sol -vv
+forge test --match-path test/fuzz/FluxSignedOrderSettlementFuzz.t.sol -vv
 ```
 
 说明：
@@ -57,8 +58,8 @@ forge test --match-path test/fuzz/FluxSwapRouterExceptionFuzz.t.sol -vv
 
 截至当前版本，`npm run test:fuzz` 已覆盖：
 
-- `25` 个 Foundry fuzz / stateful fuzz 套件
-- `82` 个测试用例
+- `26` 个 Foundry fuzz / stateful fuzz 套件
+- `85` 个测试用例
 - 覆盖 Router、Pair、Token、Treasury、RevenueDistributor、BuybackExecutor、SwapFactory、PoolFactory、LP Staking Pool、MultiPoolManager 以及跨合约流水线 / managed pool 生命周期
 
 ### `FluxSwapRouterFuzz.t.sol`
@@ -100,6 +101,20 @@ forge test --match-path test/fuzz/FluxSwapRouterExceptionFuzz.t.sol -vv
 - 回退后 trader / recipient / treasury / router 的关键余额不能被污染
 - ETH 路径失败后 Router 不得残留 `WETH`
 - LP 最小值约束失败后，用户 LP 与底层资产都必须保持原状
+
+### `FluxSignedOrderSettlementFuzz.t.sol`
+
+覆盖签名订单结算模块在随机金额、随机 nonce 边界下的最小状态正确性：
+
+- `executeOrder` 成功后必须同时写入 `orderExecuted` 与 `invalidatedNonce`
+- `cancelUpTo` 必须使低于阈值的旧 nonce 永久失效
+- `cancelOrder` 后同一订单后续执行必须被拒绝
+
+当前重点验证的性质：
+
+- 成交成功后 settlement 合约不能留下 maker 的输入资产残留
+- 单个订单一旦成交或取消，后续不得再被重复执行
+- 批量 nonce 失效只会向前收紧，不会放松已有约束
 
 ### `FluxAmmLifecycleStatefulFuzz.t.sol`
 
@@ -549,6 +564,7 @@ forge test --match-path test/fuzz/FluxSwapRouterExceptionFuzz.t.sol -vv
 
 - 多轮 liquidity churn 下，极小 LP 份额触发 `INSUFFICIENT_LIQUIDITY_BURNED` 的无效撤池序列过滤
 - fee-on-transfer 资产被误用于普通 `exact-output` 路径时，对“确实发生税后输入不足”的反例判定口径收紧
+- 链下签名订单在随机数量与批量 nonce 收口场景下的最小链上状态验证
 
 ## 后续仍可继续补强的方向
 

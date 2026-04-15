@@ -8,20 +8,21 @@
 
 | 大类 | 子目录 | 当前文件数 | 主要目标 | 主要工具 |
 | --- | --- | ---: | --- | --- |
-| 常规测试 | `regular/unit` | 11 | 单合约职责、参数校验、权限边界、状态迁移 | Hardhat |
-| 常规测试 | `regular/integration` | 17 | 真实业务链路、跨合约状态传递、资产闭环 | Hardhat |
+| 常规测试 | `regular/unit` | 12 | 单合约职责、参数校验、权限边界、状态迁移 | Hardhat |
+| 常规测试 | `regular/integration` | 18 | 真实业务链路、跨合约状态传递、资产闭环 | Hardhat |
 | 常规测试 | `regular/regression` | 4 | 高风险历史问题锁定、防止后续改坏 | Hardhat |
 | 常规测试 | `regular/performance` | 1 | 基础 gas / 性能观测 | Hardhat |
 | 权限与治理 | `permissions-governance` | 8 | owner / operator / guardian / multisig / timelock 治理边界 | Hardhat |
 | 经济安全 | `economic-security` | 3 | 协议费、回购、销毁、分发、对抗场景下的经济结果对账 | Hardhat |
-| Fuzz | `fuzz` | 25 | 大量随机输入、长序列状态扰动、边界条件补强 | Foundry |
-| Invariant | `invariant` | 14 | 长序列下资金守恒、reserve 对账、LP 供给闭合、失败原子性 | Foundry |
+| Fuzz | `fuzz` | 26 | 大量随机输入、长序列状态扰动、边界条件补强 | Foundry |
+| Invariant | `invariant` | 15 | 长序列下资金守恒、reserve 对账、LP 供给闭合、失败原子性 | Foundry |
 | 静态分析 | `static-analysis` | 2 文档 | 结构性风险扫描与人工复核口径 | Solhint / Slither |
 
 ## 你现在这套测试的含义
 
 - `unit` 解决“单个合约自己写对了吗”。
 - `integration` 解决“真实业务串起来会不会断”。
+- `signed order settlement` 这条链路已经纳入 `unit / integration / fuzz / invariant` 四层覆盖。
 - `regression` 解决“以前修好的高风险点以后会不会再坏”。
 - `permissions-governance` 解决“治理入口会不会越权、错配或交接失效”。
 - `economic-security` 解决“价值流和账本结果是否对得上”。

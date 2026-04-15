@@ -4,12 +4,13 @@
 
 ## 1. 项目定位
 
-当前协议主要覆盖 8 个业务模块：
+当前协议主要覆盖 9 个业务模块：
 
 | 模块 | 说明 | 主要合约 |
 | --- | --- | --- |
 | 协议主代币 | 主币发行、总量上限、销毁、铸币权限控制 | `FluxToken.sol` |
 | AMM 交易系统 | 建池、交易对、加减流动性、代币兑换、ETH/WETH 路径 | `FluxSwapFactory.sol`、`FluxSwapPair.sol`、`FluxSwapRouter.sol` |
+| 签名订单结算 | 链下签名限价单、链上最小状态验证、到价后通过 AMM 结算 | `FluxSignedOrderSettlement.sol` |
 | LP 份额系统 | LP Token 铸造、销毁、授权、Permit | `FluxSwapERC20.sol` |
 | 金库治理系统 | 多签治理、时间锁、白名单拨款、日限额、受控支出、紧急提款 | `FluxSwapTreasury.sol` |
 | 单池质押奖励 | 单币或任意资产质押、奖励注入、领取、退出 | `FluxSwapStakingRewards.sol` |
@@ -47,7 +48,16 @@
 - `Pair` 负责恒定乘积计算、储备更新和协议费处理。
 - 多跳兑换由 `Router` 串联多个 `Pair` 完成。
 
-### 3.3 单池 / LP 质押领奖
+### 3.3 链下签名订单链上结算
+
+`Maker -> SignedOrderSettlement -> Router -> Pair -> Recipient`
+
+- Maker 在链下签名订单，不把完整订单簿状态写入链上。
+- watcher / executor 在链下判断是否到价，再调用 `FluxSignedOrderSettlement.executeOrder`。
+- 结算合约在链上校验签名、nonce、过期时间、最小成交量与触发价格。
+- 订单满足条件后，通过 `FluxSwapRouter` 走真实 AMM 路径完成 `ERC20 -> ERC20` 或 `ERC20 -> ETH` 结算。
+
+### 3.4 单池 / LP 质押领奖
 
 `用户 -> StakingPool -> Manager(可选) -> StakingPool -> 用户`
 
@@ -55,7 +65,7 @@
 - 池合约负责用户级奖励快照、记账和发放。
 - 若池接入 `FluxMultiPoolManager`，池会按需向 `Manager` 领取本池奖励，再发给最终用户。
 
-### 3.4 多池奖励分发
+### 3.5 多池奖励分发
 
 `运营方 / 分发模块 -> MultiPoolManager -> 各奖励池 -> 用户`
 
@@ -63,7 +73,7 @@
 - 各奖励池不是直接拿到整批奖励，而是按需向 `Manager` claim。
 - 最终发奖发生在池内部，而不是 `Manager` 直接发给终端用户。
 
-### 3.5 协议收入回购与分发
+### 3.6 协议收入回购与分发
 
 `RevenueDistributor -> BuybackExecutor -> Treasury -> Router -> Treasury -> burn / distribute`
 
@@ -72,7 +82,7 @@
 - 回购得到的目标代币回流 `Treasury`。
 - 一部分销毁，一部分通过 `MultiPoolManager` 分发给奖励池。
 
-### 3.6 金库治理
+### 3.7 金库治理
 
 `multisig / guardian / operator -> Treasury -> 各业务模块`
 
@@ -91,10 +101,11 @@
 2. `FluxSwapTreasury.sol`
 3. `FluxSwapFactory.sol`
 4. `FluxSwapRouter.sol`
-5. `FluxMultiPoolManager.sol`
-6. `FluxPoolFactory.sol`
-7. `FluxBuybackExecutor.sol`
-8. `FluxRevenueDistributor.sol`
+5. `FluxSignedOrderSettlement.sol`
+6. `FluxMultiPoolManager.sol`
+7. `FluxPoolFactory.sol`
+8. `FluxBuybackExecutor.sol`
+9. `FluxRevenueDistributor.sol`
 
 ### 4.2 由系统自动创建的合约
 
@@ -192,12 +203,13 @@ npm run test:static-analysis
 2. `FluxSwapTreasury`
 3. `FluxSwapFactory`
 4. `FluxSwapRouter`
-5. `FluxMultiPoolManager`
-6. `FluxPoolFactory`
-7. `FluxBuybackExecutor`
-8. `FluxRevenueDistributor`
-9. `FluxSwapFactory.setTreasury(treasury)`
-10. `FluxMultiPoolManager.setPoolFactory(poolFactory)`
+5. `FluxSignedOrderSettlement`
+6. `FluxMultiPoolManager`
+7. `FluxPoolFactory`
+8. `FluxBuybackExecutor`
+9. `FluxRevenueDistributor`
+10. `FluxSwapFactory.setTreasury(treasury)`
+11. `FluxMultiPoolManager.setPoolFactory(poolFactory)`
 
 ### 7.1 临时本地部署
 
@@ -339,6 +351,7 @@ npm run init:post-deploy:execute:sepolia
 以目前这轮代码基线来看，合约系统已经形成完整主链路：
 
 - AMM 交易主链路
+- 链下签名订单链上结算主链路
 - 金库治理主链路
 - 多池奖励主链路
 - 协议收入回购 / 销毁 / 分发主链路

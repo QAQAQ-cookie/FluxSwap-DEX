@@ -111,6 +111,14 @@
 - 验证 operator 权限管理、替换 buyback executor / manager 时的一致性约束。
 - 验证 stray token recover 与 ownership 迁移后的权限清理。
 
+### `FluxSignedOrderSettlement.unit.test.ts`
+
+- 验证链下签名订单的哈希、EIP-712 验签、重复执行防重放与 nonce 失效逻辑。
+- 验证 `ERC20 -> ERC20` 与 `ERC20 -> ETH` 两类结算入口都能通过真实 Router 路径完成成交。
+- 验证 `cancelOrder`、`batchCancelOrders`、`invalidateNonce`、`cancelUpTo` 的局部取消、批量撤单与批量失效语义。
+- 验证触发价格未达到、订单过期、签名错误、执行器受限、暂停状态等关键失败分支。
+- 验证 `canExecuteOrder` 与 `getOrderQuote` 的只读状态和 readiness reason 口径。
+
 ## 执行方式
 
 - 运行全部单元测试：

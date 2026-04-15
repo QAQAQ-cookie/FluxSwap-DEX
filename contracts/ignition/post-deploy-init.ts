@@ -15,7 +15,10 @@ type AddressAlias =
   | "poolFactory"
   | "buybackExecutor"
   | "revenueDistributor"
-  | "weth";
+  | "weth"
+  | "mockUsdt"
+  | "mockUsdc"
+  | "mockWbtc";
 type AddressLike = AddressAlias | "native" | Address;
 
 interface DeploymentConfig {
@@ -127,6 +130,9 @@ interface AddressBook {
   buybackExecutor?: Address;
   revenueDistributor?: Address;
   weth?: Address;
+  mockUsdt?: Address;
+  mockUsdc?: Address;
+  mockWbtc?: Address;
 }
 
 interface TimelockOperation {
@@ -157,6 +163,9 @@ const DEFAULT_DEPLOYMENT_FUTURE_IDS: Record<AddressAlias, string> = {
   buybackExecutor: "FluxCoreModule#FluxBuybackExecutor",
   revenueDistributor: "FluxCoreModule#FluxRevenueDistributor",
   weth: "FluxCoreModule#MockWETH",
+  mockUsdt: "FluxCoreModule#mockUsdt",
+  mockUsdc: "FluxCoreModule#mockUsdc",
+  mockWbtc: "FluxCoreModule#mockWbtc",
 };
 
 function parseCliArgs(argv: string[]): CliArgs {

@@ -56,6 +56,17 @@ export default buildModule("FluxCoreModule", (m) => {
     tokenCap,
   ]);
 
+  // 1.1 本地联调额外测试代币，方便前端直接扩展多币种交易与建池。
+  const mockUsdt = m.contract("MockERC20", ["Tether USD", "USDT", 6], {
+    id: "mockUsdt",
+  });
+  const mockUsdc = m.contract("MockERC20", ["USD Coin", "USDC", 6], {
+    id: "mockUsdc",
+  });
+  const mockWbtc = m.contract("MockERC20", ["Wrapped Bitcoin", "WBTC", 8], {
+    id: "mockWbtc",
+  });
+
   // 2. 部署金库。
   const fluxTreasury = m.contract("FluxSwapTreasury", [
     treasuryMultisig,
@@ -71,6 +82,10 @@ export default buildModule("FluxCoreModule", (m) => {
   const fluxSwapRouter = m.contract("FluxSwapRouter", [
     fluxSwapFactory,
     weth,
+  ]);
+
+  const fluxSignedOrderSettlement = m.contract("FluxSignedOrderSettlement", [
+    fluxSwapRouter,
   ]);
 
   // 5. 部署多池奖励管理器，奖励代币直接使用主代币。
@@ -123,9 +138,13 @@ export default buildModule("FluxCoreModule", (m) => {
   return {
     weth,
     fluxToken,
+    mockUsdt,
+    mockUsdc,
+    mockWbtc,
     fluxTreasury,
     fluxSwapFactory,
     fluxSwapRouter,
+    fluxSignedOrderSettlement,
     fluxMultiPoolManager,
     fluxPoolFactory,
     fluxBuybackExecutor,
