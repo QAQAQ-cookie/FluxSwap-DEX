@@ -1,8 +1,10 @@
 {
   "nav": {
+    "overview": "Overview",
     "swap": "Swap",
-    "pools": "Pools",
-    "earn": "Earn"
+    "pool": "Pool",
+    "earn": "Earn",
+    "portfolio": "Portfolio"
   },
   "home": {
     "title1": "Trade Crypto",
@@ -15,12 +17,12 @@
     "tvl": "Total Value Locked"
   },
   "swap": {
-    "title": "Swap",
+    "title": "Exchange",
     "pay": "You pay",
     "receive": "You receive",
     "selectToken": "Select Token",
     "connectWallet": "Connect Wallet",
-    "button": "Swap",
+    "button": "Exchange",
     "balance": "Balance",
     "max": "MAX",
     "settings": "Transaction Settings",

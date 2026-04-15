@@ -2,7 +2,7 @@ import type { Address } from 'viem'
 
 import { getContractAddress } from './contracts'
 
-export type SwapTokenSymbol = 'ETH' | 'FLUX'
+export type SwapTokenSymbol = string
 
 export interface SwapTokenOption {
   symbol: SwapTokenSymbol
@@ -13,32 +13,76 @@ export interface SwapTokenOption {
   routeAddress: Address
 }
 
+type TokenRegistryEntry = {
+  symbol: SwapTokenSymbol
+  name: string
+  decimals: number
+  kind: 'native' | 'erc20'
+  resolveAddress?: (chainId?: number | null) => Address | undefined
+  resolveRouteAddress: (chainId?: number | null) => Address | undefined
+}
+
+const tokenRegistry: TokenRegistryEntry[] = [
+  {
+    symbol: 'ETH',
+    name: 'Ether',
+    decimals: 18,
+    kind: 'native',
+    resolveRouteAddress: (chainId) => getContractAddress('MockWETH', chainId),
+  },
+  {
+    symbol: 'FLUX',
+    name: 'Flux Token',
+    decimals: 18,
+    kind: 'erc20',
+    resolveAddress: (chainId) => getContractAddress('FluxToken', chainId),
+    resolveRouteAddress: (chainId) => getContractAddress('FluxToken', chainId),
+  },
+  {
+    symbol: 'USDT',
+    name: 'Tether USD',
+    decimals: 6,
+    kind: 'erc20',
+    resolveAddress: (chainId) => getContractAddress('MockUSDT', chainId),
+    resolveRouteAddress: (chainId) => getContractAddress('MockUSDT', chainId),
+  },
+  {
+    symbol: 'USDC',
+    name: 'USD Coin',
+    decimals: 6,
+    kind: 'erc20',
+    resolveAddress: (chainId) => getContractAddress('MockUSDC', chainId),
+    resolveRouteAddress: (chainId) => getContractAddress('MockUSDC', chainId),
+  },
+  {
+    symbol: 'WBTC',
+    name: 'Wrapped Bitcoin',
+    decimals: 8,
+    kind: 'erc20',
+    resolveAddress: (chainId) => getContractAddress('MockWBTC', chainId),
+    resolveRouteAddress: (chainId) => getContractAddress('MockWBTC', chainId),
+  },
+]
+
 export function getSwapTokenOptions(chainId?: number | null): SwapTokenOption[] {
-  const wrappedNativeAddress = getContractAddress('MockWETH', chainId)
-  const fluxAddress = getContractAddress('FluxToken', chainId)
+  return tokenRegistry.flatMap((token) => {
+    const routeAddress = token.resolveRouteAddress(chainId)
 
-  const options: SwapTokenOption[] = []
+    if (!routeAddress) {
+      return []
+    }
 
-  if (wrappedNativeAddress) {
-    options.push({
-      symbol: 'ETH',
-      name: 'Ether',
-      decimals: 18,
-      kind: 'native',
-      routeAddress: wrappedNativeAddress,
-    })
-  }
+    const address = token.resolveAddress?.(chainId)
 
-  if (fluxAddress) {
-    options.push({
-      symbol: 'FLUX',
-      name: 'Flux Token',
-      decimals: 18,
-      kind: 'erc20',
-      address: fluxAddress,
-      routeAddress: fluxAddress,
-    })
-  }
-
-  return options
+    return [
+      {
+        symbol: token.symbol,
+        name: token.name,
+        decimals: token.decimals,
+        kind: token.kind,
+        address,
+        routeAddress,
+      } satisfies SwapTokenOption,
+    ]
+  })
 }

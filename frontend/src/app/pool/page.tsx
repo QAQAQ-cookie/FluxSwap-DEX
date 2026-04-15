@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import {
@@ -151,6 +151,7 @@ export default function PoolPage() {
   const [walletNotice, setWalletNotice] = useState<string | null>(null);
   const [activity, setActivity] = useState<PoolActivityItem[]>([]);
   const [isActivityLoading, setIsActivityLoading] = useState(false);
+  const handledReceiptHashRef = useRef<string | undefined>(undefined);
 
   const supportedChain = isFluxSupportedChain(chainId);
   const routerAddress = getContractAddress('FluxSwapRouter', chainId);
@@ -310,6 +311,23 @@ export default function PoolPage() {
         ? reservesData[1]
         : reservesData[0]
       : undefined;
+
+  useEffect(() => {
+    if (!hash || !isConfirmed || handledReceiptHashRef.current === hash) {
+      return;
+    }
+
+    handledReceiptHashRef.current = hash;
+
+    if (lastAction === 'add-liquidity') {
+      setAddEthAmount('');
+      setAddFluxAmount('');
+    }
+
+    if (lastAction === 'remove-liquidity') {
+      setRemoveLpAmount('');
+    }
+  }, [hash, isConfirmed, lastAction]);
 
   useEffect(() => {
     if (!publicClient || !normalizedPairAddress || !fluxTokenAddress || !token0) {
@@ -701,8 +719,12 @@ export default function PoolPage() {
   const handleAddEthChange = (value: string) => {
     setAddEthAmount(value);
 
+    if (!value) {
+      setAddFluxAmount('');
+      return;
+    }
+
     if (
-      !value ||
       !reserveEth ||
       !reserveFlux ||
       reserveEth <= BigInt(0) ||
@@ -713,6 +735,7 @@ export default function PoolPage() {
 
     const parsed = parseAmount(value);
     if (!parsed) {
+      setAddFluxAmount('');
       return;
     }
 
@@ -723,8 +746,12 @@ export default function PoolPage() {
   const handleAddFluxChange = (value: string) => {
     setAddFluxAmount(value);
 
+    if (!value) {
+      setAddEthAmount('');
+      return;
+    }
+
     if (
-      !value ||
       !reserveEth ||
       !reserveFlux ||
       reserveEth <= BigInt(0) ||
@@ -735,6 +762,7 @@ export default function PoolPage() {
 
     const parsed = parseAmount(value);
     if (!parsed) {
+      setAddEthAmount('');
       return;
     }
 

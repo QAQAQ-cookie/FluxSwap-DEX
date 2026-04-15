@@ -51,6 +51,7 @@ import {
   useReadFluxSwapLpStakingPoolRewardsToken,
   useReadFluxSwapLpStakingPoolTotalStaked,
   useReadFluxSwapPairAllowance,
+  useReadFluxSwapPairBalanceOf,
 } from '@/lib/contracts';
 
 type EarnAction = 'approve-lp' | 'revoke-lp' | 'stake' | 'withdraw' | 'claim' | 'exit' | null;
@@ -193,10 +194,10 @@ export default function EarnPage() {
       ? stakingPoolAddress
       : undefined;
 
-  const { data: lpWalletBalance, refetch: refetchLpWalletBalance } = useBalance({
-    address,
+  const { data: lpWalletBalance, refetch: refetchLpWalletBalance } = useReadFluxSwapPairBalanceOf({
+    address: normalizedPairAddress ?? zeroAddress,
     chainId,
-    token: normalizedPairAddress,
+    args: [address ?? zeroAddress],
     query: {
       enabled: !!address && !!normalizedPairAddress && isConnected,
       refetchInterval: 8000,
@@ -329,8 +330,8 @@ export default function EarnPage() {
 
   const insufficientLp = Boolean(
     parsedStakeAmount &&
-      lpWalletBalance?.value !== undefined &&
-      parsedStakeAmount > lpWalletBalance.value,
+      lpWalletBalance !== undefined &&
+      parsedStakeAmount > lpWalletBalance,
   );
   const insufficientStaked = Boolean(
     parsedWithdrawAmount &&
@@ -339,7 +340,7 @@ export default function EarnPage() {
   );
   const stakingSetupReady = Boolean(normalizedPairAddress && normalizedStakingPoolAddress);
   const hasLpPosition = Boolean(
-    lpWalletBalance?.value !== undefined && lpWalletBalance.value > BigInt(0),
+    lpWalletBalance !== undefined && lpWalletBalance > BigInt(0),
   );
   const setupHint = !normalizedPairAddress
     ? copy.bootstrapHint
@@ -486,8 +487,8 @@ export default function EarnPage() {
         : copy.stakingPoolReady;
 
   const handleMaxStake = () => {
-    if (lpWalletBalance?.formatted) {
-      setStakeAmount(lpWalletBalance.formatted);
+    if (lpWalletBalance !== undefined) {
+      setStakeAmount(formatUnits(lpWalletBalance, 18));
     }
   };
 
@@ -849,9 +850,7 @@ export default function EarnPage() {
               symbol="LP"
               balanceLabel={copy.lpWalletBalance}
               balance={
-                lpWalletBalance?.formatted
-                  ? formatDisplayAmount(lpWalletBalance.formatted)
-                  : '0.00'
+                formatBigIntAmount(lpWalletBalance, 18, 4)
               }
               onMax={handleMaxStake}
             />
@@ -860,9 +859,7 @@ export default function EarnPage() {
               <div className="flex items-center justify-between text-gray-600 dark:text-gray-300">
                 <span>{copy.lpWalletBalance}</span>
                 <span>
-                  {lpWalletBalance?.formatted
-                    ? formatDisplayAmount(lpWalletBalance.formatted)
-                    : '0.00'}
+                  {formatBigIntAmount(lpWalletBalance, 18, 4)}
                 </span>
               </div>
               <div className="mt-2 flex items-center justify-between text-gray-600 dark:text-gray-300">
@@ -996,7 +993,7 @@ export default function EarnPage() {
                 <span>{copy.lpWalletBalance}</span>
                 <span>
                   {hasLpPosition
-                    ? formatDisplayAmount(lpWalletBalance?.formatted ?? '0')
+                    ? formatBigIntAmount(lpWalletBalance, 18, 4)
                     : '0.00'}
                 </span>
               </div>

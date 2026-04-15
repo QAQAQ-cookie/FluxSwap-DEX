@@ -11,6 +11,9 @@ const outputPath = path.resolve(frontendRoot, 'src', 'config', 'contracts.genera
 const futureIdToContractName = {
   'FluxCoreModule#FluxBuybackExecutor': 'FluxBuybackExecutor',
   'FluxCoreModule#FluxMultiPoolManager': 'FluxMultiPoolManager',
+  'FluxCoreModule#mockUsdc': 'MockUSDC',
+  'FluxCoreModule#mockUsdt': 'MockUSDT',
+  'FluxCoreModule#mockWbtc': 'MockWBTC',
   'FluxCoreModule#FluxPoolFactory': 'FluxPoolFactory',
   'FluxCoreModule#FluxRevenueDistributor': 'FluxRevenueDistributor',
   'FluxCoreModule#FluxSwapFactory': 'FluxSwapFactory',
@@ -23,6 +26,9 @@ const futureIdToContractName = {
 const contractNames = [
   'FluxBuybackExecutor',
   'FluxMultiPoolManager',
+  'MockUSDC',
+  'MockUSDT',
+  'MockWBTC',
   'FluxPoolFactory',
   'FluxRevenueDistributor',
   'FluxSwapFactory',

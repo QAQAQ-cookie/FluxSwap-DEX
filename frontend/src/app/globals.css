@@ -8,16 +8,32 @@
 }
 
 :root {
-  --background: #ffffff;
-  --foreground: #0a0a0a;
+  --background: #f3f7fb;
+  --foreground: #07111f;
 }
 
 .dark {
-  --background: #0a0a0a;
-  --foreground: #ffffff;
+  --background: #06101d;
+  --foreground: #eef6ff;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.7), rgba(243, 247, 251, 0.96)),
+    var(--background);
   color: var(--foreground);
+}
+
+.dark body {
+  background:
+    linear-gradient(180deg, rgba(6, 16, 29, 0.72), rgba(6, 16, 29, 0.96)),
+    var(--background);
+}
+
+::selection {
+  background: rgba(14, 165, 233, 0.24);
 }

@@ -11,9 +11,22 @@ import { WagmiProvider } from 'wagmi';
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
 import { config } from '@/config/wagmi';
 import { ThemeProvider, useTheme } from 'next-themes';
-import '@/i18n'; // Initialize i18n
+import i18n from '@/i18n';
 
 const queryClient = new QueryClient();
+
+function LanguageHydrator() {
+  React.useEffect(() => {
+    const savedLang =
+      typeof window !== 'undefined' ? window.localStorage.getItem('app-lang') : null;
+
+    if (savedLang && savedLang !== i18n.language) {
+      void i18n.changeLanguage(savedLang);
+    }
+  }, []);
+
+  return null;
+}
 
 function RainbowKitWrapper({ children }: { children: React.ReactNode }) {
   const { resolvedTheme } = useTheme();
@@ -35,6 +48,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          <LanguageHydrator />
           <RainbowKitWrapper>
             {children}
           </RainbowKitWrapper>

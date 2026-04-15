@@ -1,7 +1,7 @@
 'use client';
 
-import { useTranslation } from 'react-i18next';
 import { Globe } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import { useIsClient } from '@/hooks/useIsClient';
 
@@ -10,25 +10,20 @@ export function LanguageToggle() {
   const mounted = useIsClient();
 
   if (!mounted) {
-    return <div className="w-10 h-10" />; // placeholder
+    return <div className="h-10 w-10" />;
   }
 
-  const toggleLanguage = () => {
-    const newLang = i18n.language.startsWith('zh') ? 'en' : 'zh';
-    i18n.changeLanguage(newLang);
-  };
+  const isZh = i18n.language.startsWith('zh');
 
   return (
     <button
-      onClick={toggleLanguage}
-      className="p-2 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-800 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors"
+      onClick={() => i18n.changeLanguage(isZh ? 'en' : 'zh')}
+      className="inline-flex h-10 items-center justify-center gap-1 rounded-full border border-black/5 bg-white px-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-black/[0.03] dark:border-white/10 dark:bg-white/[0.04] dark:text-gray-200 dark:hover:bg-white/[0.08]"
       aria-label="Toggle language"
-      title="Switch Language"
+      title="Switch language"
     >
-      <Globe size={20} />
-      <span className="ml-1 text-xs font-bold uppercase">
-        {i18n.language.startsWith('zh') ? '中' : 'EN'}
-      </span>
+      <Globe size={16} />
+      <span>{isZh ? '中' : 'EN'}</span>
     </button>
   );
 }

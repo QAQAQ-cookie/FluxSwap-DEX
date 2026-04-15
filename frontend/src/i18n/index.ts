@@ -27,12 +27,4 @@ i18n.on('languageChanged', (lng) => {
   }
 });
 
-// Hydrate from localStorage on client load
-if (typeof window !== 'undefined') {
-  const savedLang = localStorage.getItem('app-lang');
-  if (savedLang) {
-    i18n.changeLanguage(savedLang);
-  }
-}
-
 export default i18n;
