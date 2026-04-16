@@ -28,6 +28,8 @@ Worker:
   ExecutorScanIntervalMs: 5000
   ExecutorBatchSize: 20
   ExecutorTxDeadlineSec: 120
+  ExecutorEstimatedGasUsed: 400000
+  ExecutorFeeSafetyBps: 20000
   ReceiptPollIntervalMs: 5000
   IndexerHeartbeatMs: 15000
   IndexerBackfillBlocks: 500

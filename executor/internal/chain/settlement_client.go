@@ -15,7 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
-// SettlementConfig 定义链上结算客户端所需的最小配置。
+// SettlementConfig 定义结算客户端所需的最小配置。
 type SettlementConfig struct {
 	ChainID            int64
 	RPCURL             string
@@ -30,6 +30,7 @@ type SettlementOrder struct {
 	OutputToken     common.Address
 	AmountIn        *big.Int
 	MinAmountOut    *big.Int
+	ExecutorFee     *big.Int
 	TriggerPriceX18 *big.Int
 	Expiry          *big.Int
 	Nonce           *big.Int
@@ -40,7 +41,10 @@ type SettlementOrder struct {
 type SettlementClient struct {
 	ethClient     *ethclient.Client
 	contract      *FluxSignedOrderSettlement
+	routerContract *FluxSwapRouter
 	settlementAdr common.Address
+	routerAddress common.Address
+	wethAddress   common.Address
 	chainID       *big.Int
 	executorKey   *ecdsa.PrivateKey
 	executorAddr  common.Address
@@ -73,6 +77,23 @@ func NewSettlementClient(cfg SettlementConfig) (*SettlementClient, error) {
 		return nil, fmt.Errorf("bind settlement contract: %w", err)
 	}
 
+	routerAddress, err := contractInstance.Router(&bind.CallOpts{Context: context.Background()})
+	if err != nil {
+		client.Close()
+		return nil, fmt.Errorf("load router address: %w", err)
+	}
+	wethAddress, err := contractInstance.WETH(&bind.CallOpts{Context: context.Background()})
+	if err != nil {
+		client.Close()
+		return nil, fmt.Errorf("load weth address: %w", err)
+	}
+
+	routerContract, err := NewFluxSwapRouter(routerAddress, client)
+	if err != nil {
+		client.Close()
+		return nil, fmt.Errorf("bind router contract: %w", err)
+	}
+
 	privateKey, err := crypto.HexToECDSA(strings.TrimPrefix(strings.TrimSpace(cfg.ExecutorPrivateKey), "0x"))
 	if err != nil {
 		client.Close()
@@ -86,12 +107,15 @@ func NewSettlementClient(cfg SettlementConfig) (*SettlementClient, error) {
 	}
 
 	return &SettlementClient{
-		ethClient:     client,
-		contract:      contractInstance,
-		settlementAdr: settlementAddress,
-		chainID:       big.NewInt(cfg.ChainID),
-		executorKey:   privateKey,
-		executorAddr:  crypto.PubkeyToAddress(*publicKey),
+		ethClient:      client,
+		contract:       contractInstance,
+		routerContract: routerContract,
+		settlementAdr:  settlementAddress,
+		routerAddress:  routerAddress,
+		wethAddress:    wethAddress,
+		chainID:        big.NewInt(cfg.ChainID),
+		executorKey:    privateKey,
+		executorAddr:   crypto.PubkeyToAddress(*publicKey),
 	}, nil
 }
 
@@ -108,6 +132,64 @@ func (c *SettlementClient) SettlementAddress() string {
 		return ""
 	}
 	return c.settlementAdr.Hex()
+}
+
+// RouterAddress 返回当前结算合约关联的 Router 地址。
+func (c *SettlementClient) RouterAddress() common.Address {
+	if c == nil {
+		return common.Address{}
+	}
+	return c.routerAddress
+}
+
+// WETHAddress 返回当前链上的包装原生币地址。
+func (c *SettlementClient) WETHAddress() common.Address {
+	if c == nil {
+		return common.Address{}
+	}
+	return c.wethAddress
+}
+
+// SuggestExecutorFee 估算当前订单输出币种口径下的执行费。
+func (c *SettlementClient) SuggestExecutorFee(
+	ctx context.Context,
+	outputToken common.Address,
+	estimatedGasUsed uint64,
+	safetyBps int64,
+) (*big.Int, *big.Int, error) {
+	if c == nil {
+		return nil, nil, fmt.Errorf("settlement client is nil")
+	}
+	if estimatedGasUsed == 0 {
+		return nil, nil, fmt.Errorf("estimated gas used must be greater than 0")
+	}
+	if safetyBps <= 0 {
+		safetyBps = 10000
+	}
+
+	gasPrice, err := c.ethClient.SuggestGasPrice(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("suggest gas price: %w", err)
+	}
+
+	requiredNativeFee := new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(estimatedGasUsed))
+	requiredNativeFee = requiredNativeFee.Mul(requiredNativeFee, big.NewInt(safetyBps))
+	requiredNativeFee = requiredNativeFee.Div(requiredNativeFee, big.NewInt(10000))
+
+	if outputToken == c.wethAddress {
+		return requiredNativeFee, gasPrice, nil
+	}
+
+	path := []common.Address{outputToken, c.wethAddress}
+	amountsIn, err := c.getAmountsIn(ctx, requiredNativeFee, path)
+	if err != nil {
+		return nil, gasPrice, err
+	}
+	if len(amountsIn) == 0 {
+		return nil, gasPrice, fmt.Errorf("router getAmountsIn returned empty result")
+	}
+
+	return amountsIn[0], gasPrice, nil
 }
 
 // CanExecuteOrder 调用合约只读方法，判断订单当前是否已经满足执行条件。
@@ -194,6 +276,29 @@ func (c *SettlementClient) InvalidateNoncesBySig(
 	return tx.Hash().Hex(), nil
 }
 
+// ReceiptStatus 查询交易回执，用于 pending 订单状态对账。
+func (c *SettlementClient) ReceiptStatus(ctx context.Context, txHash string) (*types.Receipt, error) {
+	if c == nil {
+		return nil, fmt.Errorf("settlement client is nil")
+	}
+	if !IsHexHash(strings.TrimSpace(txHash)) {
+		return nil, fmt.Errorf("invalid tx hash")
+	}
+	return c.ethClient.TransactionReceipt(ctx, common.HexToHash(strings.TrimSpace(txHash)))
+}
+
+func (c *SettlementClient) getAmountsIn(
+	ctx context.Context,
+	amountOut *big.Int,
+	path []common.Address,
+) ([]*big.Int, error) {
+	return c.routerContract.GetAmountsIn(
+		&bind.CallOpts{Context: ctx},
+		amountOut,
+		path,
+	)
+}
+
 func (c *SettlementClient) newTransactOpts(ctx context.Context) *bind.TransactOpts {
 	return &bind.TransactOpts{
 		From:    c.executorAddr,
@@ -217,22 +322,12 @@ func toBindingOrder(order SettlementOrder) IFluxSignedOrderSettlementSignedOrder
 		OutputToken:     order.OutputToken,
 		AmountIn:        order.AmountIn,
 		MinAmountOut:    order.MinAmountOut,
+		ExecutorFee:     order.ExecutorFee,
 		TriggerPriceX18: order.TriggerPriceX18,
 		Expiry:          order.Expiry,
 		Nonce:           order.Nonce,
 		Recipient:       order.Recipient,
 	}
-}
-
-// ReceiptStatus 查询交易回执，用于 pending 订单状态对账。
-func (c *SettlementClient) ReceiptStatus(ctx context.Context, txHash string) (*types.Receipt, error) {
-	if c == nil {
-		return nil, fmt.Errorf("settlement client is nil")
-	}
-	if !IsHexHash(strings.TrimSpace(txHash)) {
-		return nil, fmt.Errorf("invalid tx hash")
-	}
-	return c.ethClient.TransactionReceipt(ctx, common.HexToHash(strings.TrimSpace(txHash)))
 }
 
 // BuildSafeDeadline 把字符串 deadline 解析为链上可用的 unix 秒时间戳。

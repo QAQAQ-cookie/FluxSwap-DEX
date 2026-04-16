@@ -26,6 +26,8 @@ type Config struct {
 	ReceiptPollInterval time.Duration
 	BatchSize           int
 	TxDeadline          time.Duration
+	EstimatedGasUsed    uint64
+	FeeSafetyBps        int64
 }
 
 // Worker 负责扫描 open 订单、提交可执行订单，并跟踪 pending 交易回执。
@@ -64,6 +66,12 @@ func NewWorker(db *gorm.DB, cfg Config) (*Worker, error) {
 	}
 	if cfg.TxDeadline <= 0 {
 		cfg.TxDeadline = 2 * time.Minute
+	}
+	if cfg.EstimatedGasUsed == 0 {
+		cfg.EstimatedGasUsed = 400000
+	}
+	if cfg.FeeSafetyBps <= 0 {
+		cfg.FeeSafetyBps = 20000
 	}
 
 	settlementClient, err := chain.NewSettlementClient(chain.SettlementConfig{
@@ -182,21 +190,56 @@ func (w *Worker) evaluateOrder(ctx context.Context, order *domain.Order) error {
 	}
 
 	executable, reason, err := w.settlementClient.CanExecuteOrder(ctx, payload)
+	now := time.Now().UTC()
+	order.LastExecutionCheckAt = now
 	if err != nil {
 		order.Status = "open"
 		order.StatusReason = shortenReason("can_execute_failed: " + err.Error())
-		order.UpdatedAt = time.Now().UTC()
+		order.LastBlockReason = order.StatusReason
+		order.UpdatedAt = now
 		return w.orderRepo.Update(ctx, order)
 	}
 
 	if executable {
+		requiredExecutorFee, gasPriceAtQuote, feeErr := w.settlementClient.SuggestExecutorFee(
+			ctx,
+			payload.OutputToken,
+			w.cfg.EstimatedGasUsed,
+			w.cfg.FeeSafetyBps,
+		)
+		if feeErr != nil {
+			order.Status = "open"
+			order.StatusReason = shortenReason("executor_fee_quote_failed: " + feeErr.Error())
+			order.LastBlockReason = order.StatusReason
+			order.LastFeeCheckAt = now
+			order.UpdatedAt = now
+			return w.orderRepo.Update(ctx, order)
+		}
+
+		order.EstimatedGasUsed = new(big.Int).SetUint64(w.cfg.EstimatedGasUsed).String()
+		order.GasPriceAtQuote = gasPriceAtQuote.String()
+		order.FeeQuoteAt = now
+		order.LastFeeCheckAt = now
+		order.LastRequiredExecutorFee = requiredExecutorFee.String()
+
+		if payload.ExecutorFee.Cmp(requiredExecutorFee) < 0 {
+			order.Status = "open"
+			order.StatusReason = shortenReason("executor_fee_insufficient_for_current_gas")
+			order.LastBlockReason = shortenReason(
+				fmt.Sprintf("signed_executor_fee_%s_below_required_%s", payload.ExecutorFee.String(), requiredExecutorFee.String()),
+			)
+			order.UpdatedAt = now
+			return w.orderRepo.Update(ctx, order)
+		}
+
 		fmt.Printf("order %s is executable, submitting transaction\n", order.OrderHash)
 
 		signature, sigErr := chain.DecodeHexSignature(order.Signature)
 		if sigErr != nil {
 			order.Status = "open"
 			order.StatusReason = shortenReason("invalid_signature: " + sigErr.Error())
-			order.UpdatedAt = time.Now().UTC()
+			order.LastBlockReason = order.StatusReason
+			order.UpdatedAt = now
 			return w.orderRepo.Update(ctx, order)
 		}
 
@@ -204,7 +247,8 @@ func (w *Worker) evaluateOrder(ctx context.Context, order *domain.Order) error {
 		if deadlineErr != nil {
 			order.Status = "open"
 			order.StatusReason = shortenReason("deadline_invalid: " + deadlineErr.Error())
-			order.UpdatedAt = time.Now().UTC()
+			order.LastBlockReason = order.StatusReason
+			order.UpdatedAt = now
 			return w.orderRepo.Update(ctx, order)
 		}
 
@@ -213,19 +257,22 @@ func (w *Worker) evaluateOrder(ctx context.Context, order *domain.Order) error {
 			fmt.Printf("submit order %s failed: %v\n", order.OrderHash, executeErr)
 			order.Status = "open"
 			order.StatusReason = shortenReason("submit_failed: " + executeErr.Error())
+			order.LastBlockReason = order.StatusReason
 		} else {
 			fmt.Printf("submitted order %s with tx %s\n", order.OrderHash, txHash)
 			order.Status = "pending_execute"
 			order.StatusReason = "submitted_to_chain"
+			order.LastBlockReason = ""
 			order.SubmittedTxHash = txHash
 		}
-		order.UpdatedAt = time.Now().UTC()
+		order.UpdatedAt = now
 		return w.orderRepo.Update(ctx, order)
 	}
 
 	order.Status = "open"
-	order.StatusReason = reason
-	order.UpdatedAt = time.Now().UTC()
+	order.StatusReason = shortenReason(reason)
+	order.LastBlockReason = shortenReason(reason)
+	order.UpdatedAt = now
 	return w.orderRepo.Update(ctx, order)
 }
 
@@ -241,6 +288,7 @@ func (w *Worker) checkPendingReceipt(ctx context.Context, order *domain.Order) e
 		fmt.Printf("order %s lost pending tx hash, returning to open\n", order.OrderHash)
 		order.Status = "open"
 		order.StatusReason = "pending_without_valid_tx_hash"
+		order.LastBlockReason = order.StatusReason
 		order.SubmittedTxHash = ""
 		order.CancelledTxHash = ""
 		order.UpdatedAt = time.Now().UTC()
@@ -256,6 +304,7 @@ func (w *Worker) checkPendingReceipt(ctx context.Context, order *domain.Order) e
 			} else {
 				order.StatusReason = "tx_pending_on_chain"
 			}
+			order.LastBlockReason = order.StatusReason
 			order.UpdatedAt = time.Now().UTC()
 			return w.orderRepo.Update(ctx, order)
 		}
@@ -274,6 +323,7 @@ func (w *Worker) checkPendingReceipt(ctx context.Context, order *domain.Order) e
 			order.Status = "pending_execute"
 			order.StatusReason = "tx_confirmed_waiting_for_indexer"
 		}
+		order.LastBlockReason = ""
 		return w.orderRepo.Update(ctx, order)
 	}
 
@@ -281,9 +331,11 @@ func (w *Worker) checkPendingReceipt(ctx context.Context, order *domain.Order) e
 	order.Status = "open"
 	if isPendingCancel {
 		order.StatusReason = "cancel_tx_reverted_retryable"
+		order.LastBlockReason = order.StatusReason
 		order.CancelledTxHash = ""
 	} else {
 		order.StatusReason = "tx_reverted_retryable"
+		order.LastBlockReason = order.StatusReason
 		order.SubmittedTxHash = ""
 	}
 	return w.orderRepo.Update(ctx, order)
@@ -330,6 +382,7 @@ func buildSettlementOrder(order *domain.Order) (chain.SettlementOrder, error) {
 		OutputToken:     common.HexToAddress(order.OutputToken),
 		AmountIn:        mustBigInt(order.AmountIn),
 		MinAmountOut:    mustBigInt(order.MinAmountOut),
+		ExecutorFee:     mustBigInt(order.ExecutorFee),
 		TriggerPriceX18: mustBigInt(order.TriggerPriceX18),
 		Expiry:          mustBigInt(order.Expiry),
 		Nonce:           mustBigInt(order.Nonce),

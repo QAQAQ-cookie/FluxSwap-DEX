@@ -25,7 +25,9 @@ type ApplyOrderEventParams struct {
 	OrderHash       string
 	Maker           string
 	Nonce           string
-	MinValidNonce   string
+	GrossAmountOut  string
+	RecipientAmountOut string
+	ExecutorFeeAmount string
 }
 
 // OrderEventService 负责把结算合约事件应用到链下订单数据库。
@@ -44,7 +46,7 @@ func NewOrderEventService(orderRepo *repo.OrderRepository, orderEventRepo *repo.
 
 // Apply 记录订单级事件，并同步更新对应订单状态。
 //
-// 它处理带具体 orderHash 的事件，比如 OrderExecuted 和 OrderCancelled。
+// 它处理带具体 orderHash 的事件，比如 OrderExecuted。
 // 如果事件行重复写入，会返回 ErrDuplicateOrderEvent，调用方可以把重试视为幂等操作。
 func (s *OrderEventService) Apply(ctx context.Context, params ApplyOrderEventParams) (*domain.Order, error) {
 	if s == nil || s.orderRepo == nil || s.orderEventRepo == nil {
@@ -61,7 +63,7 @@ func (s *OrderEventService) Apply(ctx context.Context, params ApplyOrderEventPar
 		OrderHash:       strings.ToLower(strings.TrimSpace(params.OrderHash)),
 		Maker:           strings.ToLower(strings.TrimSpace(params.Maker)),
 		Nonce:           strings.TrimSpace(params.Nonce),
-		MinValidNonce:   strings.TrimSpace(params.MinValidNonce),
+		MinValidNonce:   "",
 		ObservedAt:      time.Now().UTC(),
 	}); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "duplicate key") {
@@ -84,11 +86,10 @@ func (s *OrderEventService) Apply(ctx context.Context, params ApplyOrderEventPar
 	case "OrderExecuted":
 		order.Status = "executed"
 		order.StatusReason = "updated_by_order_executed_event"
+		order.LastBlockReason = ""
 		order.ExecutedTxHash = strings.ToLower(strings.TrimSpace(params.TxHash))
-	case "OrderCancelled":
-		order.Status = "cancelled"
-		order.StatusReason = "updated_by_order_cancelled_event"
-		order.CancelledTxHash = strings.ToLower(strings.TrimSpace(params.TxHash))
+		order.SettledAmountOut = strings.TrimSpace(params.GrossAmountOut)
+		order.SettledExecutorFee = strings.TrimSpace(params.ExecutorFeeAmount)
 	default:
 		return nil, gorm.ErrInvalidData
 	}
@@ -119,7 +120,7 @@ func (s *OrderEventService) ApplyNonceInvalidated(ctx context.Context, params Ap
 		OrderHash:       strings.ToLower(strings.TrimSpace(params.OrderHash)),
 		Maker:           strings.ToLower(strings.TrimSpace(params.Maker)),
 		Nonce:           strings.TrimSpace(params.Nonce),
-		MinValidNonce:   strings.TrimSpace(params.MinValidNonce),
+		MinValidNonce:   "",
 		ObservedAt:      time.Now().UTC(),
 	}); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "duplicate key") {
@@ -153,56 +154,6 @@ func (s *OrderEventService) ApplyNonceInvalidated(ctx context.Context, params Ap
 	return orders, nil
 }
 
-// ApplyMinValidNonceUpdated 记录 cancelUpTo 事件，并取消所有早于最小有效 nonce 的活跃订单。
-func (s *OrderEventService) ApplyMinValidNonceUpdated(ctx context.Context, params ApplyOrderEventParams) ([]domain.Order, error) {
-	if s == nil || s.orderRepo == nil || s.orderEventRepo == nil {
-		return nil, errors.New("order event service unavailable")
-	}
-
-	if err := s.orderEventRepo.Create(ctx, &domain.OrderEvent{
-		ChainID:         params.ChainID,
-		ContractAddress: strings.ToLower(strings.TrimSpace(params.ContractAddress)),
-		EventName:       strings.TrimSpace(params.EventName),
-		TxHash:          strings.ToLower(strings.TrimSpace(params.TxHash)),
-		LogIndex:        params.LogIndex,
-		BlockNumber:     params.BlockNumber,
-		OrderHash:       strings.ToLower(strings.TrimSpace(params.OrderHash)),
-		Maker:           strings.ToLower(strings.TrimSpace(params.Maker)),
-		Nonce:           strings.TrimSpace(params.Nonce),
-		MinValidNonce:   strings.TrimSpace(params.MinValidNonce),
-		ObservedAt:      time.Now().UTC(),
-	}); err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "duplicate key") {
-			return nil, ErrDuplicateOrderEvent
-		}
-		return nil, err
-	}
-
-	orders, err := s.orderRepo.ListOpenOrdersByMakerAndNonceBelow(
-		ctx,
-		params.ChainID,
-		strings.ToLower(strings.TrimSpace(params.ContractAddress)),
-		strings.ToLower(strings.TrimSpace(params.Maker)),
-		strings.TrimSpace(params.MinValidNonce),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	for i := range orders {
-		orders[i].Status = "cancelled"
-		orders[i].StatusReason = "updated_by_min_valid_nonce_event"
-		orders[i].CancelledTxHash = strings.ToLower(strings.TrimSpace(params.TxHash))
-		orders[i].LastCheckedBlock = params.BlockNumber
-		orders[i].UpdatedAt = time.Now().UTC()
-		if err := s.orderRepo.Update(ctx, &orders[i]); err != nil {
-			return nil, err
-		}
-	}
-
-	return orders, nil
-}
-
 // OrderToResponse 把领域模型转换成 RPC 和 worker 共用的响应结构。
 func OrderToResponse(order *domain.Order) *struct {
 	ID                uint64
@@ -214,6 +165,8 @@ func OrderToResponse(order *domain.Order) *struct {
 	OutputToken       string
 	AmountIn          string
 	MinAmountOut      string
+	ExecutorFee       string
+	ExecutorFeeToken  string
 	TriggerPriceX18   string
 	Expiry            string
 	Nonce             string
@@ -221,6 +174,15 @@ func OrderToResponse(order *domain.Order) *struct {
 	Source            string
 	Status            string
 	StatusReason      string
+	EstimatedGasUsed  string
+	GasPriceAtQuote   string
+	FeeQuoteAt        string
+	LastRequiredExecutorFee string
+	LastFeeCheckAt    string
+	LastExecutionCheckAt string
+	LastBlockReason   string
+	SettledAmountOut  string
+	SettledExecutorFee string
 	SubmittedTxHash   string
 	ExecutedTxHash    string
 	CancelledTxHash   string
@@ -242,6 +204,8 @@ func OrderToResponse(order *domain.Order) *struct {
 		OutputToken       string
 		AmountIn          string
 		MinAmountOut      string
+		ExecutorFee       string
+		ExecutorFeeToken  string
 		TriggerPriceX18   string
 		Expiry            string
 		Nonce             string
@@ -249,6 +213,15 @@ func OrderToResponse(order *domain.Order) *struct {
 		Source            string
 		Status            string
 		StatusReason      string
+		EstimatedGasUsed  string
+		GasPriceAtQuote   string
+		FeeQuoteAt        string
+		LastRequiredExecutorFee string
+		LastFeeCheckAt    string
+		LastExecutionCheckAt string
+		LastBlockReason   string
+		SettledAmountOut  string
+		SettledExecutorFee string
 		SubmittedTxHash   string
 		ExecutedTxHash    string
 		CancelledTxHash   string
@@ -265,6 +238,8 @@ func OrderToResponse(order *domain.Order) *struct {
 		OutputToken:       order.OutputToken,
 		AmountIn:          order.AmountIn,
 		MinAmountOut:      order.MinAmountOut,
+		ExecutorFee:       order.ExecutorFee,
+		ExecutorFeeToken:  order.ExecutorFeeToken,
 		TriggerPriceX18:   order.TriggerPriceX18,
 		Expiry:            order.Expiry,
 		Nonce:             order.Nonce,
@@ -272,6 +247,15 @@ func OrderToResponse(order *domain.Order) *struct {
 		Source:            order.Source,
 		Status:            order.Status,
 		StatusReason:      order.StatusReason,
+		EstimatedGasUsed:  order.EstimatedGasUsed,
+		GasPriceAtQuote:   order.GasPriceAtQuote,
+		FeeQuoteAt:        formatTime(order.FeeQuoteAt),
+		LastRequiredExecutorFee: order.LastRequiredExecutorFee,
+		LastFeeCheckAt:    formatTime(order.LastFeeCheckAt),
+		LastExecutionCheckAt: formatTime(order.LastExecutionCheckAt),
+		LastBlockReason:   order.LastBlockReason,
+		SettledAmountOut:  order.SettledAmountOut,
+		SettledExecutorFee: order.SettledExecutorFee,
 		SubmittedTxHash:   order.SubmittedTxHash,
 		ExecutedTxHash:    order.ExecutedTxHash,
 		CancelledTxHash:   order.CancelledTxHash,

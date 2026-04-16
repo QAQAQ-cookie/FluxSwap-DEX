@@ -19,10 +19,8 @@ import (
 )
 
 var (
-	orderExecutedTopic        = crypto.Keccak256Hash([]byte("OrderExecuted(bytes32,address,address,address,address,uint256,uint256,address)"))
-	orderCancelledTopic       = crypto.Keccak256Hash([]byte("OrderCancelled(bytes32,address,uint256)"))
+	orderExecutedTopic        = crypto.Keccak256Hash([]byte("OrderExecuted(bytes32,address,address,address,address,uint256,uint256,uint256,uint256,address)"))
 	nonceInvalidatedTopic     = crypto.Keccak256Hash([]byte("NonceInvalidated(address,uint256)"))
-	minValidNonceUpdatedTopic = crypto.Keccak256Hash([]byte("MinValidNonceUpdated(address,uint256,uint256)"))
 )
 
 // Config 控制索引器订阅行为、重连策略和历史回补范围。
@@ -252,7 +250,7 @@ func (s *Subscriber) decodeLog(eventName string, entry types.Log) (OrderEvent, b
 	}
 
 	switch eventName {
-	case EventOrderExecuted, EventOrderCancelled:
+	case EventOrderExecuted:
 		if len(entry.Topics) < 2 {
 			return OrderEvent{}, false
 		}
@@ -260,10 +258,10 @@ func (s *Subscriber) decodeLog(eventName string, entry types.Log) (OrderEvent, b
 		if len(entry.Topics) >= 3 {
 			base.Maker = strings.ToLower(common.HexToAddress(entry.Topics[2].Hex()).Hex())
 		}
-		if eventName == EventOrderCancelled {
-			if nonce, ok := decodeUint256(entry.Data); ok {
-				base.Nonce = nonce
-			}
+		if grossAmountOut, recipientAmountOut, executorFeeAmount, ok := decodeThreeUint256Offset(entry.Data, 64); ok {
+			base.GrossAmountOut = grossAmountOut
+			base.RecipientAmountOut = recipientAmountOut
+			base.ExecutorFeeAmount = executorFeeAmount
 		}
 		return base, true
 	case EventNonceInvalidated:
@@ -273,16 +271,6 @@ func (s *Subscriber) decodeLog(eventName string, entry types.Log) (OrderEvent, b
 		base.Maker = strings.ToLower(common.HexToAddress(entry.Topics[1].Hex()).Hex())
 		if nonce, ok := decodeUint256(entry.Data); ok {
 			base.Nonce = nonce
-		}
-		return base, true
-	case EventMinValidNonceUpdated:
-		if len(entry.Topics) < 2 {
-			return OrderEvent{}, false
-		}
-		base.Maker = strings.ToLower(common.HexToAddress(entry.Topics[1].Hex()).Hex())
-		if previous, current, ok := decodeTwoUint256(entry.Data); ok {
-			_ = previous
-			base.MinValidNonce = current
 		}
 		return base, true
 	default:
@@ -299,14 +287,15 @@ func decodeUint256(data []byte) (string, bool) {
 	return value.String(), true
 }
 
-// decodeTwoUint256 从 ABI 编码的事件 data 中顺序读取两个 uint256。
-func decodeTwoUint256(data []byte) (string, string, bool) {
-	if len(data) < 64 {
-		return "", "", false
+// decodeThreeUint256Offset 从 ABI 编码的事件 data 中按偏移读取连续三个 uint256。
+func decodeThreeUint256Offset(data []byte, offset int) (string, string, string, bool) {
+	if len(data) < offset+96 {
+		return "", "", "", false
 	}
-	first := new(big.Int).SetBytes(data[:32]).String()
-	second := new(big.Int).SetBytes(data[32:64]).String()
-	return first, second, true
+	first := new(big.Int).SetBytes(data[offset : offset+32]).String()
+	second := new(big.Int).SetBytes(data[offset+32 : offset+64]).String()
+	third := new(big.Int).SetBytes(data[offset+64 : offset+96]).String()
+	return first, second, third, true
 }
 
 // eventNameByTopic 根据 topic hash 识别当前支持的结算事件名称。
@@ -314,12 +303,8 @@ func eventNameByTopic(topic common.Hash) (string, bool) {
 	switch topic {
 	case orderExecutedTopic:
 		return EventOrderExecuted, true
-	case orderCancelledTopic:
-		return EventOrderCancelled, true
 	case nonceInvalidatedTopic:
 		return EventNonceInvalidated, true
-	case minValidNonceUpdatedTopic:
-		return EventMinValidNonceUpdated, true
 	default:
 		return "", false
 	}

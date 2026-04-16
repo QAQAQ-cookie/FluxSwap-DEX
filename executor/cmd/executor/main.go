@@ -74,6 +74,8 @@ func main() {
 			ReceiptPollInterval: time.Duration(c.Worker.ReceiptPollIntervalMs) * time.Millisecond,
 			BatchSize:           c.Worker.ExecutorBatchSize,
 			TxDeadline:          time.Duration(c.Worker.ExecutorTxDeadlineSec) * time.Second,
+			EstimatedGasUsed:    c.Worker.ExecutorEstimatedGasUsed,
+			FeeSafetyBps:        c.Worker.ExecutorFeeSafetyBps,
 		})
 		if err != nil {
 			log.Fatalf("create executor worker failed for chain %d: %v", chainCfg.ChainID, err)

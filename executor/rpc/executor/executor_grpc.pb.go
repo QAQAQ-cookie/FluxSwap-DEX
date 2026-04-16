@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.1
 // - protoc             v3.19.4
-// source: rpc/proto/executor.proto
+// source: executor/rpc/proto/executor.proto
 
 package executor
 
@@ -269,5 +269,5 @@ var Executor_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "rpc/proto/executor.proto",
+	Metadata: "executor/rpc/proto/executor.proto",
 }

@@ -3,6 +3,7 @@ package logic
 import (
 	"context"
 	"errors"
+	"math/big"
 	"strings"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"fluxswap-executor/rpc/executor"
 	"fluxswap-executor/rpc/internal/svc"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/zeromicro/go-zero/core/logx"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -58,6 +60,9 @@ func (l *CreateOrderLogic) CreateOrder(in *executor.CreateOrderRequest) (*execut
 	}
 	if !isPositiveUint(in.GetMinAmountOut()) {
 		return nil, status.Error(codes.InvalidArgument, "minAmountOut must be a positive integer string")
+	}
+	if !isUint(in.GetExecutorFee()) {
+		return nil, status.Error(codes.InvalidArgument, "executorFee must be an unsigned integer string")
 	}
 	if !isPositiveUint(in.GetTriggerPriceX18()) {
 		return nil, status.Error(codes.InvalidArgument, "triggerPriceX18 must be a positive integer string")
@@ -107,6 +112,35 @@ func (l *CreateOrderLogic) CreateOrder(in *executor.CreateOrderRequest) (*execut
 	}
 
 	now := time.Now().UTC()
+	executorFee := strings.TrimSpace(in.GetExecutorFee())
+	if executorFee == "" {
+		executorFee = "0"
+	}
+
+	estimatedGasUsed := "0"
+	gasPriceAtQuote := "0"
+	lastRequiredExecutorFee := "0"
+	lastBlockReason := ""
+
+	if chainClient := l.svcCtx.LookupChainClient(in.GetChainId(), in.GetSettlementAddress()); chainClient != nil {
+		requiredExecutorFee, gasPrice, quoteErr := chainClient.SuggestExecutorFee(
+			l.ctx,
+			common.HexToAddress(normalizeAddress(in.GetOutputToken())),
+			l.svcCtx.Config.Worker.ExecutorEstimatedGasUsed,
+			l.svcCtx.Config.Worker.ExecutorFeeSafetyBps,
+		)
+		if quoteErr != nil {
+			lastBlockReason = strings.TrimSpace("initial_executor_fee_quote_failed: " + quoteErr.Error())
+		} else {
+			estimatedGasUsed = new(big.Int).SetUint64(l.svcCtx.Config.Worker.ExecutorEstimatedGasUsed).String()
+			gasPriceAtQuote = gasPrice.String()
+			lastRequiredExecutorFee = requiredExecutorFee.String()
+			if mustBigInt(executorFee).Cmp(requiredExecutorFee) < 0 {
+				lastBlockReason = "signed_executor_fee_below_initial_required"
+			}
+		}
+	}
+
 	order := &domain.Order{
 		ChainID:           in.GetChainId(),
 		SettlementAddress: normalizeAddress(in.GetSettlementAddress()),
@@ -116,6 +150,8 @@ func (l *CreateOrderLogic) CreateOrder(in *executor.CreateOrderRequest) (*execut
 		OutputToken:       normalizeAddress(in.GetOutputToken()),
 		AmountIn:          strings.TrimSpace(in.GetAmountIn()),
 		MinAmountOut:      strings.TrimSpace(in.GetMinAmountOut()),
+		ExecutorFee:       executorFee,
+		ExecutorFeeToken:  normalizeAddress(in.GetOutputToken()),
 		TriggerPriceX18:   strings.TrimSpace(in.GetTriggerPriceX18()),
 		Expiry:            strings.TrimSpace(in.GetExpiry()),
 		Nonce:             strings.TrimSpace(in.GetNonce()),
@@ -124,6 +160,15 @@ func (l *CreateOrderLogic) CreateOrder(in *executor.CreateOrderRequest) (*execut
 		Source:            source,
 		Status:            "open",
 		StatusReason:      "",
+		EstimatedGasUsed:  estimatedGasUsed,
+		GasPriceAtQuote:   gasPriceAtQuote,
+		FeeQuoteAt:        now,
+		LastRequiredExecutorFee: lastRequiredExecutorFee,
+		LastFeeCheckAt:    now,
+		LastExecutionCheckAt: now,
+		LastBlockReason:   lastBlockReason,
+		SettledAmountOut:  "0",
+		SettledExecutorFee: "0",
 		SubmittedTxHash:   "",
 		ExecutedTxHash:    "",
 		CancelledTxHash:   "",

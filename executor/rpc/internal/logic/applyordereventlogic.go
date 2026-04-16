@@ -56,6 +56,7 @@ func (l *ApplyOrderEventLogic) ApplyOrderEvent(in *executor.ApplyOrderEventReque
 	orderRepo := repo.NewOrderRepository(l.svcCtx.DB)
 	orderEventRepo := repo.NewOrderEventRepository(l.svcCtx.DB)
 	orderEventService := app.NewOrderEventService(orderRepo, orderEventRepo)
+
 	order, err := orderEventService.Apply(l.ctx, app.ApplyOrderEventParams{
 		ChainID:         in.GetChainId(),
 		ContractAddress: in.GetContractAddress(),
@@ -80,8 +81,8 @@ func (l *ApplyOrderEventLogic) ApplyOrderEvent(in *executor.ApplyOrderEventReque
 			return &executor.ApplyOrderEventResponse{
 				Notice: successNotice(
 					"EVENT_ALREADY_APPLIED",
-					"事件已处理过，本次按幂等成功返回",
-					"这是正常的重复回放场景，无需额外处理。",
+					"事件已经处理过，本次按幂等成功返回",
+					"这属于正常的重复回放场景，无需额外处理。",
 					"event_apply",
 				),
 			}, nil
@@ -91,11 +92,12 @@ func (l *ApplyOrderEventLogic) ApplyOrderEvent(in *executor.ApplyOrderEventReque
 				Notice: failureNotice(
 					"UNSUPPORTED_EVENT",
 					"当前事件类型不受支持",
-					"请确认 eventName 是否在系统支持的事件白名单内。",
+					"当前接口仅支持 OrderExecuted 事件回写。",
 					"event_validation",
 				),
 			}, status.Error(codes.InvalidArgument, "unsupported eventName")
 		}
+
 		l.Errorf("apply order event failed: %v", err)
 		return &executor.ApplyOrderEventResponse{
 			Notice: failureNotice(

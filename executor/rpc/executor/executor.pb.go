@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v3.19.4
-// source: rpc/proto/executor.proto
+// source: executor/rpc/proto/executor.proto
 
 package executor
 
@@ -30,7 +30,7 @@ type PingRequest struct {
 
 func (x *PingRequest) Reset() {
 	*x = PingRequest{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[0]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -42,7 +42,7 @@ func (x *PingRequest) String() string {
 func (*PingRequest) ProtoMessage() {}
 
 func (x *PingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[0]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -55,7 +55,7 @@ func (x *PingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PingRequest.ProtoReflect.Descriptor instead.
 func (*PingRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{0}
+	return file_executor_rpc_proto_executor_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *PingRequest) GetMessage() string {
@@ -75,7 +75,7 @@ type PingResponse struct {
 
 func (x *PingResponse) Reset() {
 	*x = PingResponse{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[1]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -87,7 +87,7 @@ func (x *PingResponse) String() string {
 func (*PingResponse) ProtoMessage() {}
 
 func (x *PingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[1]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -100,7 +100,7 @@ func (x *PingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PingResponse.ProtoReflect.Descriptor instead.
 func (*PingResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{1}
+	return file_executor_rpc_proto_executor_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *PingResponse) GetMessage() string {
@@ -130,7 +130,7 @@ type ResponseNotice struct {
 
 func (x *ResponseNotice) Reset() {
 	*x = ResponseNotice{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[2]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -142,7 +142,7 @@ func (x *ResponseNotice) String() string {
 func (*ResponseNotice) ProtoMessage() {}
 
 func (x *ResponseNotice) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[2]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -155,7 +155,7 @@ func (x *ResponseNotice) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResponseNotice.ProtoReflect.Descriptor instead.
 func (*ResponseNotice) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{2}
+	return file_executor_rpc_proto_executor_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *ResponseNotice) GetSuccess() bool {
@@ -209,13 +209,14 @@ type CreateOrderRequest struct {
 	Recipient         string                 `protobuf:"bytes,12,opt,name=recipient,proto3" json:"recipient,omitempty"`
 	Signature         string                 `protobuf:"bytes,13,opt,name=signature,proto3" json:"signature,omitempty"`
 	Source            string                 `protobuf:"bytes,14,opt,name=source,proto3" json:"source,omitempty"`
+	ExecutorFee       string                 `protobuf:"bytes,15,opt,name=executorFee,proto3" json:"executorFee,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
 
 func (x *CreateOrderRequest) Reset() {
 	*x = CreateOrderRequest{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[3]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -227,7 +228,7 @@ func (x *CreateOrderRequest) String() string {
 func (*CreateOrderRequest) ProtoMessage() {}
 
 func (x *CreateOrderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[3]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -240,7 +241,7 @@ func (x *CreateOrderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateOrderRequest.ProtoReflect.Descriptor instead.
 func (*CreateOrderRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{3}
+	return file_executor_rpc_proto_executor_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *CreateOrderRequest) GetChainId() int64 {
@@ -341,6 +342,13 @@ func (x *CreateOrderRequest) GetSource() string {
 	return ""
 }
 
+func (x *CreateOrderRequest) GetExecutorFee() string {
+	if x != nil {
+		return x.ExecutorFee
+	}
+	return ""
+}
+
 type CreateOrderResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Order         *GetOrderResponse      `protobuf:"bytes,1,opt,name=order,proto3" json:"order,omitempty"`
@@ -351,7 +359,7 @@ type CreateOrderResponse struct {
 
 func (x *CreateOrderResponse) Reset() {
 	*x = CreateOrderResponse{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[4]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -363,7 +371,7 @@ func (x *CreateOrderResponse) String() string {
 func (*CreateOrderResponse) ProtoMessage() {}
 
 func (x *CreateOrderResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[4]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -376,7 +384,7 @@ func (x *CreateOrderResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateOrderResponse.ProtoReflect.Descriptor instead.
 func (*CreateOrderResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{4}
+	return file_executor_rpc_proto_executor_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *CreateOrderResponse) GetOrder() *GetOrderResponse {
@@ -406,7 +414,7 @@ type CancelOrderItem struct {
 
 func (x *CancelOrderItem) Reset() {
 	*x = CancelOrderItem{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[5]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -418,7 +426,7 @@ func (x *CancelOrderItem) String() string {
 func (*CancelOrderItem) ProtoMessage() {}
 
 func (x *CancelOrderItem) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[5]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -431,7 +439,7 @@ func (x *CancelOrderItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelOrderItem.ProtoReflect.Descriptor instead.
 func (*CancelOrderItem) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{5}
+	return file_executor_rpc_proto_executor_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *CancelOrderItem) GetChainId() int64 {
@@ -480,7 +488,7 @@ type CancelOrdersRequest struct {
 
 func (x *CancelOrdersRequest) Reset() {
 	*x = CancelOrdersRequest{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[6]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -492,7 +500,7 @@ func (x *CancelOrdersRequest) String() string {
 func (*CancelOrdersRequest) ProtoMessage() {}
 
 func (x *CancelOrdersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[6]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -505,7 +513,7 @@ func (x *CancelOrdersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelOrdersRequest.ProtoReflect.Descriptor instead.
 func (*CancelOrdersRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{6}
+	return file_executor_rpc_proto_executor_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CancelOrdersRequest) GetOrders() []*CancelOrderItem {
@@ -547,7 +555,7 @@ type CancelOrdersResult struct {
 
 func (x *CancelOrdersResult) Reset() {
 	*x = CancelOrdersResult{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[7]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -559,7 +567,7 @@ func (x *CancelOrdersResult) String() string {
 func (*CancelOrdersResult) ProtoMessage() {}
 
 func (x *CancelOrdersResult) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[7]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -572,7 +580,7 @@ func (x *CancelOrdersResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelOrdersResult.ProtoReflect.Descriptor instead.
 func (*CancelOrdersResult) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{7}
+	return file_executor_rpc_proto_executor_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *CancelOrdersResult) GetChainId() int64 {
@@ -657,7 +665,7 @@ type CancelOrdersResponse struct {
 
 func (x *CancelOrdersResponse) Reset() {
 	*x = CancelOrdersResponse{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[8]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -669,7 +677,7 @@ func (x *CancelOrdersResponse) String() string {
 func (*CancelOrdersResponse) ProtoMessage() {}
 
 func (x *CancelOrdersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[8]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -682,7 +690,7 @@ func (x *CancelOrdersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelOrdersResponse.ProtoReflect.Descriptor instead.
 func (*CancelOrdersResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{8}
+	return file_executor_rpc_proto_executor_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *CancelOrdersResponse) GetTotal() uint32 {
@@ -727,7 +735,7 @@ type ApplyOrderEventRequest struct {
 
 func (x *ApplyOrderEventRequest) Reset() {
 	*x = ApplyOrderEventRequest{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[9]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -739,7 +747,7 @@ func (x *ApplyOrderEventRequest) String() string {
 func (*ApplyOrderEventRequest) ProtoMessage() {}
 
 func (x *ApplyOrderEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[9]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -752,7 +760,7 @@ func (x *ApplyOrderEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyOrderEventRequest.ProtoReflect.Descriptor instead.
 func (*ApplyOrderEventRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{9}
+	return file_executor_rpc_proto_executor_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ApplyOrderEventRequest) GetChainId() int64 {
@@ -807,7 +815,7 @@ type ApplyOrderEventResponse struct {
 
 func (x *ApplyOrderEventResponse) Reset() {
 	*x = ApplyOrderEventResponse{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[10]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -819,7 +827,7 @@ func (x *ApplyOrderEventResponse) String() string {
 func (*ApplyOrderEventResponse) ProtoMessage() {}
 
 func (x *ApplyOrderEventResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[10]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -832,7 +840,7 @@ func (x *ApplyOrderEventResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyOrderEventResponse.ProtoReflect.Descriptor instead.
 func (*ApplyOrderEventResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{10}
+	return file_executor_rpc_proto_executor_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ApplyOrderEventResponse) GetOrder() *GetOrderResponse {
@@ -860,7 +868,7 @@ type GetOrderRequest struct {
 
 func (x *GetOrderRequest) Reset() {
 	*x = GetOrderRequest{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[11]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -872,7 +880,7 @@ func (x *GetOrderRequest) String() string {
 func (*GetOrderRequest) ProtoMessage() {}
 
 func (x *GetOrderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[11]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -885,7 +893,7 @@ func (x *GetOrderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetOrderRequest.ProtoReflect.Descriptor instead.
 func (*GetOrderRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{11}
+	return file_executor_rpc_proto_executor_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *GetOrderRequest) GetChainId() int64 {
@@ -910,37 +918,48 @@ func (x *GetOrderRequest) GetOrderHash() string {
 }
 
 type GetOrderResponse struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	Id                uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	ChainId           int64                  `protobuf:"varint,2,opt,name=chainId,proto3" json:"chainId,omitempty"`
-	SettlementAddress string                 `protobuf:"bytes,3,opt,name=settlementAddress,proto3" json:"settlementAddress,omitempty"`
-	OrderHash         string                 `protobuf:"bytes,4,opt,name=orderHash,proto3" json:"orderHash,omitempty"`
-	Maker             string                 `protobuf:"bytes,5,opt,name=maker,proto3" json:"maker,omitempty"`
-	InputToken        string                 `protobuf:"bytes,6,opt,name=inputToken,proto3" json:"inputToken,omitempty"`
-	OutputToken       string                 `protobuf:"bytes,7,opt,name=outputToken,proto3" json:"outputToken,omitempty"`
-	AmountIn          string                 `protobuf:"bytes,8,opt,name=amountIn,proto3" json:"amountIn,omitempty"`
-	MinAmountOut      string                 `protobuf:"bytes,9,opt,name=minAmountOut,proto3" json:"minAmountOut,omitempty"`
-	TriggerPriceX18   string                 `protobuf:"bytes,10,opt,name=triggerPriceX18,proto3" json:"triggerPriceX18,omitempty"`
-	Expiry            string                 `protobuf:"bytes,11,opt,name=expiry,proto3" json:"expiry,omitempty"`
-	Nonce             string                 `protobuf:"bytes,12,opt,name=nonce,proto3" json:"nonce,omitempty"`
-	Recipient         string                 `protobuf:"bytes,13,opt,name=recipient,proto3" json:"recipient,omitempty"`
-	Source            string                 `protobuf:"bytes,14,opt,name=source,proto3" json:"source,omitempty"`
-	Status            string                 `protobuf:"bytes,15,opt,name=status,proto3" json:"status,omitempty"`
-	StatusReason      string                 `protobuf:"bytes,16,opt,name=statusReason,proto3" json:"statusReason,omitempty"`
-	SubmittedTxHash   string                 `protobuf:"bytes,17,opt,name=submittedTxHash,proto3" json:"submittedTxHash,omitempty"`
-	ExecutedTxHash    string                 `protobuf:"bytes,18,opt,name=executedTxHash,proto3" json:"executedTxHash,omitempty"`
-	CancelledTxHash   string                 `protobuf:"bytes,19,opt,name=cancelledTxHash,proto3" json:"cancelledTxHash,omitempty"`
-	LastCheckedBlock  int64                  `protobuf:"varint,20,opt,name=lastCheckedBlock,proto3" json:"lastCheckedBlock,omitempty"`
-	CreatedAt         string                 `protobuf:"bytes,21,opt,name=createdAt,proto3" json:"createdAt,omitempty"`
-	UpdatedAt         string                 `protobuf:"bytes,22,opt,name=updatedAt,proto3" json:"updatedAt,omitempty"`
-	Notice            *ResponseNotice        `protobuf:"bytes,23,opt,name=notice,proto3" json:"notice,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	Id                      uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	ChainId                 int64                  `protobuf:"varint,2,opt,name=chainId,proto3" json:"chainId,omitempty"`
+	SettlementAddress       string                 `protobuf:"bytes,3,opt,name=settlementAddress,proto3" json:"settlementAddress,omitempty"`
+	OrderHash               string                 `protobuf:"bytes,4,opt,name=orderHash,proto3" json:"orderHash,omitempty"`
+	Maker                   string                 `protobuf:"bytes,5,opt,name=maker,proto3" json:"maker,omitempty"`
+	InputToken              string                 `protobuf:"bytes,6,opt,name=inputToken,proto3" json:"inputToken,omitempty"`
+	OutputToken             string                 `protobuf:"bytes,7,opt,name=outputToken,proto3" json:"outputToken,omitempty"`
+	AmountIn                string                 `protobuf:"bytes,8,opt,name=amountIn,proto3" json:"amountIn,omitempty"`
+	MinAmountOut            string                 `protobuf:"bytes,9,opt,name=minAmountOut,proto3" json:"minAmountOut,omitempty"`
+	TriggerPriceX18         string                 `protobuf:"bytes,10,opt,name=triggerPriceX18,proto3" json:"triggerPriceX18,omitempty"`
+	Expiry                  string                 `protobuf:"bytes,11,opt,name=expiry,proto3" json:"expiry,omitempty"`
+	Nonce                   string                 `protobuf:"bytes,12,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	Recipient               string                 `protobuf:"bytes,13,opt,name=recipient,proto3" json:"recipient,omitempty"`
+	Source                  string                 `protobuf:"bytes,14,opt,name=source,proto3" json:"source,omitempty"`
+	Status                  string                 `protobuf:"bytes,15,opt,name=status,proto3" json:"status,omitempty"`
+	StatusReason            string                 `protobuf:"bytes,16,opt,name=statusReason,proto3" json:"statusReason,omitempty"`
+	SubmittedTxHash         string                 `protobuf:"bytes,17,opt,name=submittedTxHash,proto3" json:"submittedTxHash,omitempty"`
+	ExecutedTxHash          string                 `protobuf:"bytes,18,opt,name=executedTxHash,proto3" json:"executedTxHash,omitempty"`
+	CancelledTxHash         string                 `protobuf:"bytes,19,opt,name=cancelledTxHash,proto3" json:"cancelledTxHash,omitempty"`
+	LastCheckedBlock        int64                  `protobuf:"varint,20,opt,name=lastCheckedBlock,proto3" json:"lastCheckedBlock,omitempty"`
+	CreatedAt               string                 `protobuf:"bytes,21,opt,name=createdAt,proto3" json:"createdAt,omitempty"`
+	UpdatedAt               string                 `protobuf:"bytes,22,opt,name=updatedAt,proto3" json:"updatedAt,omitempty"`
+	Notice                  *ResponseNotice        `protobuf:"bytes,23,opt,name=notice,proto3" json:"notice,omitempty"`
+	ExecutorFee             string                 `protobuf:"bytes,24,opt,name=executorFee,proto3" json:"executorFee,omitempty"`
+	ExecutorFeeToken        string                 `protobuf:"bytes,25,opt,name=executorFeeToken,proto3" json:"executorFeeToken,omitempty"`
+	EstimatedGasUsed        string                 `protobuf:"bytes,26,opt,name=estimatedGasUsed,proto3" json:"estimatedGasUsed,omitempty"`
+	GasPriceAtQuote         string                 `protobuf:"bytes,27,opt,name=gasPriceAtQuote,proto3" json:"gasPriceAtQuote,omitempty"`
+	FeeQuoteAt              string                 `protobuf:"bytes,28,opt,name=feeQuoteAt,proto3" json:"feeQuoteAt,omitempty"`
+	LastRequiredExecutorFee string                 `protobuf:"bytes,29,opt,name=lastRequiredExecutorFee,proto3" json:"lastRequiredExecutorFee,omitempty"`
+	LastFeeCheckAt          string                 `protobuf:"bytes,30,opt,name=lastFeeCheckAt,proto3" json:"lastFeeCheckAt,omitempty"`
+	LastExecutionCheckAt    string                 `protobuf:"bytes,31,opt,name=lastExecutionCheckAt,proto3" json:"lastExecutionCheckAt,omitempty"`
+	LastBlockReason         string                 `protobuf:"bytes,32,opt,name=lastBlockReason,proto3" json:"lastBlockReason,omitempty"`
+	SettledAmountOut        string                 `protobuf:"bytes,33,opt,name=settledAmountOut,proto3" json:"settledAmountOut,omitempty"`
+	SettledExecutorFee      string                 `protobuf:"bytes,34,opt,name=settledExecutorFee,proto3" json:"settledExecutorFee,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *GetOrderResponse) Reset() {
 	*x = GetOrderResponse{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[12]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -952,7 +971,7 @@ func (x *GetOrderResponse) String() string {
 func (*GetOrderResponse) ProtoMessage() {}
 
 func (x *GetOrderResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[12]
+	mi := &file_executor_rpc_proto_executor_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -965,7 +984,7 @@ func (x *GetOrderResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetOrderResponse.ProtoReflect.Descriptor instead.
 func (*GetOrderResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{12}
+	return file_executor_rpc_proto_executor_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *GetOrderResponse) GetId() uint64 {
@@ -1129,11 +1148,88 @@ func (x *GetOrderResponse) GetNotice() *ResponseNotice {
 	return nil
 }
 
-var File_rpc_proto_executor_proto protoreflect.FileDescriptor
+func (x *GetOrderResponse) GetExecutorFee() string {
+	if x != nil {
+		return x.ExecutorFee
+	}
+	return ""
+}
 
-const file_rpc_proto_executor_proto_rawDesc = "" +
+func (x *GetOrderResponse) GetExecutorFeeToken() string {
+	if x != nil {
+		return x.ExecutorFeeToken
+	}
+	return ""
+}
+
+func (x *GetOrderResponse) GetEstimatedGasUsed() string {
+	if x != nil {
+		return x.EstimatedGasUsed
+	}
+	return ""
+}
+
+func (x *GetOrderResponse) GetGasPriceAtQuote() string {
+	if x != nil {
+		return x.GasPriceAtQuote
+	}
+	return ""
+}
+
+func (x *GetOrderResponse) GetFeeQuoteAt() string {
+	if x != nil {
+		return x.FeeQuoteAt
+	}
+	return ""
+}
+
+func (x *GetOrderResponse) GetLastRequiredExecutorFee() string {
+	if x != nil {
+		return x.LastRequiredExecutorFee
+	}
+	return ""
+}
+
+func (x *GetOrderResponse) GetLastFeeCheckAt() string {
+	if x != nil {
+		return x.LastFeeCheckAt
+	}
+	return ""
+}
+
+func (x *GetOrderResponse) GetLastExecutionCheckAt() string {
+	if x != nil {
+		return x.LastExecutionCheckAt
+	}
+	return ""
+}
+
+func (x *GetOrderResponse) GetLastBlockReason() string {
+	if x != nil {
+		return x.LastBlockReason
+	}
+	return ""
+}
+
+func (x *GetOrderResponse) GetSettledAmountOut() string {
+	if x != nil {
+		return x.SettledAmountOut
+	}
+	return ""
+}
+
+func (x *GetOrderResponse) GetSettledExecutorFee() string {
+	if x != nil {
+		return x.SettledExecutorFee
+	}
+	return ""
+}
+
+var File_executor_rpc_proto_executor_proto protoreflect.FileDescriptor
+
+const file_executor_rpc_proto_executor_proto_rawDesc = "" +
 	"\n" +
-	"\x18rpc/proto/executor.proto\x12\bexecutor\"'\n" +
+	"!executor/rpc/proto/executor.proto\x12\bexecutor\"'\n" +
 	"\vPingRequest\x12\x18\n" +
 	"\amessage\x18\x01 \x01(\tR\amessage\"Z\n" +
 	"\fPingResponse\x12\x18\n" +
@@ -1144,7 +1240,7 @@ const file_rpc_proto_executor_proto_rawDesc = "" +
 	"\x04code\x18\x02 \x01(\tR\x04code\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x12\x12\n" +
 	"\x04hint\x18\x04 \x01(\tR\x04hint\x12\x14\n" +
-	"\x05stage\x18\x05 \x01(\tR\x05stage\"\xbe\x03\n" +
+	"\x05stage\x18\x05 \x01(\tR\x05stage\"\xe0\x03\n" +
 	"\x12CreateOrderRequest\x12\x18\n" +
 	"\achainId\x18\x01 \x01(\x03R\achainId\x12,\n" +
 	"\x11settlementAddress\x18\x02 \x01(\tR\x11settlementAddress\x12\x1c\n" +
@@ -1162,7 +1258,8 @@ const file_rpc_proto_executor_proto_rawDesc = "" +
 	"\x05nonce\x18\v \x01(\tR\x05nonce\x12\x1c\n" +
 	"\trecipient\x18\f \x01(\tR\trecipient\x12\x1c\n" +
 	"\tsignature\x18\r \x01(\tR\tsignature\x12\x16\n" +
-	"\x06source\x18\x0e \x01(\tR\x06source\"y\n" +
+	"\x06source\x18\x0e \x01(\tR\x06source\x12 \n" +
+	"\vexecutorFee\x18\x0f \x01(\tR\vexecutorFee\"y\n" +
 	"\x13CreateOrderResponse\x120\n" +
 	"\x05order\x18\x01 \x01(\v2\x1a.executor.GetOrderResponseR\x05order\x120\n" +
 	"\x06notice\x18\x02 \x01(\v2\x18.executor.ResponseNoticeR\x06notice\"\xa5\x01\n" +
@@ -1206,7 +1303,7 @@ const file_rpc_proto_executor_proto_rawDesc = "" +
 	"\x0fGetOrderRequest\x12\x18\n" +
 	"\achainId\x18\x01 \x01(\x03R\achainId\x12,\n" +
 	"\x11settlementAddress\x18\x02 \x01(\tR\x11settlementAddress\x12\x1c\n" +
-	"\torderHash\x18\x03 \x01(\tR\torderHash\"\x80\x06\n" +
+	"\torderHash\x18\x03 \x01(\tR\torderHash\"\xe0\t\n" +
 	"\x10GetOrderResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x04R\x02id\x12\x18\n" +
 	"\achainId\x18\x02 \x01(\x03R\achainId\x12,\n" +
@@ -1233,7 +1330,20 @@ const file_rpc_proto_executor_proto_rawDesc = "" +
 	"\x10lastCheckedBlock\x18\x14 \x01(\x03R\x10lastCheckedBlock\x12\x1c\n" +
 	"\tcreatedAt\x18\x15 \x01(\tR\tcreatedAt\x12\x1c\n" +
 	"\tupdatedAt\x18\x16 \x01(\tR\tupdatedAt\x120\n" +
-	"\x06notice\x18\x17 \x01(\v2\x18.executor.ResponseNoticeR\x06notice2\xf7\x02\n" +
+	"\x06notice\x18\x17 \x01(\v2\x18.executor.ResponseNoticeR\x06notice\x12 \n" +
+	"\vexecutorFee\x18\x18 \x01(\tR\vexecutorFee\x12*\n" +
+	"\x10executorFeeToken\x18\x19 \x01(\tR\x10executorFeeToken\x12*\n" +
+	"\x10estimatedGasUsed\x18\x1a \x01(\tR\x10estimatedGasUsed\x12(\n" +
+	"\x0fgasPriceAtQuote\x18\x1b \x01(\tR\x0fgasPriceAtQuote\x12\x1e\n" +
+	"\n" +
+	"feeQuoteAt\x18\x1c \x01(\tR\n" +
+	"feeQuoteAt\x128\n" +
+	"\x17lastRequiredExecutorFee\x18\x1d \x01(\tR\x17lastRequiredExecutorFee\x12&\n" +
+	"\x0elastFeeCheckAt\x18\x1e \x01(\tR\x0elastFeeCheckAt\x122\n" +
+	"\x14lastExecutionCheckAt\x18\x1f \x01(\tR\x14lastExecutionCheckAt\x12(\n" +
+	"\x0flastBlockReason\x18  \x01(\tR\x0flastBlockReason\x12*\n" +
+	"\x10settledAmountOut\x18! \x01(\tR\x10settledAmountOut\x12.\n" +
+	"\x12settledExecutorFee\x18\" \x01(\tR\x12settledExecutorFee2\xf7\x02\n" +
 	"\bExecutor\x125\n" +
 	"\x04Ping\x12\x15.executor.PingRequest\x1a\x16.executor.PingResponse\x12J\n" +
 	"\vCreateOrder\x12\x1c.executor.CreateOrderRequest\x1a\x1d.executor.CreateOrderResponse\x12M\n" +
@@ -1243,19 +1353,19 @@ const file_rpc_proto_executor_proto_rawDesc = "" +
 	"./executorb\x06proto3"
 
 var (
-	file_rpc_proto_executor_proto_rawDescOnce sync.Once
-	file_rpc_proto_executor_proto_rawDescData []byte
+	file_executor_rpc_proto_executor_proto_rawDescOnce sync.Once
+	file_executor_rpc_proto_executor_proto_rawDescData []byte
 )
 
-func file_rpc_proto_executor_proto_rawDescGZIP() []byte {
-	file_rpc_proto_executor_proto_rawDescOnce.Do(func() {
-		file_rpc_proto_executor_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_rpc_proto_executor_proto_rawDesc), len(file_rpc_proto_executor_proto_rawDesc)))
+func file_executor_rpc_proto_executor_proto_rawDescGZIP() []byte {
+	file_executor_rpc_proto_executor_proto_rawDescOnce.Do(func() {
+		file_executor_rpc_proto_executor_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_executor_rpc_proto_executor_proto_rawDesc), len(file_executor_rpc_proto_executor_proto_rawDesc)))
 	})
-	return file_rpc_proto_executor_proto_rawDescData
+	return file_executor_rpc_proto_executor_proto_rawDescData
 }
 
-var file_rpc_proto_executor_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
-var file_rpc_proto_executor_proto_goTypes = []any{
+var file_executor_rpc_proto_executor_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_executor_rpc_proto_executor_proto_goTypes = []any{
 	(*PingRequest)(nil),             // 0: executor.PingRequest
 	(*PingResponse)(nil),            // 1: executor.PingResponse
 	(*ResponseNotice)(nil),          // 2: executor.ResponseNotice
@@ -1270,7 +1380,7 @@ var file_rpc_proto_executor_proto_goTypes = []any{
 	(*GetOrderRequest)(nil),         // 11: executor.GetOrderRequest
 	(*GetOrderResponse)(nil),        // 12: executor.GetOrderResponse
 }
-var file_rpc_proto_executor_proto_depIdxs = []int32{
+var file_executor_rpc_proto_executor_proto_depIdxs = []int32{
 	2,  // 0: executor.PingResponse.notice:type_name -> executor.ResponseNotice
 	12, // 1: executor.CreateOrderResponse.order:type_name -> executor.GetOrderResponse
 	2,  // 2: executor.CreateOrderResponse.notice:type_name -> executor.ResponseNotice
@@ -1298,26 +1408,26 @@ var file_rpc_proto_executor_proto_depIdxs = []int32{
 	0,  // [0:10] is the sub-list for field type_name
 }
 
-func init() { file_rpc_proto_executor_proto_init() }
-func file_rpc_proto_executor_proto_init() {
-	if File_rpc_proto_executor_proto != nil {
+func init() { file_executor_rpc_proto_executor_proto_init() }
+func file_executor_rpc_proto_executor_proto_init() {
+	if File_executor_rpc_proto_executor_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_rpc_proto_executor_proto_rawDesc), len(file_rpc_proto_executor_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_executor_rpc_proto_executor_proto_rawDesc), len(file_executor_rpc_proto_executor_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_rpc_proto_executor_proto_goTypes,
-		DependencyIndexes: file_rpc_proto_executor_proto_depIdxs,
-		MessageInfos:      file_rpc_proto_executor_proto_msgTypes,
+		GoTypes:           file_executor_rpc_proto_executor_proto_goTypes,
+		DependencyIndexes: file_executor_rpc_proto_executor_proto_depIdxs,
+		MessageInfos:      file_executor_rpc_proto_executor_proto_msgTypes,
 	}.Build()
-	File_rpc_proto_executor_proto = out.File
-	file_rpc_proto_executor_proto_goTypes = nil
-	file_rpc_proto_executor_proto_depIdxs = nil
+	File_executor_rpc_proto_executor_proto = out.File
+	file_executor_rpc_proto_executor_proto_goTypes = nil
+	file_executor_rpc_proto_executor_proto_depIdxs = nil
 }

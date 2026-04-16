@@ -40,6 +40,8 @@ type WorkerConfig struct {
 	ExecutorScanIntervalMs int64
 	ExecutorBatchSize      int
 	ExecutorTxDeadlineSec  int64
+	ExecutorEstimatedGasUsed uint64
+	ExecutorFeeSafetyBps   int64
 	ReceiptPollIntervalMs  int64
 	IndexerHeartbeatMs     int64
 	IndexerBackfillBlocks  int64

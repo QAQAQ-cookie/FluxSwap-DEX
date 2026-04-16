@@ -16,6 +16,8 @@ type Order struct {
 	OutputToken       string    `gorm:"size:42;not null"`
 	AmountIn          string    `gorm:"type:numeric(78,0);not null"`
 	MinAmountOut      string    `gorm:"type:numeric(78,0);not null"`
+	ExecutorFee       string    `gorm:"type:numeric(78,0);not null;default:'0'"`
+	ExecutorFeeToken  string    `gorm:"size:42;not null;default:''"`
 	TriggerPriceX18   string    `gorm:"type:numeric(78,0);not null"`
 	Expiry            string    `gorm:"type:numeric(78,0);not null"`
 	Nonce             string    `gorm:"type:numeric(78,0);not null"`
@@ -24,6 +26,15 @@ type Order struct {
 	Source            string    `gorm:"size:32;not null;default:'rpc'"`
 	Status            string    `gorm:"size:32;not null;index"`
 	StatusReason      string    `gorm:"type:text;not null;default:''"`
+	EstimatedGasUsed  string    `gorm:"type:numeric(78,0);not null;default:'0'"`
+	GasPriceAtQuote   string    `gorm:"type:numeric(78,0);not null;default:'0'"`
+	FeeQuoteAt        time.Time `gorm:"not null;default:CURRENT_TIMESTAMP"`
+	LastRequiredExecutorFee string    `gorm:"type:numeric(78,0);not null;default:'0'"`
+	LastFeeCheckAt    time.Time `gorm:"not null;default:CURRENT_TIMESTAMP"`
+	LastExecutionCheckAt time.Time `gorm:"not null;default:CURRENT_TIMESTAMP"`
+	LastBlockReason   string    `gorm:"type:text;not null;default:''"`
+	SettledAmountOut  string    `gorm:"type:numeric(78,0);not null;default:'0'"`
+	SettledExecutorFee string   `gorm:"type:numeric(78,0);not null;default:'0'"`
 	SubmittedTxHash   string    `gorm:"size:66;not null;default:''"`
 	ExecutedTxHash    string    `gorm:"size:66;not null;default:''"`
 	CancelledTxHash   string    `gorm:"size:66;not null;default:''"`
