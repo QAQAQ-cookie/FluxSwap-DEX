@@ -25,14 +25,14 @@ import "../libraries/TransferHelper.sol";
  *
  * 代币语义约定：
  * 1. `inputToken == address(0)` 表示“以原生币语义下单”，链上执行时统一按 WETH 作为输入资产处理。
- * 2. `outputToken == address(0)` 表示最终输出原生币，链上会通过 Router 解包 WETH 后发送 ETH。
+ * 2. `outputToken == address(0)` 表示最终输出原生币，链上会先把资产结算到当前合约，再按“用户净收款 + 执行费”语义分配 ETH。
  */
 contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, ReentrancyGuard {
     using ECDSA for bytes32;
 
     // EIP-712 订单结构体类型哈希。
     bytes32 private constant ORDER_TYPEHASH = keccak256(
-        "SignedOrder(address maker,address inputToken,address outputToken,uint256 amountIn,uint256 minAmountOut,uint256 triggerPriceX18,uint256 expiry,uint256 nonce,address recipient)"
+        "SignedOrder(address maker,address inputToken,address outputToken,uint256 amountIn,uint256 minAmountOut,uint256 executorFee,uint256 triggerPriceX18,uint256 expiry,uint256 nonce,address recipient)"
     );
     // EIP-712 批量 nonce 失效结构体类型哈希。
     bytes32 private constant INVALIDATE_NONCES_TYPEHASH =
@@ -108,6 +108,7 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
                 order.outputToken,
                 order.amountIn,
                 order.minAmountOut,
+                order.executorFee,
                 order.triggerPriceX18,
                 order.expiry,
                 order.nonce,
@@ -122,8 +123,9 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
      * 执行流程：
      * 1. 校验执行器策略、订单基础字段和截止时间。
      * 2. 校验订单未成交、nonce 未失效、签名有效且价格已满足触发条件。
-     * 3. 从 maker 拉取输入资产，授权 Router，并走真实 AMM 路径完成结算。
-     * 4. 成功后写入最小链上状态，防止重复执行。
+     * 3. 从 maker 拉取输入资产，授权 Router，并通过真实 AMM 路径完成结算。
+     * 4. 输出资产先回到 settlement，再按“用户净收款 + 执行费”分配。
+     * 5. 成功后写入最小链上状态，防止重复执行。
      */
     function executeOrder(
         SignedOrder calldata order,
@@ -140,7 +142,9 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
         _verifyOrderSignature(orderHash, order.maker, signature);
 
         amountOut = _getAmountOut(order.inputToken, order.outputToken, order.amountIn);
-        require(amountOut >= order.minAmountOut, "FluxSignedOrderSettlement: INSUFFICIENT_OUTPUT");
+        uint256 totalRequiredOut = order.minAmountOut + order.executorFee;
+        require(totalRequiredOut >= order.minAmountOut, "FluxSignedOrderSettlement: EXECUTOR_FEE_OVERFLOW");
+        require(amountOut >= totalRequiredOut, "FluxSignedOrderSettlement: INSUFFICIENT_OUTPUT");
         require(_meetsTrigger(order.amountIn, amountOut, order.triggerPriceX18), "FluxSignedOrderSettlement: PRICE_NOT_REACHED");
 
         orderExecuted[orderHash] = true;
@@ -150,35 +154,8 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
         TransferHelper.safeTransferFrom(settlementInputToken, order.maker, address(this), order.amountIn);
         _approveIfNeeded(settlementInputToken, router, order.amountIn);
 
-        address[] memory path = _buildPath(order.inputToken, order.outputToken);
-        if (order.outputToken == address(0)) {
-            IFluxSwapRouter(router).swapExactTokensForETH(
-                order.amountIn,
-                order.minAmountOut,
-                path,
-                order.recipient,
-                deadline
-            );
-        } else {
-            IFluxSwapRouter(router).swapExactTokensForTokens(
-                order.amountIn,
-                order.minAmountOut,
-                path,
-                order.recipient,
-                deadline
-            );
-        }
-
-        emit OrderExecuted(
-            orderHash,
-            order.maker,
-            msg.sender,
-            order.inputToken,
-            order.outputToken,
-            order.amountIn,
-            amountOut,
-            order.recipient
-        );
+        _settleAndDistribute(order, deadline, totalRequiredOut, amountOut, msg.sender);
+        _emitOrderExecuted(orderHash, order, msg.sender, amountOut);
     }
 
     /**
@@ -220,7 +197,7 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
 
     /**
      * @inheritdoc IFluxSignedOrderSettlement
-     * @dev 仅反映当前链上视角下订单能否执行，不校验签名本身。
+     * @dev 该接口只反映当前链上视角下订单能否执行，不校验签名本身。
      */
     function canExecuteOrder(SignedOrder calldata order)
         external
@@ -246,6 +223,9 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
         if (order.minAmountOut == 0) {
             return (false, "ZERO_MIN_AMOUNT_OUT");
         }
+        if (order.executorFee > type(uint256).max - order.minAmountOut) {
+            return (false, "EXECUTOR_FEE_OVERFLOW");
+        }
         if (order.triggerPriceX18 == 0) {
             return (false, "ZERO_TRIGGER_PRICE");
         }
@@ -268,7 +248,7 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
         }
 
         uint256 amountOut = _getAmountOut(order.inputToken, order.outputToken, order.amountIn);
-        if (amountOut < order.minAmountOut) {
+        if (amountOut < order.minAmountOut + order.executorFee) {
             return (false, "INSUFFICIENT_OUTPUT");
         }
         if (!_meetsTrigger(order.amountIn, amountOut, order.triggerPriceX18)) {
@@ -347,6 +327,7 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
         require(!_hasIdenticalAssets(order.inputToken, order.outputToken), "FluxSignedOrderSettlement: IDENTICAL_TOKENS");
         require(order.amountIn > 0, "FluxSignedOrderSettlement: ZERO_AMOUNT_IN");
         require(order.minAmountOut > 0, "FluxSignedOrderSettlement: ZERO_MIN_AMOUNT_OUT");
+        require(order.executorFee <= type(uint256).max - order.minAmountOut, "FluxSignedOrderSettlement: EXECUTOR_FEE_OVERFLOW");
         require(order.triggerPriceX18 > 0, "FluxSignedOrderSettlement: ZERO_TRIGGER_PRICE");
         require(order.expiry >= block.timestamp, "FluxSignedOrderSettlement: ORDER_EXPIRED");
         require(order.recipient != address(0), "FluxSignedOrderSettlement: ZERO_RECIPIENT");
@@ -387,7 +368,7 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
     }
 
     /**
-     * @notice 判断输入与输出在归一化后是否指向同一种底层资产。
+     * @notice 判断输入与输出在归一化后是否指向同一底层资产。
      * @param inputToken 订单支付资产，零地址表示原生币输入语义。
      * @param outputToken 订单接收资产，零地址表示原生 ETH。
      * @return 若归一化后输入输出资产一致，则返回 true。
@@ -407,7 +388,7 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
     }
 
     /**
-     * @notice 将输出资产归一化为 Router 和 Factory 使用的路径地址。
+     * @notice 将输入输出资产归一化为 Router 与 Factory 使用的路径地址。
      * @param inputToken 订单支付资产。
      * @param outputToken 订单接收资产，零地址表示原生 ETH。
      * @return tokenIn 归一化后的输入资产地址。
@@ -482,5 +463,119 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
             require(IERC20(token).approve(spender, 0), "FluxSignedOrderSettlement: APPROVE_RESET_FAILED");
         }
         require(IERC20(token).approve(spender, type(uint256).max), "FluxSignedOrderSettlement: APPROVE_FAILED");
+    }
+
+    /**
+     * @notice 通过 Router 完成真实结算，并把成交输出按“用户净收款 + 执行费”语义分配。
+     * @param order 原始签名订单。
+     * @param deadline 本次链上执行截止时间。
+     * @param totalRequiredOut 用户净收款与执行费之和对应的最小输出。
+     * @param amountOut 当前链上预估的成交总输出。
+     * @param executor 本次代理执行的地址。
+     */
+    function _settleAndDistribute(
+        SignedOrder calldata order,
+        uint256 deadline,
+        uint256 totalRequiredOut,
+        uint256 amountOut,
+        address executor
+    ) private {
+        address[] memory path = _buildPath(order.inputToken, order.outputToken);
+        if (order.outputToken == address(0)) {
+            IFluxSwapRouter(router).swapExactTokensForETH(
+                order.amountIn,
+                totalRequiredOut,
+                path,
+                address(this),
+                deadline
+            );
+            _distributeNativeOutput(order.recipient, executor, amountOut, order.executorFee);
+            return;
+        }
+
+        IFluxSwapRouter(router).swapExactTokensForTokens(
+            order.amountIn,
+            totalRequiredOut,
+            path,
+            address(this),
+            deadline
+        );
+        _distributeTokenOutput(order.outputToken, order.recipient, executor, amountOut, order.executorFee);
+    }
+
+    /**
+     * @notice 统一发出订单执行事件，避免主流程堆叠过多局部变量。
+     * @param orderHash 订单哈希。
+     * @param order 原始签名订单。
+     * @param executor 本次代理执行的地址。
+     * @param amountOut 当前链上预估的成交总输出。
+     */
+    function _emitOrderExecuted(
+        bytes32 orderHash,
+        SignedOrder calldata order,
+        address executor,
+        uint256 amountOut
+    ) private {
+        emit OrderExecuted(
+            orderHash,
+            order.maker,
+            executor,
+            order.inputToken,
+            order.outputToken,
+            order.amountIn,
+            amountOut,
+            amountOut - order.executorFee,
+            order.executorFee,
+            order.recipient
+        );
+    }
+
+    /**
+     * @notice 按用户净收款与执行费语义分配 ERC20 输出资产。
+     * @param outputToken 原始订单的输出代币地址。
+     * @param recipient 用户最终收款地址。
+     * @param executor 本次代理执行的地址。
+     * @param amountOut 本次成交的总输出量。
+     * @param executorFee 本次应支付给执行器的执行费。
+     */
+    function _distributeTokenOutput(
+        address outputToken,
+        address recipient,
+        address executor,
+        uint256 amountOut,
+        uint256 executorFee
+    ) private {
+        uint256 recipientAmount = amountOut - executorFee;
+        TransferHelper.safeTransfer(outputToken, recipient, recipientAmount);
+        if (executorFee > 0) {
+            TransferHelper.safeTransfer(outputToken, executor, executorFee);
+        }
+    }
+
+    /**
+     * @notice 按用户净收款与执行费语义分配 ETH 输出资产。
+     * @param recipient 用户最终收款地址。
+     * @param executor 本次代理执行的地址。
+     * @param amountOut 本次成交的总输出量。
+     * @param executorFee 本次应支付给执行器的执行费。
+     */
+    function _distributeNativeOutput(
+        address recipient,
+        address executor,
+        uint256 amountOut,
+        uint256 executorFee
+    ) private {
+        uint256 recipientAmount = amountOut - executorFee;
+        TransferHelper.safeTransferETH(recipient, recipientAmount);
+        if (executorFee > 0) {
+            TransferHelper.safeTransferETH(executor, executorFee);
+        }
+    }
+
+    /**
+     * @notice 仅允许在 Router 或 WETH 相关回调时接收原生 ETH，避免非预期资金滞留。
+     */
+    receive() external payable {
+        require(msg.sender == router || msg.sender == WETH, "FluxSignedOrderSettlement: INVALID_NATIVE_SENDER");
     }
 }

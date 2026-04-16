@@ -37,9 +37,8 @@ contract FluxSignedOrderSettlementFuzzTest is Test {
 
     // Fuzz 目标：
     // 1. 随机金额与滑点边界下，签名订单成交后应正确写入成交与 nonce 状态。
-    // 2. 随机批量 nonce 失效后，被命中的订单必须永久不可再执行。
-    // 3. 随机签名批量失效请求中，重复 nonce 必须被拒绝，避免假成功。
-
+    // 2. 随机执行费下，用户净收款与执行器收费之和应等于成交总输出。
+    // 3. 随机批量 nonce 失效后，被命中的订单必须永久不可再次执行。
     function setUp() public {
         makerPrivateKey = 0xA11CE;
         maker = vm.addr(makerPrivateKey);
@@ -56,7 +55,11 @@ contract FluxSignedOrderSettlementFuzzTest is Test {
         _seedTokenPair(20_000e18, 40_000e18);
     }
 
-    function testFuzz_executeSignedOrder_marksOrderAndNonce(uint96 rawAmountIn, uint16 rawSlackBps) public {
+    function testFuzz_executeSignedOrder_marksOrderAndNonce(
+        uint96 rawAmountIn,
+        uint16 rawSlackBps,
+        uint16 rawFeeBps
+    ) public {
         uint256 amountIn = bound(uint256(rawAmountIn), 1e6, 500e18);
         uint256[] memory quoted = router.getAmountsOut(amountIn, _tokenPath());
         uint256 amountOut = quoted[1];
@@ -64,6 +67,10 @@ contract FluxSignedOrderSettlementFuzzTest is Test {
 
         uint256 slackBps = bound(uint256(rawSlackBps), 0, 500);
         uint256 minAmountOut = (amountOut * (10_000 - slackBps)) / 10_000;
+        uint256 maxFeeBps = bound(uint256(rawFeeBps), 0, 100);
+        uint256 executorFee = (amountOut * maxFeeBps) / 10_000;
+        vm.assume(minAmountOut + executorFee <= amountOut);
+
         uint256 triggerPriceX18 = ((amountOut * 1e18) / amountIn) * 99 / 100;
         vm.assume(minAmountOut > 0);
         vm.assume(triggerPriceX18 > 0);
@@ -78,6 +85,7 @@ contract FluxSignedOrderSettlementFuzzTest is Test {
             outputToken: address(tokenB),
             amountIn: amountIn,
             minAmountOut: minAmountOut,
+            executorFee: executorFee,
             triggerPriceX18: triggerPriceX18,
             expiry: _deadline(),
             nonce: 1,
@@ -87,11 +95,17 @@ contract FluxSignedOrderSettlementFuzzTest is Test {
         bytes memory signature = _signOrder(order);
         bytes32 orderHash = settlement.hashOrder(order);
 
+        uint256 recipientBefore = tokenB.balanceOf(recipient);
+        uint256 executorBefore = tokenB.balanceOf(executor);
+
         vm.prank(executor);
-        settlement.executeOrder(order, signature, _deadline());
+        uint256 grossAmountOut = settlement.executeOrder(order, signature, _deadline());
 
         assertTrue(settlement.orderExecuted(orderHash));
         assertTrue(settlement.invalidatedNonce(maker, order.nonce));
+        assertEq(tokenB.balanceOf(recipient) - recipientBefore, grossAmountOut - executorFee);
+        assertEq(tokenB.balanceOf(executor) - executorBefore, executorFee);
+        assertEq(tokenB.balanceOf(address(settlement)), 0);
     }
 
     function testFuzz_invalidateNoncesBySig_blocksFutureExecution(
@@ -107,6 +121,9 @@ contract FluxSignedOrderSettlementFuzzTest is Test {
         uint256[] memory quoted = router.getAmountsOut(amountIn, _tokenPath());
         vm.assume(quoted[1] > 0);
 
+        uint256 executorFee = quoted[1] / 100;
+        vm.assume(quoted[1] * 95 / 100 + executorFee <= quoted[1]);
+
         tokenA.mint(maker, amountIn * 2);
         vm.prank(maker);
         tokenA.approve(address(settlement), type(uint256).max);
@@ -117,6 +134,7 @@ contract FluxSignedOrderSettlementFuzzTest is Test {
             outputToken: address(tokenB),
             amountIn: amountIn,
             minAmountOut: quoted[1] * 95 / 100,
+            executorFee: executorFee,
             triggerPriceX18: ((quoted[1] * 1e18) / amountIn) * 95 / 100,
             expiry: _deadline(),
             nonce: nonceA,
@@ -154,13 +172,14 @@ contract FluxSignedOrderSettlementFuzzTest is Test {
         bytes32 structHash = keccak256(
             abi.encode(
                 keccak256(
-                    "SignedOrder(address maker,address inputToken,address outputToken,uint256 amountIn,uint256 minAmountOut,uint256 triggerPriceX18,uint256 expiry,uint256 nonce,address recipient)"
+                    "SignedOrder(address maker,address inputToken,address outputToken,uint256 amountIn,uint256 minAmountOut,uint256 executorFee,uint256 triggerPriceX18,uint256 expiry,uint256 nonce,address recipient)"
                 ),
                 order.maker,
                 order.inputToken,
                 order.outputToken,
                 order.amountIn,
                 order.minAmountOut,
+                order.executorFee,
                 order.triggerPriceX18,
                 order.expiry,
                 order.nonce,

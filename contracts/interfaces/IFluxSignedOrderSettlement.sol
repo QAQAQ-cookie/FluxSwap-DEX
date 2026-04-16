@@ -8,6 +8,7 @@ interface IFluxSignedOrderSettlement {
         address outputToken;
         uint256 amountIn;
         uint256 minAmountOut;
+        uint256 executorFee;
         uint256 triggerPriceX18;
         uint256 expiry;
         uint256 nonce;
@@ -21,7 +22,9 @@ interface IFluxSignedOrderSettlement {
         address inputToken,
         address outputToken,
         uint256 amountIn,
-        uint256 amountOut,
+        uint256 grossAmountOut,
+        uint256 recipientAmountOut,
+        uint256 executorFeeAmount,
         address recipient
     );
     event NonceInvalidated(address indexed maker, uint256 nonce);

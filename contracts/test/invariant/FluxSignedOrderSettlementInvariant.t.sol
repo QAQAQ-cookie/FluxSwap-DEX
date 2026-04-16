@@ -56,7 +56,7 @@ contract FluxSignedOrderSettlementInvariantHandler is Test {
         recipient = recipient_;
     }
 
-    function executeFreshOrder(uint96 rawAmountIn, uint16 rawSlackBps) external {
+    function executeFreshOrder(uint96 rawAmountIn, uint16 rawSlackBps, uint16 rawFeeBps) external {
         uint256 amountIn = bound(uint256(rawAmountIn), 1e6, 300e18);
         uint256[] memory quoted = router.getAmountsOut(amountIn, _tokenPath());
         if (quoted[1] == 0) {
@@ -65,8 +65,9 @@ contract FluxSignedOrderSettlementInvariantHandler is Test {
 
         uint256 slackBps = bound(uint256(rawSlackBps), 0, 500);
         uint256 minAmountOut = (quoted[1] * (10_000 - slackBps)) / 10_000;
+        uint256 executorFee = (quoted[1] * bound(uint256(rawFeeBps), 0, 100)) / 10_000;
         uint256 triggerPriceX18 = ((quoted[1] * 1e18) / amountIn) * 99 / 100;
-        if (minAmountOut == 0 || triggerPriceX18 == 0) {
+        if (minAmountOut == 0 || triggerPriceX18 == 0 || minAmountOut + executorFee > quoted[1]) {
             return;
         }
 
@@ -80,6 +81,7 @@ contract FluxSignedOrderSettlementInvariantHandler is Test {
             outputToken: address(tokenB),
             amountIn: amountIn,
             minAmountOut: minAmountOut,
+            executorFee: executorFee,
             triggerPriceX18: triggerPriceX18,
             expiry: _deadline(),
             nonce: nextNonce,
@@ -124,6 +126,7 @@ contract FluxSignedOrderSettlementInvariantHandler is Test {
             outputToken: address(tokenB),
             amountIn: 1e18,
             minAmountOut: 1,
+            executorFee: 0,
             triggerPriceX18: 1,
             expiry: _deadline(),
             nonce: nonce,
@@ -136,13 +139,14 @@ contract FluxSignedOrderSettlementInvariantHandler is Test {
         bytes32 structHash = keccak256(
             abi.encode(
                 keccak256(
-                    "SignedOrder(address maker,address inputToken,address outputToken,uint256 amountIn,uint256 minAmountOut,uint256 triggerPriceX18,uint256 expiry,uint256 nonce,address recipient)"
+                    "SignedOrder(address maker,address inputToken,address outputToken,uint256 amountIn,uint256 minAmountOut,uint256 executorFee,uint256 triggerPriceX18,uint256 expiry,uint256 nonce,address recipient)"
                 ),
                 order.maker,
                 order.inputToken,
                 order.outputToken,
                 order.amountIn,
                 order.minAmountOut,
+                order.executorFee,
                 order.triggerPriceX18,
                 order.expiry,
                 order.nonce,
@@ -228,12 +232,17 @@ contract FluxSignedOrderSettlementInvariantTest is StdInvariant, Test {
         assertEq(tokenA.balanceOf(address(settlement)), 0);
     }
 
-    // 不变量 2：已消耗 nonce 数量不能小于“已成交 + 已失效”的累计值。
+    // 不变量 2：结算合约自身不应残留输出 token。
+    function invariant_settlementDoesNotRetainOutputToken() public view {
+        assertEq(tokenB.balanceOf(address(settlement)), 0);
+    }
+
+    // 不变量 3：已消费 nonce 数量不能小于“已成交 + 已失效”的累计值。
     function invariant_consumedNonceAccountingStaysBounded() public view {
         assertLe(handler.executedCount() + handler.invalidatedCount(), handler.nextNonce() - 1);
     }
 
-    // 不变量 3：下一次可用 nonce 之前的那个 nonce 必须已被消耗。
+    // 不变量 4：下一次可用 nonce 之前的那个 nonce 必须已被消费。
     function invariant_lastConsumedNonceRemainsUnavailable() public view {
         uint256 currentNextNonce = handler.nextNonce();
         if (currentNextNonce == 1) {
