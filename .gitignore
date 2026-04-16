@@ -58,3 +58,5 @@ Thumbs.db
 # Local temporary files
 # ========================
 .codex-temp/
+
+executor/*.exe
