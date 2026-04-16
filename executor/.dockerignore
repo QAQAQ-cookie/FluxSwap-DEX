@@ -1,0 +1,10 @@
+.git
+.gitignore
+bin
+dist
+tmp
+*.exe
+*.out
+coverage
+node_modules
+

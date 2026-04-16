@@ -172,15 +172,13 @@ forge test --match-path test/invariant/FluxSignedOrderSettlementInvariant.t.sol 
 当前通过真实的 `FluxSignedOrderSettlement + FluxSwapRouter + FluxSwapFactory + FluxSwapPair` 组合，对以下 handler 动作做随机序列调用：
 
 - `executeFreshOrder`
-- `cancelFreshOrder`
-- `invalidateNextRange`
+- `invalidateFreshNonce`
 
 当前锁定的核心不变量：
 
 - settlement 合约不应长期滞留 maker 输入资产
-- `minValidNonce` 只能单调上升，不能回退
-- 低于 `minValidNonce` 的 nonce 必须永久不可用
-- 已消费 nonce 的数量必须始终受当前执行 / 取消历史边界约束
+- 已消费 nonce 的数量必须始终受当前执行 / 签名失效历史边界约束
+- `nextNonce` 之前最近一个 nonce 必须保持不可用
 
 ### `FluxSwapAmmInvariant.t.sol`
 

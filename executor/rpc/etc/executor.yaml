@@ -1,0 +1,35 @@
+Name: fluxswap-executor.rpc
+ListenOn: 0.0.0.0:9001
+
+App:
+  Name: fluxswap-executor
+  Env: dev
+
+Database:
+  Driver: postgres
+  DSN: postgres://fluxswap:fluxswap_dev_password@127.0.0.1:5432/fluxswap_executor?sslmode=disable
+  AutoMigrate: true
+
+Chains:
+  - Name: localhost
+    ChainID: 31337
+    HTTPRPCURL: http://127.0.0.1:8545
+    WSRPCURL: ws://127.0.0.1:8545
+    SettlementAddress: ""
+    ExecutorPrivateKey: ""
+  - Name: sepolia
+    ChainID: 11155111
+    HTTPRPCURL: ""
+    WSRPCURL: ""
+    SettlementAddress: ""
+    ExecutorPrivateKey: ""
+
+Worker:
+  ExecutorScanIntervalMs: 5000
+  ExecutorBatchSize: 20
+  ExecutorTxDeadlineSec: 120
+  ReceiptPollIntervalMs: 5000
+  IndexerHeartbeatMs: 15000
+  IndexerBackfillBlocks: 500
+  ExecutorHealthListenOn: 0.0.0.0:9101
+  IndexerHealthListenOn: 0.0.0.0:9102

@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | 协议主代币 | 主币发行、总量上限、销毁、铸币权限控制 | `FluxToken.sol` |
 | AMM 交易系统 | 建池、交易对、加减流动性、代币兑换、ETH/WETH 路径 | `FluxSwapFactory.sol`、`FluxSwapPair.sol`、`FluxSwapRouter.sol` |
-| 签名订单结算 | 链下签名限价单、链上最小状态验证、到价后通过 AMM 结算 | `FluxSignedOrderSettlement.sol` |
+| 签名订单结算 | 链下签名限价单、链上最小状态验证、到价后通过 AMM 结算，原生币输入在链上按 WETH 参与 | `FluxSignedOrderSettlement.sol` |
 | LP 份额系统 | LP Token 铸造、销毁、授权、Permit | `FluxSwapERC20.sol` |
 | 金库治理系统 | 多签治理、时间锁、白名单拨款、日限额、受控支出、紧急提款 | `FluxSwapTreasury.sol` |
 | 单池质押奖励 | 单币或任意资产质押、奖励注入、领取、退出 | `FluxSwapStakingRewards.sol` |
@@ -55,7 +55,8 @@
 - Maker 在链下签名订单，不把完整订单簿状态写入链上。
 - watcher / executor 在链下判断是否到价，再调用 `FluxSignedOrderSettlement.executeOrder`。
 - 结算合约在链上校验签名、nonce、过期时间、最小成交量与触发价格。
-- 订单满足条件后，通过 `FluxSwapRouter` 走真实 AMM 路径完成 `ERC20 -> ERC20` 或 `ERC20 -> ETH` 结算。
+- 若订单输入写的是原生币语义，链上会统一按 `WETH` 作为输入资产处理；若输出写的是原生币语义，则最终由 Router 解包后发送 `ETH`。
+- 订单满足条件后，通过 `FluxSwapRouter` 走真实 AMM 路径完成 `ERC20/WETH -> ERC20` 或 `ERC20/WETH -> ETH` 结算。
 
 ### 3.4 单池 / LP 质押领奖
 

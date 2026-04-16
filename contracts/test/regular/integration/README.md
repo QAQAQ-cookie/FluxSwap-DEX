@@ -86,8 +86,8 @@
 #### `FluxSignedOrderSettlementFlow.test.ts`
 
 - 验证签名订单结算合约与 `Factory / Router / Pair` 的真实联动。
-- 验证链下签名订单在链上达价后，可通过真实 AMM 路径完成 `Token -> Token` 与 `Token -> ETH` 结算。
-- 验证 maker 主动取消、`batchCancelOrders`、`cancelUpTo` 批量失效、暂停与 restricted executor 策略在集成场景下都能生效。
+- 验证链下签名订单在链上达价后，可通过真实 AMM 路径完成 `Token -> Token`、`Token -> ETH` 以及“原生币输入语义按 WETH 结算”的订单结算。
+- 验证 maker 通过签名触发的批量 nonce 失效、暂停与 restricted executor 策略在集成场景下都能生效。
 
 流程图：
 

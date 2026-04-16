@@ -114,8 +114,8 @@
 ### `FluxSignedOrderSettlement.unit.test.ts`
 
 - 验证链下签名订单的哈希、EIP-712 验签、重复执行防重放与 nonce 失效逻辑。
-- 验证 `ERC20 -> ERC20` 与 `ERC20 -> ETH` 两类结算入口都能通过真实 Router 路径完成成交。
-- 验证 `cancelOrder`、`batchCancelOrders`、`invalidateNonce`、`cancelUpTo` 的局部取消、批量撤单与批量失效语义。
+- 验证 `ERC20 -> ERC20`、`ERC20 -> ETH` 以及“原生币输入语义按 WETH 结算”三类结算入口都能通过真实 Router 路径完成成交。
+- 验证 `invalidateNoncesBySig` 的单 nonce 失效、批量 nonce 失效、重复 nonce 拒绝与签名校验语义。
 - 验证触发价格未达到、订单过期、签名错误、执行器受限、暂停状态等关键失败分支。
 - 验证 `canExecuteOrder` 与 `getOrderQuote` 的只读状态和 readiness reason 口径。
 

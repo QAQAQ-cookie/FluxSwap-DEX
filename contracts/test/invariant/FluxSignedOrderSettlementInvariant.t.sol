@@ -32,7 +32,9 @@ contract FluxSignedOrderSettlementInvariantHandler is Test {
 
     uint256 public nextNonce = 1;
     uint256 public executedCount;
-    uint256 public cancelledCount;
+    uint256 public invalidatedCount;
+    bytes32 private constant INVALIDATE_NONCES_TYPEHASH =
+        keccak256("InvalidateNonces(address maker,bytes32 noncesHash,uint256 deadline)");
 
     constructor(
         FluxSignedOrderSettlementInvariantHarness settlement_,
@@ -92,7 +94,7 @@ contract FluxSignedOrderSettlementInvariantHandler is Test {
         nextNonce += 1;
     }
 
-    function cancelFreshOrder(uint96 rawAmountIn) external {
+    function invalidateFreshNonce(uint96 rawAmountIn) external {
         uint256 amountIn = bound(uint256(rawAmountIn), 1e6, 300e18);
         uint256[] memory quoted = router.getAmountsOut(amountIn, _tokenPath());
         if (quoted[1] == 0) {
@@ -103,35 +105,16 @@ contract FluxSignedOrderSettlementInvariantHandler is Test {
         vm.prank(maker);
         tokenA.approve(address(settlement), type(uint256).max);
 
-        IFluxSignedOrderSettlement.SignedOrder memory order = IFluxSignedOrderSettlement.SignedOrder({
-            maker: maker,
-            inputToken: address(tokenA),
-            outputToken: address(tokenB),
-            amountIn: amountIn,
-            minAmountOut: quoted[1] * 95 / 100,
-            triggerPriceX18: ((quoted[1] * 1e18) / amountIn) * 95 / 100,
-            expiry: _deadline(),
-            nonce: nextNonce,
-            recipient: recipient
-        });
+        uint256 nonceToInvalidate = nextNonce;
+        uint256[] memory nonces = new uint256[](1);
+        nonces[0] = nonceToInvalidate;
+        bytes memory revokeSignature = _signInvalidateNonces(nonces, _deadline());
 
-        vm.prank(maker);
-        settlement.cancelOrder(order);
+        vm.prank(executor);
+        settlement.invalidateNoncesBySig(maker, nonces, _deadline(), revokeSignature);
 
-        cancelledCount += 1;
+        invalidatedCount += 1;
         nextNonce += 1;
-    }
-
-    function invalidateNextRange(uint64 rawCutoffDelta) external {
-        uint256 cutoffDelta = bound(uint256(rawCutoffDelta), 1, 25);
-        uint256 newCutoff = nextNonce + cutoffDelta;
-
-        vm.prank(maker);
-        settlement.cancelUpTo(newCutoff);
-
-        if (nextNonce < newCutoff) {
-            nextNonce = newCutoff;
-        }
     }
 
     function signedOrderHashForNonce(uint256 nonce) external view returns (bytes32) {
@@ -166,6 +149,14 @@ contract FluxSignedOrderSettlementInvariantHandler is Test {
                 order.recipient
             )
         );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", settlement.exposedDomainSeparator(), structHash));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(makerPrivateKey, digest);
+        return abi.encodePacked(r, s, v);
+    }
+
+    function _signInvalidateNonces(uint256[] memory nonces, uint256 deadline) private view returns (bytes memory) {
+        bytes32 noncesHash = keccak256(abi.encodePacked(nonces));
+        bytes32 structHash = keccak256(abi.encode(INVALIDATE_NONCES_TYPEHASH, maker, noncesHash, deadline));
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", settlement.exposedDomainSeparator(), structHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(makerPrivateKey, digest);
         return abi.encodePacked(r, s, v);
@@ -237,23 +228,18 @@ contract FluxSignedOrderSettlementInvariantTest is StdInvariant, Test {
         assertEq(tokenA.balanceOf(address(settlement)), 0);
     }
 
-    // 不变量 2：已生效的 minValidNonce 不得倒退。
-    function invariant_minValidNonceMonotonic() public view {
-        assertLe(settlement.minValidNonce(maker), handler.nextNonce());
+    // 不变量 2：已消耗 nonce 数量不能小于“已成交 + 已失效”的累计值。
+    function invariant_consumedNonceAccountingStaysBounded() public view {
+        assertLe(handler.executedCount() + handler.invalidatedCount(), handler.nextNonce() - 1);
     }
 
-    // 不变量 3：若某个 nonce 小于 minValidNonce，则它必定不可再执行。
-    function invariant_noncesBelowMinValidRemainUnavailable() public view {
-        uint256 cutoff = settlement.minValidNonce(maker);
-        if (cutoff == 0) {
+    // 不变量 3：下一次可用 nonce 之前的那个 nonce 必须已被消耗。
+    function invariant_lastConsumedNonceRemainsUnavailable() public view {
+        uint256 currentNextNonce = handler.nextNonce();
+        if (currentNextNonce == 1) {
             return;
         }
 
-        assertTrue(cutoff <= handler.nextNonce());
-    }
-
-    // 不变量 4：执行与取消的累计次数不会超过已消耗 nonce 总量。
-    function invariant_consumedNonceAccountingStaysBounded() public view {
-        assertLe(handler.executedCount() + handler.cancelledCount(), handler.nextNonce() - 1);
+        assertTrue(settlement.invalidatedNonce(maker, currentNextNonce - 1));
     }
 }

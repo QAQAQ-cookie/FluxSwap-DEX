@@ -32,6 +32,13 @@ contract FluxSignedOrderSettlementFuzzTest is Test {
 
     uint256 private constant MIN_LIQUIDITY = 1e12;
     uint256 private constant MAX_LIQUIDITY = 1e24;
+    bytes32 private constant INVALIDATE_NONCES_TYPEHASH =
+        keccak256("InvalidateNonces(address maker,bytes32 noncesHash,uint256 deadline)");
+
+    // Fuzz 目标：
+    // 1. 随机金额与滑点边界下，签名订单成交后应正确写入成交与 nonce 状态。
+    // 2. 随机批量 nonce 失效后，被命中的订单必须永久不可再执行。
+    // 3. 随机签名批量失效请求中，重复 nonce 必须被拒绝，避免假成功。
 
     function setUp() public {
         makerPrivateKey = 0xA11CE;
@@ -49,10 +56,6 @@ contract FluxSignedOrderSettlementFuzzTest is Test {
         _seedTokenPair(20_000e18, 40_000e18);
     }
 
-    // Fuzz 目标：
-    // 1. 随机金额与阈值下，签名订单执行后应写入最小状态并锁定 nonce。
-    // 2. 随机 cancelUpTo 边界下，旧 nonce 订单必须被拒绝执行。
-    // 3. 随机取消路径下，单笔取消应使相同订单后续无法再被执行。
     function testFuzz_executeSignedOrder_marksOrderAndNonce(uint96 rawAmountIn, uint16 rawSlackBps) public {
         uint256 amountIn = bound(uint256(rawAmountIn), 1e6, 500e18);
         uint256[] memory quoted = router.getAmountsOut(amountIn, _tokenPath());
@@ -91,43 +94,20 @@ contract FluxSignedOrderSettlementFuzzTest is Test {
         assertTrue(settlement.invalidatedNonce(maker, order.nonce));
     }
 
-    function testFuzz_cancelUpTo_invalidatesOlderNonces(uint64 rawCutoff, uint64 rawOrderNonce) public {
-        uint256 cutoff = bound(uint256(rawCutoff), 1, 10_000);
-        uint256 orderNonce = bound(uint256(rawOrderNonce), 0, cutoff - 1);
+    function testFuzz_invalidateNoncesBySig_blocksFutureExecution(
+        uint64 rawNonceA,
+        uint64 rawNonceB,
+        uint96 rawAmountIn
+    ) public {
+        uint256 nonceA = bound(uint256(rawNonceA), 1, type(uint32).max);
+        uint256 nonceB = bound(uint256(rawNonceB), 1, type(uint32).max);
+        vm.assume(nonceA != nonceB);
 
-        vm.prank(maker);
-        settlement.cancelUpTo(cutoff);
-
-        tokenA.mint(maker, 100e18);
-        vm.prank(maker);
-        tokenA.approve(address(settlement), type(uint256).max);
-
-        uint256[] memory quoted = router.getAmountsOut(100e18, _tokenPath());
-        IFluxSignedOrderSettlement.SignedOrder memory order = IFluxSignedOrderSettlement.SignedOrder({
-            maker: maker,
-            inputToken: address(tokenA),
-            outputToken: address(tokenB),
-            amountIn: 100e18,
-            minAmountOut: quoted[1] * 95 / 100,
-            triggerPriceX18: ((quoted[1] * 1e18) / 100e18) * 95 / 100,
-            expiry: _deadline(),
-            nonce: orderNonce,
-            recipient: recipient
-        });
-
-        bytes memory signature = _signOrder(order);
-
-        vm.expectRevert(bytes("FluxSignedOrderSettlement: NONCE_INVALIDATED"));
-        vm.prank(executor);
-        settlement.executeOrder(order, signature, _deadline());
-    }
-
-    function testFuzz_cancelOrder_blocksFutureExecution(uint96 rawAmountIn) public {
         uint256 amountIn = bound(uint256(rawAmountIn), 1e6, 500e18);
         uint256[] memory quoted = router.getAmountsOut(amountIn, _tokenPath());
         vm.assume(quoted[1] > 0);
 
-        tokenA.mint(maker, amountIn);
+        tokenA.mint(maker, amountIn * 2);
         vm.prank(maker);
         tokenA.approve(address(settlement), type(uint256).max);
 
@@ -139,18 +119,35 @@ contract FluxSignedOrderSettlementFuzzTest is Test {
             minAmountOut: quoted[1] * 95 / 100,
             triggerPriceX18: ((quoted[1] * 1e18) / amountIn) * 95 / 100,
             expiry: _deadline(),
-            nonce: 42,
+            nonce: nonceA,
             recipient: recipient
         });
 
-        bytes memory signature = _signOrder(order);
+        bytes memory orderSignature = _signOrder(order);
+        uint256[] memory nonces = new uint256[](2);
+        nonces[0] = nonceA;
+        nonces[1] = nonceB;
+        bytes memory revokeSignature = _signInvalidateNonces(nonces, _deadline());
 
-        vm.prank(maker);
-        settlement.cancelOrder(order);
+        vm.prank(executor);
+        settlement.invalidateNoncesBySig(maker, nonces, _deadline(), revokeSignature);
 
         vm.expectRevert(bytes("FluxSignedOrderSettlement: NONCE_INVALIDATED"));
         vm.prank(executor);
-        settlement.executeOrder(order, signature, _deadline());
+        settlement.executeOrder(order, orderSignature, _deadline());
+    }
+
+    function testFuzz_invalidateNoncesBySig_rejectsDuplicateNonce(uint64 rawNonce) public {
+        uint256 nonce = bound(uint256(rawNonce), 1, type(uint32).max);
+
+        uint256[] memory nonces = new uint256[](2);
+        nonces[0] = nonce;
+        nonces[1] = nonce;
+        bytes memory revokeSignature = _signInvalidateNonces(nonces, _deadline());
+
+        vm.expectRevert(bytes("FluxSignedOrderSettlement: NONCE_INVALIDATED"));
+        vm.prank(executor);
+        settlement.invalidateNoncesBySig(maker, nonces, _deadline(), revokeSignature);
     }
 
     function _signOrder(IFluxSignedOrderSettlement.SignedOrder memory order) private view returns (bytes memory) {
@@ -170,6 +167,14 @@ contract FluxSignedOrderSettlementFuzzTest is Test {
                 order.recipient
             )
         );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", settlement.exposedDomainSeparator(), structHash));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(makerPrivateKey, digest);
+        return abi.encodePacked(r, s, v);
+    }
+
+    function _signInvalidateNonces(uint256[] memory nonces, uint256 deadline) private view returns (bytes memory) {
+        bytes32 noncesHash = keccak256(abi.encodePacked(nonces));
+        bytes32 structHash = keccak256(abi.encode(INVALIDATE_NONCES_TYPEHASH, maker, noncesHash, deadline));
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", settlement.exposedDomainSeparator(), structHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(makerPrivateKey, digest);
         return abi.encodePacked(r, s, v);

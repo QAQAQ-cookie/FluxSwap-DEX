@@ -24,9 +24,7 @@ interface IFluxSignedOrderSettlement {
         uint256 amountOut,
         address recipient
     );
-    event OrderCancelled(bytes32 indexed orderHash, address indexed maker, uint256 nonce);
     event NonceInvalidated(address indexed maker, uint256 nonce);
-    event MinValidNonceUpdated(address indexed maker, uint256 previousMinValidNonce, uint256 newMinValidNonce);
     event ExecutorPolicyUpdated(bool restricted, address indexed executor);
     event Paused(address indexed account);
     event Unpaused(address indexed account);
@@ -39,7 +37,6 @@ interface IFluxSignedOrderSettlement {
     function onlyRestrictedExecutor() external view returns (bool);
     function orderExecuted(bytes32 orderHash) external view returns (bool);
     function invalidatedNonce(address maker, uint256 nonce) external view returns (bool);
-    function minValidNonce(address maker) external view returns (uint256);
     function DOMAIN_SEPARATOR() external view returns (bytes32);
     function hashOrder(SignedOrder calldata order) external view returns (bytes32);
 
@@ -49,10 +46,13 @@ interface IFluxSignedOrderSettlement {
         uint256 deadline
     ) external returns (uint256 amountOut);
 
-    function cancelOrder(SignedOrder calldata order) external;
-    function batchCancelOrders(SignedOrder[] calldata orders) external;
-    function invalidateNonce(uint256 nonce) external;
-    function cancelUpTo(uint256 newMinValidNonce) external;
+    function invalidateNoncesBySig(
+        address maker,
+        uint256[] calldata nonces,
+        uint256 deadline,
+        bytes calldata signature
+    ) external;
+
     function canExecuteOrder(SignedOrder calldata order) external view returns (bool executable, string memory reason);
     function getOrderQuote(SignedOrder calldata order) external view returns (uint256 amountOut);
 

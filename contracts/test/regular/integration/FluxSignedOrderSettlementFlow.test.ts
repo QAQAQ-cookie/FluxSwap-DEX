@@ -1,12 +1,13 @@
+import { ethers } from "ethers";
 import { network } from "hardhat";
 import { beforeEach, describe, it } from "node:test";
 import { ok, strictEqual } from "node:assert";
 
 /*
  * 集成目标：
- * 1. 验证签名订单结算合约与 Factory / Router / Pair 的真实联动。
- * 2. 验证链下签名订单在链上达价后，可通过真实 AMM 路径完成 Token -> Token 与 Token -> ETH 结算。
- * 3. 验证取消、批量 nonce 失效、暂停、受限执行人等最小状态控制在真实流程中生效。
+ * 1. 验证签名订单结算合约与 Factory、Router、Pair 的真实联动。
+ * 2. 验证链下签名订单在链上达到条件后，可以走真实 AMM 路径完成结算。
+ * 3. 验证签名批量 nonce 失效、暂停与 restricted executor 策略在集成流转中生效。
  */
 describe("FluxSignedOrderSettlementFlow", async function () {
   const hardhatNetwork = await network.connect();
@@ -15,7 +16,7 @@ describe("FluxSignedOrderSettlementFlow", async function () {
   const [ownerClient, makerClient, executorClient, recipientClient, strangerClient] =
     await viem.getWalletClients();
 
-  const zeroAddress = "0x0000000000000000000000000000000000000000";
+  const zeroAddress = "0x0000000000000000000000000000000000000000" as const;
   const maxUint256 = (1n << 256n) - 1n;
 
   let weth: any;
@@ -25,6 +26,18 @@ describe("FluxSignedOrderSettlementFlow", async function () {
   let tokenA: any;
   let tokenB: any;
   let pair: any;
+
+  type SettlementOrder = {
+    maker: `0x${string}`;
+    inputToken: `0x${string}`;
+    outputToken: `0x${string}`;
+    amountIn: bigint;
+    minAmountOut: bigint;
+    triggerPriceX18: bigint;
+    expiry: bigint;
+    nonce: bigint;
+    recipient: `0x${string}`;
+  };
 
   async function getDeadline(offset = 3600n) {
     return (await publicClient.getBlock()).timestamp + offset;
@@ -47,17 +60,7 @@ describe("FluxSignedOrderSettlementFlow", async function () {
     ok(errorText.includes(reason), `Expected revert reason "${reason}", got: ${errorText}`);
   };
 
-  async function signOrder(order: {
-    maker: `0x${string}`;
-    inputToken: `0x${string}`;
-    outputToken: `0x${string}`;
-    amountIn: bigint;
-    minAmountOut: bigint;
-    triggerPriceX18: bigint;
-    expiry: bigint;
-    nonce: bigint;
-    recipient: `0x${string}`;
-  }) {
+  async function signOrder(order: SettlementOrder) {
     return makerClient.signTypedData({
       account: makerClient.account,
       domain: {
@@ -81,6 +84,44 @@ describe("FluxSignedOrderSettlementFlow", async function () {
       },
       primaryType: "SignedOrder",
       message: order,
+    });
+  }
+
+  async function signInvalidateNonces(
+    nonces: bigint[],
+    deadline: bigint,
+    signer = makerClient,
+    maker = makerClient.account.address,
+  ) {
+    const noncesHash =
+      nonces.length === 0
+        ? ethers.keccak256("0x")
+        : ethers.solidityPackedKeccak256(
+            new Array(nonces.length).fill("uint256"),
+            nonces,
+          );
+
+    return signer.signTypedData({
+      account: signer.account,
+      domain: {
+        name: "Flux Signed Order Settlement",
+        version: "1",
+        chainId: Number(await publicClient.getChainId()),
+        verifyingContract: settlement.address,
+      },
+      types: {
+        InvalidateNonces: [
+          { name: "maker", type: "address" },
+          { name: "noncesHash", type: "bytes32" },
+          { name: "deadline", type: "uint256" },
+        ],
+      },
+      primaryType: "InvalidateNonces",
+      message: {
+        maker,
+        noncesHash,
+        deadline,
+      },
     });
   }
 
@@ -143,7 +184,7 @@ describe("FluxSignedOrderSettlementFlow", async function () {
       expiry: await getDeadline(),
       nonce: 1n,
       recipient: recipientClient.account.address,
-    } as const;
+    } as const satisfies SettlementOrder;
 
     const signature = await signOrder(order);
     const reservesBefore = await pair.read.getReserves();
@@ -174,7 +215,7 @@ describe("FluxSignedOrderSettlementFlow", async function () {
       expiry: await getDeadline(),
       nonce: 2n,
       recipient: recipientClient.account.address,
-    } as const;
+    } as const satisfies SettlementOrder;
 
     const signature = await signOrder(order);
     const balanceBefore = await publicClient.getBalance({ address: recipientClient.account.address });
@@ -186,7 +227,49 @@ describe("FluxSignedOrderSettlementFlow", async function () {
     ok((await publicClient.getBalance({ address: recipientClient.account.address })) > balanceBefore);
   });
 
-  it("should block execution after maker cancels the signed order", async function () {
+  it("should settle a signed native-input order through WETH in the live router", async function () {
+    await factory.write.createPair([tokenA.address, weth.address], {
+      account: ownerClient.account.address,
+    });
+    await seedTokenEthPair();
+
+    await weth.write.deposit({
+      account: makerClient.account.address,
+      value: 5n * 10n ** 18n,
+    });
+    await weth.write.approve([settlement.address, maxUint256], {
+      account: makerClient.account.address,
+    });
+
+    const wethPairAddress = await factory.read.getPair([tokenA.address, weth.address]);
+    const wethPair = await viem.getContractAt("FluxSwapPair", wethPairAddress);
+
+    const order = {
+      maker: makerClient.account.address,
+      inputToken: zeroAddress,
+      outputToken: tokenA.address,
+      amountIn: 1n * 10n ** 18n,
+      minAmountOut: 400n * 10n ** 18n,
+      triggerPriceX18: 400n * 10n ** 18n,
+      expiry: await getDeadline(),
+      nonce: 7n,
+      recipient: recipientClient.account.address,
+    } as const satisfies SettlementOrder;
+
+    const signature = await signOrder(order);
+    const reservesBefore = await wethPair.read.getReserves();
+    const tokenBefore = await tokenA.read.balanceOf([recipientClient.account.address]);
+
+    await settlement.write.executeOrder([order, signature, await getDeadline()], {
+      account: executorClient.account.address,
+    });
+
+    const reservesAfter = await wethPair.read.getReserves();
+    ok((await tokenA.read.balanceOf([recipientClient.account.address])) > tokenBefore);
+    ok(reservesBefore[0] !== reservesAfter[0] || reservesBefore[1] !== reservesAfter[1]);
+  });
+
+  it("should block execution after maker invalidates the signed order nonce by signature", async function () {
     const order = {
       maker: makerClient.account.address,
       inputToken: tokenA.address,
@@ -197,10 +280,16 @@ describe("FluxSignedOrderSettlementFlow", async function () {
       expiry: await getDeadline(),
       nonce: 3n,
       recipient: recipientClient.account.address,
-    } as const;
+    } as const satisfies SettlementOrder;
 
     const signature = await signOrder(order);
-    await settlement.write.cancelOrder([order], { account: makerClient.account.address });
+    const deadline = await getDeadline();
+    const revokeSignature = await signInvalidateNonces([3n], deadline);
+
+    await settlement.write.invalidateNoncesBySig(
+      [makerClient.account.address, [3n], deadline, revokeSignature],
+      { account: strangerClient.account.address },
+    );
 
     await expectRevert(
       settlement.write.executeOrder([order, signature, await getDeadline()], {
@@ -210,7 +299,7 @@ describe("FluxSignedOrderSettlementFlow", async function () {
     );
   });
 
-  it("should block execution for every order inside a batch cancel request", async function () {
+  it("should block execution for every order inside a signed nonce invalidation batch", async function () {
     const orderA = {
       maker: makerClient.account.address,
       inputToken: tokenA.address,
@@ -221,7 +310,7 @@ describe("FluxSignedOrderSettlementFlow", async function () {
       expiry: await getDeadline(),
       nonce: 31n,
       recipient: recipientClient.account.address,
-    } as const;
+    } as const satisfies SettlementOrder;
 
     const orderB = {
       maker: makerClient.account.address,
@@ -233,14 +322,17 @@ describe("FluxSignedOrderSettlementFlow", async function () {
       expiry: await getDeadline(),
       nonce: 32n,
       recipient: recipientClient.account.address,
-    } as const;
+    } as const satisfies SettlementOrder;
 
     const signatureA = await signOrder(orderA);
     const signatureB = await signOrder(orderB);
+    const deadline = await getDeadline();
+    const revokeSignature = await signInvalidateNonces([31n, 32n], deadline);
 
-    await settlement.write.batchCancelOrders([[orderA, orderB]], {
-      account: makerClient.account.address,
-    });
+    await settlement.write.invalidateNoncesBySig(
+      [makerClient.account.address, [31n, 32n], deadline, revokeSignature],
+      { account: executorClient.account.address },
+    );
 
     await expectRevert(
       settlement.write.executeOrder([orderA, signatureA, await getDeadline()], {
@@ -251,30 +343,6 @@ describe("FluxSignedOrderSettlementFlow", async function () {
 
     await expectRevert(
       settlement.write.executeOrder([orderB, signatureB, await getDeadline()], {
-        account: executorClient.account.address,
-      }),
-      "FluxSignedOrderSettlement: NONCE_INVALIDATED",
-    );
-  });
-
-  it("should block execution after cancelUpTo invalidates older nonces", async function () {
-    const order = {
-      maker: makerClient.account.address,
-      inputToken: tokenA.address,
-      outputToken: tokenB.address,
-      amountIn: 100n * 10n ** 18n,
-      minAmountOut: 190n * 10n ** 18n,
-      triggerPriceX18: 19n * 10n ** 17n,
-      expiry: await getDeadline(),
-      nonce: 4n,
-      recipient: recipientClient.account.address,
-    } as const;
-
-    const signature = await signOrder(order);
-    await settlement.write.cancelUpTo([5n], { account: makerClient.account.address });
-
-    await expectRevert(
-      settlement.write.executeOrder([order, signature, await getDeadline()], {
         account: executorClient.account.address,
       }),
       "FluxSignedOrderSettlement: NONCE_INVALIDATED",
@@ -292,7 +360,7 @@ describe("FluxSignedOrderSettlementFlow", async function () {
       expiry: await getDeadline(),
       nonce: 5n,
       recipient: recipientClient.account.address,
-    } as const;
+    } as const satisfies SettlementOrder;
 
     const signature = await signOrder(order);
 
@@ -339,7 +407,7 @@ describe("FluxSignedOrderSettlementFlow", async function () {
       expiry: await getDeadline(3n),
       nonce: 6n,
       recipient: recipientClient.account.address,
-    } as const;
+    } as const satisfies SettlementOrder;
 
     await networkHelpers.time.increase(5);
 

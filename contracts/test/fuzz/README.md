@@ -107,14 +107,14 @@ forge test --match-path test/fuzz/FluxSignedOrderSettlementFuzz.t.sol -vv
 覆盖签名订单结算模块在随机金额、随机 nonce 边界下的最小状态正确性：
 
 - `executeOrder` 成功后必须同时写入 `orderExecuted` 与 `invalidatedNonce`
-- `cancelUpTo` 必须使低于阈值的旧 nonce 永久失效
-- `cancelOrder` 后同一订单后续执行必须被拒绝
+- `invalidateNoncesBySig` 必须使签名批量指定的 nonce 永久失效
+- `invalidateNoncesBySig` 遇到重复 nonce 时必须整体回滚，避免出现假成功
 
 当前重点验证的性质：
 
 - 成交成功后 settlement 合约不能留下 maker 的输入资产残留
 - 单个订单一旦成交或取消，后续不得再被重复执行
-- 批量 nonce 失效只会向前收紧，不会放松已有约束
+- 批量 nonce 失效后，被命中的订单后续不得再次执行
 
 ### `FluxAmmLifecycleStatefulFuzz.t.sol`
 
