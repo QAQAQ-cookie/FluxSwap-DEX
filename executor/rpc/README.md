@@ -1,44 +1,39 @@
-# RPC Scaffold
+﻿# RPC Scaffold
 
-当前目录承载基于 `go-zero` 的 gRPC 服务层。
-
-当前已具备：
+褰撳墠鐩綍鎵胯浇鍩轰簬 `go-zero` 鐨?gRPC 鏈嶅姟灞傘€?
+褰撳墠宸插叿澶囷細
 
 - `proto/`
-  - gRPC 协议定义
+  - gRPC 鍗忚瀹氫箟
 - `etc/`
-  - RPC 配置文件
+  - RPC 閰嶇疆鏂囦欢
 - `internal/logic`
-  - RPC 业务逻辑
+  - RPC 涓氬姟閫昏緫
 - `internal/server`
-  - gRPC 服务注册
+  - gRPC 鏈嶅姟娉ㄥ唽
 - `internal/svc`
-  - 服务上下文与共享依赖
+  - 鏈嶅姟涓婁笅鏂囦笌鍏变韩渚濊禆
 
-当前可用接口：
-
+褰撳墠鍙敤鎺ュ彛锛?
 - `Executor/Ping`
 - `Executor/CreateOrder`
 - `Executor/CancelOrders`
 - `Executor/ApplyOrderEvent`
 - `Executor/GetOrder`
 
-接口说明：
-
+鎺ュ彛璇存槑锛?
 - `CreateOrder`
-  - 校验签名订单基础字段
-  - 写入订单表
-  - 记录签名里的固定 `executorFee`
-  - 如果当前链客户端可用，会在创建时顺手记录一份“执行费估算快照”
-- `CancelOrders`
-  - 使用 `invalidateNoncesBySig` 提交批量 nonce 作废交易
-  - 最终状态由 indexer 根据 `NonceInvalidated` 事件回写
+  - 鏍￠獙绛惧悕璁㈠崟鍩虹瀛楁
+  - 鍐欏叆璁㈠崟琛?  - 璁板綍绛惧悕閲岀殑鍥哄畾 `executorFee`
+  - 濡傛灉褰撳墠閾惧鎴风鍙敤锛屼細鍦ㄥ垱寤烘椂椤烘墜璁板綍涓€浠解€滄墽琛岃垂浼扮畻蹇収鈥?- `CancelOrders`
+  - 浣跨敤 `invalidateNoncesBySig` 鎻愪氦鎵归噺 nonce 浣滃簾浜ゆ槗
+  - 鏈€缁堢姸鎬佺敱 indexer 鏍规嵁 `NonceInvalidated` 浜嬩欢鍥炲啓
 - `ApplyOrderEvent`
-  - 当前只保留 `OrderExecuted` 事件回写入口
+  - 褰撳墠鍙繚鐣?`OrderExecuted` 浜嬩欢鍥炲啓鍏ュ彛
 - `GetOrder`
-  - 按 `chainId + settlementAddress + orderHash` 查询订单
+  - 鎸?`chainId + settlementAddress + orderHash` 鏌ヨ璁㈠崟
 
-当前订单返回中新增了以下执行费相关字段：
+褰撳墠璁㈠崟杩斿洖涓柊澧炰簡浠ヤ笅鎵ц璐圭浉鍏冲瓧娈碉細
 
 - `executorFee`
 - `executorFeeToken`
@@ -52,8 +47,9 @@
 - `settledAmountOut`
 - `settledExecutorFee`
 
-启动方式：
-
+鍚姩鏂瑰紡锛?
 ```bash
-go run ./cmd/rpc -f ./rpc/etc/executor.yaml
+go run ./cmd/rpc -f ./executor.yaml
 ```
+
+

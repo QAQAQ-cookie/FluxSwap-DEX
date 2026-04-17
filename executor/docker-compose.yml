@@ -1,4 +1,4 @@
-services:
+﻿services:
   postgres:
     image: postgres:17
     container_name: fluxswap-executor-postgres
@@ -26,8 +26,8 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      - ./rpc/etc/executor.docker.yaml:/app/rpc/etc/executor.docker.yaml:ro
-    command: ["migrate", "-f", "/app/rpc/etc/executor.docker.yaml"]
+      - ./executor.docker.yaml:/app/executor.docker.yaml:ro
+    command: ["migrate", "-f", "/app/executor.docker.yaml"]
     restart: "no"
 
   rpc:
@@ -41,8 +41,8 @@ services:
       migrate:
         condition: service_completed_successfully
     volumes:
-      - ./rpc/etc/executor.docker.yaml:/app/rpc/etc/executor.docker.yaml:ro
-    command: ["rpc", "-f", "/app/rpc/etc/executor.docker.yaml"]
+      - ./executor.docker.yaml:/app/executor.docker.yaml:ro
+    command: ["rpc", "-f", "/app/executor.docker.yaml"]
     ports:
       - "9001:9001"
     restart: unless-stopped
@@ -58,8 +58,8 @@ services:
       migrate:
         condition: service_completed_successfully
     volumes:
-      - ./rpc/etc/executor.docker.yaml:/app/rpc/etc/executor.docker.yaml:ro
-    command: ["executor", "-f", "/app/rpc/etc/executor.docker.yaml"]
+      - ./executor.docker.yaml:/app/executor.docker.yaml:ro
+    command: ["executor", "-f", "/app/executor.docker.yaml"]
     ports:
       - "9101:9101"
     restart: unless-stopped
@@ -75,11 +75,13 @@ services:
       migrate:
         condition: service_completed_successfully
     volumes:
-      - ./rpc/etc/executor.docker.yaml:/app/rpc/etc/executor.docker.yaml:ro
-    command: ["indexer", "-f", "/app/rpc/etc/executor.docker.yaml"]
+      - ./executor.docker.yaml:/app/executor.docker.yaml:ro
+    command: ["indexer", "-f", "/app/executor.docker.yaml"]
     ports:
       - "9102:9102"
     restart: unless-stopped
 
 volumes:
   postgres_data:
+
+

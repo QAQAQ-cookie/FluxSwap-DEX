@@ -17,7 +17,7 @@ import (
 	"github.com/zeromicro/go-zero/core/conf"
 )
 
-var configFile = flag.String("f", "rpc/etc/executor.yaml", "the config file")
+var configFile = flag.String("f", "executor.yaml", "the config file")
 
 // main 启动单实例多链 executor worker。
 func main() {
@@ -58,10 +58,10 @@ func main() {
 	}
 
 	var (
-		wg       sync.WaitGroup
-		runCtx   = context.Background()
-		errCh    = make(chan error, len(activeChains))
-		workers  []*executorworker.Worker
+		wg      sync.WaitGroup
+		runCtx  = context.Background()
+		errCh   = make(chan error, len(activeChains))
+		workers []*executorworker.Worker
 	)
 
 	for _, chainCfg := range activeChains {

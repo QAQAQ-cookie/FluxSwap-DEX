@@ -1,47 +1,37 @@
-# Worker Modules
+﻿# Worker Modules
 
-当前目录用于放执行器后台任务模块。
-
-当前包含：
-
+褰撳墠鐩綍鐢ㄤ簬鏀炬墽琛屽櫒鍚庡彴浠诲姟妯″潡銆?
+褰撳墠鍖呭惈锛?
 - `executor/`
-  - 扫描并执行 `open` 状态订单
-- `indexer/`
-  - 订阅并回写链上事件
-
-当前行为：
-
+  - 鎵弿骞舵墽琛?`open` 鐘舵€佽鍗?- `indexer/`
+  - 璁㈤槄骞跺洖鍐欓摼涓婁簨浠?
+褰撳墠琛屼负锛?
 - `executor`
-  - 只扫描与当前 `chainId + settlementAddress` 匹配的 `open` 订单
-  - 先调用链上 `canExecuteOrder`
-  - 若链上报价已满足条件，再重新估算“当前所需执行费”
-  - 只有当 `签名 executorFee >= 当前所需 executorFee` 时，才真正发起 `executeOrder`
-  - 若执行费不足，不提交链上交易，只更新：
-    - `lastRequiredExecutorFee`
+  - 鍙壂鎻忎笌褰撳墠 `chainId + settlementAddress` 鍖归厤鐨?`open` 璁㈠崟
+  - 鍏堣皟鐢ㄩ摼涓?`canExecuteOrder`
+  - 鑻ラ摼涓婃姤浠峰凡婊¤冻鏉′欢锛屽啀閲嶆柊浼扮畻鈥滃綋鍓嶆墍闇€鎵ц璐光€?  - 鍙湁褰?`绛惧悕 executorFee >= 褰撳墠鎵€闇€ executorFee` 鏃讹紝鎵嶇湡姝ｅ彂璧?`executeOrder`
+  - 鑻ユ墽琛岃垂涓嶈冻锛屼笉鎻愪氦閾句笂浜ゆ槗锛屽彧鏇存柊锛?    - `lastRequiredExecutorFee`
     - `lastFeeCheckAt`
     - `lastExecutionCheckAt`
     - `lastBlockReason`
     - `statusReason`
 
 - `indexer`
-  - 当前监听：
-    - `OrderExecuted`
+  - 褰撳墠鐩戝惉锛?    - `OrderExecuted`
     - `NonceInvalidated`
-  - `OrderExecuted` 会回写：
+  - `OrderExecuted` 浼氬洖鍐欙細
     - `status = executed`
     - `executedTxHash`
     - `settledAmountOut`
     - `settledExecutorFee`
-  - `NonceInvalidated` 会把对应活跃订单回写为 `cancelled`
+  - `NonceInvalidated` 浼氭妸瀵瑰簲娲昏穬璁㈠崟鍥炲啓涓?`cancelled`
 
-说明：
-
-- 订单创建时记录的执行费快照，用于订单页展示“预估执行费”。
-- worker 执行前重新计算的是“当前所需执行费”，仅用于风控判断，不会覆盖用户签名中的固定 `executorFee`。
-
-启动方式：
-
+璇存槑锛?
+- 璁㈠崟鍒涘缓鏃惰褰曠殑鎵ц璐瑰揩鐓э紝鐢ㄤ簬璁㈠崟椤靛睍绀衡€滈浼版墽琛岃垂鈥濄€?- worker 鎵ц鍓嶉噸鏂拌绠楃殑鏄€滃綋鍓嶆墍闇€鎵ц璐光€濓紝浠呯敤浜庨鎺у垽鏂紝涓嶄細瑕嗙洊鐢ㄦ埛绛惧悕涓殑鍥哄畾 `executorFee`銆?
+鍚姩鏂瑰紡锛?
 ```bash
-go run ./cmd/executor -f ./rpc/etc/executor.yaml
-go run ./cmd/indexer -f ./rpc/etc/executor.yaml
+go run ./cmd/executor -f ./executor.yaml
+go run ./cmd/indexer -f ./executor.yaml
 ```
+
+

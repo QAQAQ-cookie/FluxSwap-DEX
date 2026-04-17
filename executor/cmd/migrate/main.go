@@ -12,7 +12,7 @@ import (
 	"github.com/zeromicro/go-zero/core/conf"
 )
 
-var configFile = flag.String("f", "rpc/etc/executor.yaml", "the config file")
+var configFile = flag.String("f", "executor.yaml", "the config file")
 
 // main 执行一次性的数据库结构初始化命令。
 func main() {

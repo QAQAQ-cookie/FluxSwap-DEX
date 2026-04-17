@@ -1,98 +1,78 @@
-# FluxSwap Executor
+﻿# FluxSwap Executor
 
-当前目录用于重建 FluxSwap 的执行器后端。
+褰撳墠鐩綍鐢ㄤ簬閲嶅缓 FluxSwap 鐨勬墽琛屽櫒鍚庣銆?
+褰撳墠宸茬粡鍏峰鐨勫熀纭€鑳藉姏锛?
+- 鍒濆鍖?Go 妯″潡 `fluxswap-executor`
+- 寮曞叆 `go-zero` 浣滀负鍚庣鍩虹妗嗘灦
+- 鎻愪緵 go-zero gRPC 鏈嶅姟楠ㄦ灦涓庡彲杩愯鍏ュ彛
+- 鎺ュ叆 `gorm + PostgreSQL`
+- 鏀寔缁熶竴鏁版嵁搴撹嚜鍔ㄥ缓琛ㄤ笌鐙珛杩佺Щ鍛戒护
+- 鏂板鐪熷疄鎺ュ彛 `Executor/CreateOrder`銆乣Executor/CancelOrders`銆乣Executor/ApplyOrderEvent`銆乣Executor/GetOrder`
+- `Executor/CancelOrders` 宸插垏鎹负閾句笂鎾ゅ崟妯″紡锛氶€氳繃 `invalidateNoncesBySig` 鎻愪氦 nonce 澶辨晥浜ゆ槗锛屾渶缁堢姸鎬佺敱 indexer 鎸?`NonceInvalidated` 浜嬩欢鍥炲啓
+- 褰撳墠鍚庣宸叉敮鎸佸崟瀹炰緥澶氶摼锛氬悓涓€涓?rpc / executor / indexer 杩涚▼鍙悓鏃跺姞杞藉鏉￠摼閰嶇疆锛屾寜 `chainId + settlementAddress` 鍒嗘祦
+- 瀹炵幇璁㈠崟浠撳偍銆佷簨浠朵粨鍌ㄤ笌鍚屾娓告爣浠撳偍
+- 瀹炵幇閾句笂浜嬩欢鍥炲啓鏈嶅姟 `internal/app/order_event_service.go`
+- 瀹炵幇绱㈠紩鍣?`cmd/indexer`锛屾敮鎸佸洖琛ュ尯鍧?+ WebSocket 瀹炴椂璁㈤槄
+- 瀹炵幇鎵ц鍣?`cmd/executor`锛屾敮鎸佸垽瀹氳鍗曟槸鍚﹀埌浠峰苟鐪熷疄鎻愪氦 `executeOrder` 浜ゆ槗
 
-当前已经具备的基础能力：
+褰撳墠鐩綍缁撴瀯鑱岃矗锛?
+- `rpc/`: gRPC 鍗忚涓庢帴鍙ｅ疄鐜?- `cmd/migrate`: 鏁版嵁搴撹縼绉诲叆鍙?- `internal/domain`: 璁㈠崟銆佷簨浠躲€佹父鏍囩瓑棰嗗煙妯″瀷
+- `internal/repo`: PostgreSQL 鎸佷箙灞?- `internal/app`: 鍏变韩涓氬姟鏈嶅姟
+- `worker/indexer`: 閾句笂浜嬩欢璁㈤槄涓庣姸鎬佸洖鍐?- `worker/executor`: 鍒颁环妫€娴嬩笌鎵ц浜ゆ槗鎻愪氦
+- `cmd/indexer`: 绱㈠紩鍣ㄨ繘绋嬪叆鍙?- `cmd/executor`: 鎵ц鍣ㄨ繘绋嬪叆鍙?
+褰撳墠宸插叿澶囩殑閾句笂鑷姩鍥炲啓鍩虹锛?
+- `cmd/indexer`: 鐙珛鐨?indexer 鍚姩鍏ュ彛
+- `worker/indexer/subscriber.go`: WebSocket 璁㈤槄鍣?- `internal/app/order_event_service.go`: 閾句笂浜嬩欢鍥炲啓鏈嶅姟
 
-- 初始化 Go 模块 `fluxswap-executor`
-- 引入 `go-zero` 作为后端基础框架
-- 提供 go-zero gRPC 服务骨架与可运行入口
-- 接入 `gorm + PostgreSQL`
-- 支持统一数据库自动建表与独立迁移命令
-- 新增真实接口 `Executor/CreateOrder`、`Executor/CancelOrders`、`Executor/ApplyOrderEvent`、`Executor/GetOrder`
-- `Executor/CancelOrders` 已切换为链上撤单模式：通过 `invalidateNoncesBySig` 提交 nonce 失效交易，最终状态由 indexer 按 `NonceInvalidated` 事件回写
-- 当前后端已支持单实例多链：同一个 rpc / executor / indexer 进程可同时加载多条链配置，按 `chainId + settlementAddress` 分流
-- 实现订单仓储、事件仓储与同步游标仓储
-- 实现链上事件回写服务 `internal/app/order_event_service.go`
-- 实现索引器 `cmd/indexer`，支持回补区块 + WebSocket 实时订阅
-- 实现执行器 `cmd/executor`，支持判定订单是否到价并真实提交 `executeOrder` 交易
+褰撳墠宸插叿澶囩殑鎵ц鍣ㄥ熀纭€锛?
+- `cmd/executor`: 鐙珛鐨勬墽琛屽櫒鍚姩鍏ュ彛
+- `worker/executor/worker.go`: 鎵弿璁㈠崟锛屽垽瀹氬彲鎵ц鎬э紝骞朵娇鐢ㄦ墽琛屽櫒绉侀挜鎻愪氦 `executeOrder`
+- `worker/executor/worker.go`: 杞 `pending_execute` 璁㈠崟鍥炴墽锛岀‘璁や氦鏄撴垚鍔熸垨鍦ㄥけ璐ユ椂鍥為€€閲嶈瘯
 
-当前目录结构职责：
-
-- `rpc/`: gRPC 协议与接口实现
-- `cmd/migrate`: 数据库迁移入口
-- `internal/domain`: 订单、事件、游标等领域模型
-- `internal/repo`: PostgreSQL 持久层
-- `internal/app`: 共享业务服务
-- `worker/indexer`: 链上事件订阅与状态回写
-- `worker/executor`: 到价检测与执行交易提交
-- `cmd/indexer`: 索引器进程入口
-- `cmd/executor`: 执行器进程入口
-
-当前已具备的链上自动回写基础：
-
-- `cmd/indexer`: 独立的 indexer 启动入口
-- `worker/indexer/subscriber.go`: WebSocket 订阅器
-- `internal/app/order_event_service.go`: 链上事件回写服务
-
-当前已具备的执行器基础：
-
-- `cmd/executor`: 独立的执行器启动入口
-- `worker/executor/worker.go`: 扫描订单，判定可执行性，并使用执行器私钥提交 `executeOrder`
-- `worker/executor/worker.go`: 轮询 `pending_execute` 订单回执，确认交易成功或在失败时回退重试
-
-数据库初始化方式：
-
+鏁版嵁搴撳垵濮嬪寲鏂瑰紡锛?
 ```bash
-go run ./cmd/migrate -f ./rpc/etc/executor.yaml
+go run ./cmd/migrate -f ./executor.yaml
 ```
 
-默认配置中 `Database.AutoMigrate: true`，因此在开发环境下直接启动 `rpc`、`executor`、`indexer` 时也会自动建表。
-
-常用启动方式：
-
+榛樿閰嶇疆涓?`Database.AutoMigrate: true`锛屽洜姝ゅ湪寮€鍙戠幆澧冧笅鐩存帴鍚姩 `rpc`銆乣executor`銆乣indexer` 鏃朵篃浼氳嚜鍔ㄥ缓琛ㄣ€?
+甯哥敤鍚姩鏂瑰紡锛?
 ```bash
-go run ./cmd/rpc -f ./rpc/etc/executor.yaml
-go run ./cmd/executor -f ./rpc/etc/executor.yaml
-go run ./cmd/indexer -f ./rpc/etc/executor.yaml
+go run ./cmd/rpc -f ./executor.yaml
+go run ./cmd/executor -f ./executor.yaml
+go run ./cmd/indexer -f ./executor.yaml
 ```
 
-健康检查：
+鍋ュ悍妫€鏌ワ細
 
-- RPC: gRPC health service，跟随主服务监听地址一起暴露
-- Executor worker: `GET /healthz`，默认监听 `0.0.0.0:9101`
-- Indexer worker: `GET /healthz`，默认监听 `0.0.0.0:9102`
+- RPC: gRPC health service锛岃窡闅忎富鏈嶅姟鐩戝惉鍦板潃涓€璧锋毚闇?- Executor worker: `GET /healthz`锛岄粯璁ょ洃鍚?`0.0.0.0:9101`
+- Indexer worker: `GET /healthz`锛岄粯璁ょ洃鍚?`0.0.0.0:9102`
 
-Docker 运行方式：
-
+Docker 杩愯鏂瑰紡锛?
 ```bash
 docker compose up --build
 ```
 
-容器编排文件：
-
+瀹瑰櫒缂栨帓鏂囦欢锛?
 - [docker-compose.yml](D:/work/CodeLab/FluxSwap-DEX/executor/docker-compose.yml)
 - [Dockerfile](D:/work/CodeLab/FluxSwap-DEX/executor/Dockerfile)
-- [executor.docker.yaml](D:/work/CodeLab/FluxSwap-DEX/executor/rpc/etc/executor.docker.yaml)
+- [executor.docker.yaml](D:/work/CodeLab/FluxSwap-DEX/executor/executor.docker.yaml)
 
-Docker 默认服务说明：
-
+Docker 榛樿鏈嶅姟璇存槑锛?
 - `postgres`: PostgreSQL 17
-- `migrate`: 启动时执行一次建表迁移
-- `rpc`: gRPC 服务，默认映射 `9001`
-- `executor`: 订单执行 worker，默认映射健康检查 `9101`
-- `indexer`: 事件索引 worker，默认映射健康检查 `9102`
+- `migrate`: 鍚姩鏃舵墽琛屼竴娆″缓琛ㄨ縼绉?- `rpc`: gRPC 鏈嶅姟锛岄粯璁ゆ槧灏?`9001`
+- `executor`: 璁㈠崟鎵ц worker锛岄粯璁ゆ槧灏勫仴搴锋鏌?`9101`
+- `indexer`: 浜嬩欢绱㈠紩 worker锛岄粯璁ゆ槧灏勫仴搴锋鏌?`9102`
 
-Docker 配置注意事项：
+Docker 閰嶇疆娉ㄦ剰浜嬮」锛?
+- `Chain.HTTPRPCURL` 渚?`rpc` 鍜?`executor` 浣跨敤锛屾寚鍚戝彲鍐欎氦鏄撲笌鍙璋冪敤鐨?HTTP RPC
+- `Chain.WSRPCURL` 渚?`indexer` 浣跨敤锛屾寚鍚?WebSocket RPC 浠ヤ究瀹炴椂璁㈤槄浜嬩欢
+- 榛樿绀轰緥浣跨敤 `ws://host.docker.internal:8545`锛岄€傚悎瀹瑰櫒璁块棶瀹夸富鏈轰笂鐨勬湰鍦板尯鍧楅摼
+- 鍚姩鍓嶉渶瑕佹妸 `executor.docker.yaml` 閲岀殑 `SettlementAddress` 鍜?`ExecutorPrivateKey` 鏀规垚瀹為檯鍊?- 濡傛灉浣犵殑閾句笉鍦ㄥ涓绘満锛岃€屽湪鍒殑瀹瑰櫒鎴栬繙绔妭鐐癸紝璇锋妸 `Chain.HTTPRPCURL` 鍜?`Chain.WSRPCURL` 鍒嗗埆鏀规垚瀵瑰簲鍦板潃
 
-- `Chain.HTTPRPCURL` 供 `rpc` 和 `executor` 使用，指向可写交易与只读调用的 HTTP RPC
-- `Chain.WSRPCURL` 供 `indexer` 使用，指向 WebSocket RPC 以便实时订阅事件
-- 默认示例使用 `ws://host.docker.internal:8545`，适合容器访问宿主机上的本地区块链
-- 启动前需要把 `executor.docker.yaml` 里的 `SettlementAddress` 和 `ExecutorPrivateKey` 改成实际值
-- 如果你的链不在宿主机，而在别的容器或远端节点，请把 `Chain.HTTPRPCURL` 和 `Chain.WSRPCURL` 分别改成对应地址
+寮€鍙戠幆澧冩帓鏌ュ缓璁細
 
-开发环境排查建议：
+- 鑻ヨ鍗曚竴鐩村仠鍦?`open`锛屽厛鐪?executor 鏃ュ織涓殑 `canExecuteOrder` reason
+- 鑻ヨ鍗曡繘鍏?`pending_execute` 浣嗘湭鏈€缁堣惤涓?`executed`锛屽厛鐪?executor 鍥炴墽鏃ュ織锛屽啀鐪?indexer 鏄惁鏀跺埌 `OrderExecuted`
+- 鑻?indexer 鏈秷璐瑰埌浜嬩欢锛屼紭鍏堟鏌?`Chain.WSRPCURL` 鏄惁涓?WebSocket 鍦板潃
 
-- 若订单一直停在 `open`，先看 executor 日志中的 `canExecuteOrder` reason
-- 若订单进入 `pending_execute` 但未最终落为 `executed`，先看 executor 回执日志，再看 indexer 是否收到 `OrderExecuted`
-- 若 indexer 未消费到事件，优先检查 `Chain.WSRPCURL` 是否为 WebSocket 地址
+

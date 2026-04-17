@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"flag"
@@ -10,7 +10,7 @@ import (
 	"github.com/zeromicro/go-zero/core/conf"
 )
 
-var configFile = flag.String("f", "rpc/etc/executor.yaml", "the config file")
+var configFile = flag.String("f", "executor.yaml", "the config file")
 
 func main() {
 	flag.Parse()
@@ -22,3 +22,5 @@ func main() {
 		log.Fatal(err)
 	}
 }
+
+

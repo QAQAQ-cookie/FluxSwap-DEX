@@ -1,4 +1,4 @@
-FROM golang:1.25 AS builder
+﻿FROM golang:1.25 AS builder
 
 WORKDIR /app
 
@@ -24,6 +24,8 @@ COPY --from=builder /out/rpc /usr/local/bin/rpc
 COPY --from=builder /out/executor /usr/local/bin/executor
 COPY --from=builder /out/indexer /usr/local/bin/indexer
 COPY --from=builder /out/migrate /usr/local/bin/migrate
-COPY rpc/etc/executor.yaml /app/rpc/etc/executor.yaml
+COPY executor.yaml /app/executor.yaml
 
-CMD ["rpc", "-f", "/app/rpc/etc/executor.yaml"]
+CMD ["rpc", "-f", "/app/executor.yaml"]
+
+

@@ -1,37 +1,30 @@
-# Indexer Worker
+﻿# Indexer Worker
 
-当前目录用于承载链上事件索引与回写逻辑。
+褰撳墠鐩綍鐢ㄤ簬鎵胯浇閾句笂浜嬩欢绱㈠紩涓庡洖鍐欓€昏緫銆?
+褰撳墠宸插畬鎴愶細
 
-当前已完成：
-
-- `Worker.ApplyEvent(...)` 事件回写入口
-- `Subscriber` WebSocket 订阅器
-- 独立启动入口 `cmd/indexer`
-- 启动时优先从数据库 `sync_cursor` 续跑
-- 如果没有 cursor，则回扫最近 `IndexerBackfillBlocks` 个区块
-- 事件会落库到 `order_events` 表，重复事件按幂等跳过
-
-当前自动识别并回写：
+- `Worker.ApplyEvent(...)` 浜嬩欢鍥炲啓鍏ュ彛
+- `Subscriber` WebSocket 璁㈤槄鍣?- 鐙珛鍚姩鍏ュ彛 `cmd/indexer`
+- 鍚姩鏃朵紭鍏堜粠鏁版嵁搴?`sync_cursor` 缁窇
+- 濡傛灉娌℃湁 cursor锛屽垯鍥炴壂鏈€杩?`IndexerBackfillBlocks` 涓尯鍧?- 浜嬩欢浼氳惤搴撳埌 `order_events` 琛紝閲嶅浜嬩欢鎸夊箓绛夎烦杩?
+褰撳墠鑷姩璇嗗埆骞跺洖鍐欙細
 
 - `OrderExecuted`
 - `OrderCancelled`
 - `NonceInvalidated`
 - `MinValidNonceUpdated`
 
-启动方式：
-
+鍚姩鏂瑰紡锛?
 ```bash
-go run ./cmd/indexer -f ./rpc/etc/executor.yaml
+go run ./cmd/indexer -f ./executor.yaml
 ```
 
-关键配置：
+鍏抽敭閰嶇疆锛?
+- `Chain.WSRPCURL`: 蹇呴』鏄?`ws://` 鎴?`wss://` WebSocket RPC
+- `Chain.SettlementAddress`: 绛惧悕璁㈠崟缁撶畻鍚堢害鍦板潃
+- `Worker.IndexerBackfillBlocks`: 棣栨鍚姩鎴栨棤 cursor 鏃剁殑鍥炴壂绐楀彛
 
-- `Chain.WSRPCURL`: 必须是 `ws://` 或 `wss://` WebSocket RPC
-- `Chain.SettlementAddress`: 签名订单结算合约地址
-- `Worker.IndexerBackfillBlocks`: 首次启动或无 cursor 时的回扫窗口
+鍚庣画浠嶅缓璁ˉ鍏咃細
 
-后续仍建议补充：
+- 鏇寸粏绮掑害鐨勬柇绾挎仮澶嶇瓥鐣?- 鐙珛浜嬩欢钀藉簱琛?- 鏇村畬鏁寸殑 cursor 鍏冧俊鎭?
 
-- 更细粒度的断线恢复策略
-- 独立事件落库表
-- 更完整的 cursor 元信息
