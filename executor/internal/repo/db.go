@@ -25,3 +25,21 @@ func OpenPostgres(dsn string) (*gorm.DB, error) {
 
 	return db, nil
 }
+
+// ClosePostgres 释放 Gorm 底层持有的数据库连接池。
+func ClosePostgres(db *gorm.DB) error {
+	if db == nil {
+		return nil
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("resolve sql db: %w", err)
+	}
+
+	if err := sqlDB.Close(); err != nil {
+		return fmt.Errorf("close sql db: %w", err)
+	}
+
+	return nil
+}

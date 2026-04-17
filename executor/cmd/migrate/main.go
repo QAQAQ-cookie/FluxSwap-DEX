@@ -29,6 +29,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("open database failed: %v", err)
 	}
+	defer func() {
+		if closeErr := repo.ClosePostgres(db); closeErr != nil {
+			log.Printf("close database failed: %v", closeErr)
+		}
+	}()
 
 	if err := repo.AutoMigrate(db); err != nil {
 		log.Fatalf("auto migrate failed: %v", err)

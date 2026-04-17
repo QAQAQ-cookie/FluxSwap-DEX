@@ -98,6 +98,9 @@ func (s *ServiceContext) Close() {
 			client.Close()
 		}
 	}
+	if err := repo.ClosePostgres(s.DB); err != nil {
+		logx.Errorf("close database failed: %v", err)
+	}
 }
 
 func buildChainClientKey(chainID int64, settlementAddress string) string {
