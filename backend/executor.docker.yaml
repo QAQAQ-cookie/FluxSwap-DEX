@@ -1,0 +1,38 @@
+Name: fluxswap-backend.rpc
+ListenOn: 0.0.0.0:9001
+
+App:
+  Name: fluxswap-backend
+  Env: docker
+
+Database:
+  Driver: postgres
+  DSN: postgres://fluxswap:fluxswap_dev_password@postgres:5432/fluxswap_backend?sslmode=disable
+  AutoMigrate: true
+
+Chains:
+  - Name: localhost
+    ChainID: 31337
+    HTTPRPCURL: http://host.docker.internal:8545
+    WSRPCURL: ws://host.docker.internal:8545
+    SettlementAddress: ""
+    ExecutorPrivateKey: ""
+  - Name: sepolia
+    ChainID: 11155111
+    HTTPRPCURL: ""
+    WSRPCURL: ""
+    SettlementAddress: ""
+    ExecutorPrivateKey: ""
+
+Worker:
+  ExecutorScanIntervalMs: 5000
+  ExecutorBatchSize: 20
+  ExecutorTxDeadlineSec: 120
+  ExecutorEstimatedGasUsed: 400000
+  ExecutorFeeSafetyBps: 20000
+  ProtocolBlockedRetryMs: 30000
+  ReceiptPollIntervalMs: 5000
+  IndexerHeartbeatMs: 15000
+  IndexerBackfillBlocks: 500
+  ExecutorHealthListenOn: 0.0.0.0:9101
+  IndexerHealthListenOn: 0.0.0.0:9102
