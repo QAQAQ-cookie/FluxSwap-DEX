@@ -155,28 +155,6 @@ contract FluxSwapRouterExceptionFuzzTest is Test {
         assertEq(weth.balanceOf(address(router)), 0);
     }
 
-    function testFuzz_swapExactTokensForTokensSupportingFeeOnTransfer_revertsWhenPathLengthIsInvalid(uint96 rawAmountIn)
-        public
-    {
-        uint256 amountIn = bound(uint256(rawAmountIn), 1, 1e24);
-
-        tokenA.mint(trader, amountIn);
-        vm.prank(trader);
-        tokenA.approve(address(router), type(uint256).max);
-
-        address[] memory invalidPath = new address[](1);
-        invalidPath[0] = address(tokenA);
-
-        uint256 traderBefore = tokenA.balanceOf(trader);
-
-        vm.prank(trader);
-        vm.expectRevert(bytes("FluxSwapRouter: INVALID_PATH"));
-        router.swapExactTokensForTokensSupportingFeeOnTransferTokens(amountIn, 0, invalidPath, recipient, _deadline());
-
-        assertEq(tokenA.balanceOf(trader), traderBefore);
-        assertEq(tokenA.balanceOf(address(router)), 0);
-    }
-
     function testFuzz_swapExactTokensForTokens_revertsWhenPairDoesNotExist(uint96 rawAmountIn) public {
         uint256 amountIn = bound(uint256(rawAmountIn), 1, 1e24);
 

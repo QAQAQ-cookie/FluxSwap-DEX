@@ -24,7 +24,7 @@ import "../libraries/TransferHelper.sol";
  * 链上仅在执行时校验签名、价格、到期时间和 nonce 可用性。
  *
  * 代币语义约定：
- * 1. `inputToken == address(0)` 表示“以原生币语义下单”，链上执行时统一按 WETH 作为输入资产处理。
+ * 1. `inputToken` 必须是受支持的标准 ERC20，卖出原生币时需要先在链下包装成 WETH 再下单。
  * 2. `outputToken == address(0)` 表示最终输出原生币，链上会先把资产结算到当前合约，再按“用户净收款 + 执行费”语义分配 ETH。
  */
 contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, ReentrancyGuard {
@@ -67,7 +67,6 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
     mapping(bytes32 => bool) public override orderExecuted;
     // 记录 maker 的 nonce 是否不可再次使用。
     mapping(address => mapping(uint256 => bool)) public override invalidatedNonce;
-
     /**
      * @notice 仅允许在合约未暂停时继续执行。
      */
@@ -217,6 +216,9 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
         if (order.maker == address(0)) {
             return (false, "ZERO_MAKER");
         }
+        if (order.inputToken == address(0)) {
+            return (false, "INPUT_TOKEN_MUST_BE_ERC20");
+        }
         if (_hasIdenticalAssets(order.inputToken, order.outputToken)) {
             return (false, "IDENTICAL_TOKENS");
         }
@@ -250,7 +252,10 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
             return (false, "PAIR_NOT_FOUND");
         }
 
-        uint256 amountOut = _getAmountOut(order.inputToken, order.outputToken, order.amountIn);
+        (bool quoteOk, uint256 amountOut) = _tryGetAmountOut(order.inputToken, order.outputToken, order.amountIn);
+        if (!quoteOk) {
+            return (false, "INSUFFICIENT_LIQUIDITY");
+        }
         if (amountOut < order.minAmountOut) {
             return (false, "INSUFFICIENT_OUTPUT");
         }
@@ -327,6 +332,7 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
      */
     function _validateOrder(SignedOrder calldata order) private view {
         require(order.maker != address(0), "FluxSignedOrderSettlement: ZERO_MAKER");
+        require(order.inputToken != address(0), "FluxSignedOrderSettlement: INPUT_TOKEN_MUST_BE_ERC20");
         require(!_hasIdenticalAssets(order.inputToken, order.outputToken), "FluxSignedOrderSettlement: IDENTICAL_TOKENS");
         require(order.amountIn > 0, "FluxSignedOrderSettlement: ZERO_AMOUNT_IN");
         require(order.minAmountOut > 0, "FluxSignedOrderSettlement: ZERO_MIN_AMOUNT_OUT");
@@ -342,6 +348,7 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
      * @param order 待报价的订单参数。
      */
     function _validateQuoteOrder(SignedOrder calldata order) private view {
+        require(order.inputToken != address(0), "FluxSignedOrderSettlement: INPUT_TOKEN_MUST_BE_ERC20");
         require(!_hasIdenticalAssets(order.inputToken, order.outputToken), "FluxSignedOrderSettlement: IDENTICAL_TOKENS");
         require(order.amountIn > 0, "FluxSignedOrderSettlement: ZERO_AMOUNT_IN");
         require(_pairExists(order.inputToken, order.outputToken), "FluxSignedOrderSettlement: PAIR_NOT_FOUND");
@@ -360,10 +367,10 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
     }
 
     /**
-     * @notice 检查输入资产与输出资产对应的 AMM 交易对是否存在。
-     * @param inputToken 订单支付资产。
-     * @param outputToken 订单接收资产，零地址表示原生 ETH。
-     * @return 是否存在可用的两跳内直接交易对。
+     * @notice 检查订单输入资产与输出资产对应的 AMM 交易对是否存在。
+     * @param inputToken 订单支付资产，必须是 ERC20。
+     * @param outputToken 订单接收资产，零地址表示最终输出原生 ETH。
+     * @return 是否存在可用的标准 AMM 交易对。
      */
     function _pairExists(address inputToken, address outputToken) private view returns (bool) {
         (address tokenIn, address tokenOut) = _normalizePairTokens(inputToken, outputToken);
@@ -371,9 +378,9 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
     }
 
     /**
-     * @notice 判断输入与输出在归一化后是否指向同一底层资产。
-     * @param inputToken 订单支付资产，零地址表示原生币输入语义。
-     * @param outputToken 订单接收资产，零地址表示原生 ETH。
+     * @notice 判断订单输入与输出在归一化后是否指向同一底层资产。
+     * @param inputToken 订单支付资产，必须是 ERC20。
+     * @param outputToken 订单接收资产，零地址表示最终输出原生 ETH。
      * @return 若归一化后输入输出资产一致，则返回 true。
      */
     function _hasIdenticalAssets(address inputToken, address outputToken) private view returns (bool) {
@@ -382,18 +389,18 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
     }
 
     /**
-     * @notice 将输入资产归一化为真正参与结算的 ERC20 地址。
-     * @param inputToken 订单支付资产，零地址表示原生币输入语义。
+     * @notice 将订单输入资产归一化为真正参与结算的 ERC20 地址。
+     * @param inputToken 订单支付资产，必须是 ERC20。
      * @return tokenIn 结算时实际拉取和授权的 ERC20 地址。
      */
-    function _normalizeInputToken(address inputToken) private view returns (address tokenIn) {
-        tokenIn = inputToken == address(0) ? WETH : inputToken;
+    function _normalizeInputToken(address inputToken) private pure returns (address tokenIn) {
+        tokenIn = inputToken;
     }
 
     /**
-     * @notice 将输入输出资产归一化为 Router 与 Factory 使用的路径地址。
-     * @param inputToken 订单支付资产。
-     * @param outputToken 订单接收资产，零地址表示原生 ETH。
+     * @notice 将订单输入输出资产归一化为 Router 与 Factory 使用的路径地址。
+     * @param inputToken 订单支付资产，必须是 ERC20。
+     * @param outputToken 订单接收资产，零地址表示最终输出原生 ETH。
      * @return tokenIn 归一化后的输入资产地址。
      * @return tokenOut 归一化后的输出资产地址。
      */
@@ -405,8 +412,8 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
 
     /**
      * @notice 构建 Router 所需的两跳结算路径。
-     * @param inputToken 订单支付资产。
-     * @param outputToken 订单接收资产，零地址表示原生 ETH。
+     * @param inputToken 订单支付资产，必须是 ERC20。
+     * @param outputToken 订单接收资产，零地址表示最终输出原生 ETH。
      * @return path Router 使用的兑换路径。
      */
     function _buildPath(address inputToken, address outputToken) private view returns (address[] memory path) {
@@ -417,8 +424,8 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
 
     /**
      * @notice 读取当前 AMM 路径下的实时报价结果。
-     * @param inputToken 订单支付资产。
-     * @param outputToken 订单接收资产，零地址表示原生 ETH。
+     * @param inputToken 订单支付资产，必须是 ERC20。
+     * @param outputToken 订单接收资产，零地址表示最终输出原生 ETH。
      * @param amountIn 输入数量。
      * @return 当前 Router 估算出的输出数量。
      */
@@ -426,6 +433,39 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
         address[] memory path = _buildPath(inputToken, outputToken);
         uint256[] memory amounts = IFluxSwapRouter(router).getAmountsOut(amountIn, path);
         return amounts[amounts.length - 1];
+    }
+
+    /**
+     * @notice 尝试读取当前 AMM 路径下的实时报价，避免只读 readiness 检查因无流动性直接回退。
+     * @param inputToken 订单支付资产，必须是 ERC20。
+     * @param outputToken 订单接收资产，零地址表示最终输出原生 ETH。
+     * @param amountIn 输入数量。
+     * @return ok 报价是否成功。
+     * @return amountOut 报价成功时对应的输出数量，失败时返回 0。
+     */
+    function _tryGetAmountOut(
+        address inputToken,
+        address outputToken,
+        uint256 amountIn
+    ) private view returns (bool ok, uint256 amountOut) {
+        try this.getOrderQuote(
+            SignedOrder({
+                maker: address(1),
+                inputToken: inputToken,
+                outputToken: outputToken,
+                amountIn: amountIn,
+                minAmountOut: 1,
+                maxExecutorRewardBps: 0,
+                triggerPriceX18: 1,
+                expiry: type(uint256).max,
+                nonce: 0,
+                recipient: address(1)
+            })
+        ) returns (uint256 quotedAmountOut) {
+            return (true, quotedAmountOut);
+        } catch {
+            return (false, 0);
+        }
     }
 
     /**
@@ -463,9 +503,23 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
         }
 
         if (currentAllowance > 0) {
-            require(IERC20(token).approve(spender, 0), "FluxSignedOrderSettlement: APPROVE_RESET_FAILED");
+            _safeApprove(token, spender, 0, "FluxSignedOrderSettlement: APPROVE_RESET_FAILED");
         }
-        require(IERC20(token).approve(spender, type(uint256).max), "FluxSignedOrderSettlement: APPROVE_FAILED");
+        _safeApprove(token, spender, type(uint256).max, "FluxSignedOrderSettlement: APPROVE_FAILED");
+    }
+
+    /**
+     * @notice 兼容无返回值 ERC20 的 approve 写法。
+     * @param token 待授权的代币地址。
+     * @param spender 被授权地址。
+     * @param amount 授权额度。
+     * @param errorMessage 授权失败时抛出的错误。
+     */
+    function _safeApprove(address token, address spender, uint256 amount, string memory errorMessage) private {
+        (bool success, bytes memory data) = token.call(
+            abi.encodeWithSignature("approve(address,uint256)", spender, amount)
+        );
+        require(success && (data.length == 0 || abi.decode(data, (bool))), errorMessage);
     }
 
     /**

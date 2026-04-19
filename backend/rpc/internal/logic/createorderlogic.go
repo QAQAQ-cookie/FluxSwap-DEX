@@ -62,6 +62,9 @@ func (l *CreateOrderLogic) CreateOrder(in *executor.CreateOrderRequest) (*execut
 		// 输入代币地址非法时无法构造结算订单。
 		return nil, status.Error(codes.InvalidArgument, "inputToken must be a valid address")
 	}
+	if common.HexToAddress(normalizeAddress(in.GetInputToken())) == (common.Address{}) {
+		return nil, status.Error(codes.InvalidArgument, "inputToken must be an ERC20 token address")
+	}
 	// 校验输出代币地址格式，outputToken 是用户希望收到的资产。
 	if !isAddress(in.GetOutputToken()) {
 		// 输出代币地址非法时无法估算执行费或完成链上结算。

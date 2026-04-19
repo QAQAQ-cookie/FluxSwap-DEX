@@ -82,7 +82,7 @@ export function hashSignedLimitOrder(
 
 export function toSignedLimitOrderTokenAddress(
   tokenAddress: Address | undefined,
-  useNativeSemantic: boolean,
+  useNativeOutputSemantic = false,
 ): Address {
-  return useNativeSemantic ? zeroAddress : tokenAddress ?? zeroAddress
+  return useNativeOutputSemantic ? zeroAddress : tokenAddress ?? zeroAddress
 }

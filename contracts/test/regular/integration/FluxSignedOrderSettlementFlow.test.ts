@@ -21,6 +21,7 @@ describe("FluxSignedOrderSettlementFlow", async function () {
   let settlement: any;
   let tokenA: any;
   let tokenB: any;
+  let noReturnToken: any;
   let pair: any;
 
   type SettlementOrder = {
@@ -170,13 +171,14 @@ describe("FluxSignedOrderSettlementFlow", async function () {
 
     tokenA = await viem.deployContract("MockERC20", ["Token A", "TKNA", 18]);
     tokenB = await viem.deployContract("MockERC20", ["Token B", "TKNB", 18]);
+    noReturnToken = await viem.deployContract("MockNoReturnERC20", ["No Return Token", "NRT", 18]);
 
     await tokenA.write.mint([makerClient.account.address, 1_000_000n * 10n ** 18n]);
     await tokenB.write.mint([makerClient.account.address, 1_000_000n * 10n ** 18n]);
+    await noReturnToken.write.mint([makerClient.account.address, 1_000_000n * 10n ** 18n]);
     await tokenA.write.approve([router.address, maxUint256], { account: makerClient.account.address });
     await tokenB.write.approve([router.address, maxUint256], { account: makerClient.account.address });
     await tokenA.write.approve([settlement.address, maxUint256], { account: makerClient.account.address });
-
     await seedTokenPair();
   });
 
@@ -251,22 +253,11 @@ describe("FluxSignedOrderSettlementFlow", async function () {
     strictEqual(await publicClient.getBalance({ address: settlement.address }), 0n);
   });
 
-  it("should settle a signed native-input order through WETH in the live router", async function () {
+  it("should reject native-input signed orders in the integrated flow", async function () {
     await factory.write.createPair([tokenA.address, weth.address], {
       account: ownerClient.account.address,
     });
     await seedTokenEthPair();
-
-    await weth.write.deposit({
-      account: makerClient.account.address,
-      value: 5n * 10n ** 18n,
-    });
-    await weth.write.approve([settlement.address, maxUint256], {
-      account: makerClient.account.address,
-    });
-
-    const wethPairAddress = await factory.read.getPair([tokenA.address, weth.address]);
-    const wethPair = await viem.getContractAt("FluxSwapPair", wethPairAddress);
 
     const order = {
       maker: makerClient.account.address,
@@ -282,21 +273,68 @@ describe("FluxSignedOrderSettlementFlow", async function () {
     } as const satisfies SettlementOrder;
 
     const signature = await signOrder(order);
+
+    await expectRevert(
+      settlement.read.getOrderQuote([order]),
+      "FluxSignedOrderSettlement: INPUT_TOKEN_MUST_BE_ERC20",
+    );
+
+    await expectRevert(
+      settlement.write.executeOrder([order, signature, await getDeadline(), 0n], {
+        account: executorClient.account.address,
+      }),
+      "FluxSignedOrderSettlement: INPUT_TOKEN_MUST_BE_ERC20",
+    );
+  });
+
+  it("should settle a supported no-return ERC20 order through the live router", async function () {
+    await noReturnToken.write.approve([router.address, maxUint256], {
+      account: makerClient.account.address,
+    });
+    await tokenB.write.approve([router.address, maxUint256], {
+      account: makerClient.account.address,
+    });
+    await noReturnToken.write.approve([settlement.address, maxUint256], {
+      account: makerClient.account.address,
+    });
+
+    await router.write.addLiquidity(
+      [
+        noReturnToken.address,
+        tokenB.address,
+        20_000n * 10n ** 18n,
+        40_000n * 10n ** 18n,
+        0n,
+        0n,
+        makerClient.account.address,
+        await getDeadline(),
+      ],
+      { account: makerClient.account.address },
+    );
+
+    const order = {
+      maker: makerClient.account.address,
+      inputToken: noReturnToken.address,
+      outputToken: tokenB.address,
+      amountIn: 200n * 10n ** 18n,
+      minAmountOut: 390n * 10n ** 18n,
+      maxExecutorRewardBps: 3_000n,
+      triggerPriceX18: 19n * 10n ** 17n,
+      expiry: await getDeadline(),
+      nonce: 8n,
+      recipient: recipientClient.account.address,
+    } as const satisfies SettlementOrder;
+
+    const signature = await signOrder(order);
     const quote = await settlement.read.getOrderQuote([order]);
     const executorReward = calculateExecutorReward(order, quote);
-    const reservesBefore = await wethPair.read.getReserves();
-    const tokenBefore = await tokenA.read.balanceOf([recipientClient.account.address]);
-    const executorBefore = await tokenA.read.balanceOf([executorClient.account.address]);
 
     await settlement.write.executeOrder([order, signature, await getDeadline(), executorReward], {
       account: executorClient.account.address,
     });
 
-    const reservesAfter = await wethPair.read.getReserves();
-    strictEqual(await tokenA.read.balanceOf([recipientClient.account.address]), tokenBefore + quote - executorReward);
-    strictEqual(await tokenA.read.balanceOf([executorClient.account.address]), executorBefore + executorReward);
-    strictEqual(await tokenA.read.balanceOf([settlement.address]), 0n);
-    ok(reservesBefore[0] !== reservesAfter[0] || reservesBefore[1] !== reservesAfter[1]);
+    strictEqual(await noReturnToken.read.balanceOf([settlement.address]), 0n);
+    strictEqual(await tokenB.read.balanceOf([settlement.address]), 0n);
   });
 
   it("should block execution after maker invalidates the signed order nonce by signature", async function () {

@@ -137,14 +137,19 @@ describe("FluxToken", async function () {
     strictEqual(await token.read.totalSupply(), initialSupply - burnAmount - burnFromAmount);
   });
 
-  it("should transfer ownership and let new owner manage minters", async function () {
+  it("should transfer ownership and preserve minter continuity for the new owner", async function () {
     await token.write.transferOwnership([otherClient.account.address], {
       account: ownerClient.account.address,
     });
 
     strictEqual((await token.read.owner()).toLowerCase(), otherClient.account.address.toLowerCase());
     strictEqual(await token.read.isMinter([ownerClient.account.address]), false);
-    strictEqual(await token.read.isMinter([otherClient.account.address]), false);
+    strictEqual(await token.read.isMinter([otherClient.account.address]), true);
+
+    await token.write.mint([userClient.account.address, 1n], {
+      account: otherClient.account.address,
+    });
+    strictEqual(await token.read.balanceOf([userClient.account.address]), 1n);
 
     await token.write.setMinter([treasuryClient.account.address, true], {
       account: otherClient.account.address,
@@ -155,6 +160,27 @@ describe("FluxToken", async function () {
     await expectRevert(
       token.write.mint([userClient.account.address, 1n], {
         account: ownerClient.account.address,
+      }),
+      "FluxToken: FORBIDDEN"
+    );
+  });
+
+  it("should not grant minter role to the new owner if the previous owner already renounced it", async function () {
+    await token.write.setMinter([ownerClient.account.address, false], {
+      account: ownerClient.account.address,
+    });
+    strictEqual(await token.read.isMinter([ownerClient.account.address]), false);
+
+    await token.write.transferOwnership([otherClient.account.address], {
+      account: ownerClient.account.address,
+    });
+
+    strictEqual((await token.read.owner()).toLowerCase(), otherClient.account.address.toLowerCase());
+    strictEqual(await token.read.isMinter([otherClient.account.address]), false);
+
+    await expectRevert(
+      token.write.mint([userClient.account.address, 1n], {
+        account: otherClient.account.address,
       }),
       "FluxToken: FORBIDDEN"
     );

@@ -339,24 +339,6 @@ contract FluxSwapRouterExceptionInvariantHandler is Test {
         _assertTokenPairSnapshot(snapshot);
     }
 
-    function failInvalidSupportingPath(uint256 rawAmountIn) external {
-        uint256 amountIn = bound(rawAmountIn, 1, MAX_TOKEN_AMOUNT);
-
-        _mintTokenA(trader, amountIn);
-        vm.prank(trader);
-        tokenA.approve(address(router), type(uint256).max);
-
-        TokenPairSnapshot memory snapshot = _tokenPairSnapshot();
-        address[] memory invalidPath = new address[](1);
-        invalidPath[0] = address(tokenA);
-
-        vm.prank(trader);
-        vm.expectRevert(bytes("FluxSwapRouter: INVALID_PATH"));
-        router.swapExactTokensForTokensSupportingFeeOnTransferTokens(amountIn, 0, invalidPath, recipient, _deadline());
-
-        _assertTokenPairSnapshot(snapshot);
-    }
-
     function failInvalidEthPath(uint256 rawEthAmount) external {
         uint256 ethAmount = bound(rawEthAmount, 1, MAX_ETH_AMOUNT);
         vm.deal(trader, trader.balance + ethAmount);

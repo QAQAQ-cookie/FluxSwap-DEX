@@ -9,7 +9,7 @@ import { parseSignature } from "viem";
  * 2. 验证过期调用、非法 ETH path、缺失 pair 等前置校验。
  * 3. 验证 exact-input / exact-output 的 token、ETH 各类 swap 入口。
  * 4. 验证 token 与 ETH 流动性的添加、移除、permit 移除路径。
- * 5. 验证 amountMin / liquidityMin 等滑点保护，以及 fee-on-transfer token 的兼容与非法 path 拒绝逻辑。
+ * 5. 验证 amountMin / liquidityMin 等滑点保护与非法 path 拒绝逻辑。
  */
 describe("FluxSwapRouter", async function () {
   const hardhatNetwork = await network.connect();
@@ -475,91 +475,4 @@ describe("FluxSwapRouter", async function () {
     );
   });
 
-  it("should support fee-on-transfer token swap variants", async function () {
-    const feeToken = await viem.deployContract("MockFeeOnTransferERC20", ["Tax Token", "TAX", 18, 100n]);
-    const taxedPairAddress = await (async () => {
-      await factory.write.createPair([feeToken.address, tokenB.address]);
-      return factory.read.getPair([feeToken.address, tokenB.address]);
-    })();
-    const taxedPair = await viem.getContractAt("FluxSwapPair", await taxedPairAddress);
-
-    await feeToken.write.mint([lpClient.account.address, 20_000n * 10n ** 18n]);
-    await feeToken.write.mint([traderClient.account.address, 1_000n * 10n ** 18n]);
-    await tokenB.write.mint([lpClient.account.address, 20_000n * 10n ** 18n]);
-
-    await feeToken.write.transfer([taxedPair.address, 10_000n * 10n ** 18n], { account: lpClient.account.address });
-    await tokenB.write.transfer([taxedPair.address, 10_000n * 10n ** 18n], { account: lpClient.account.address });
-    await taxedPair.write.mint([lpClient.account.address], { account: lpClient.account.address });
-    await feeToken.write.approve([router.address, maxUint256], { account: traderClient.account.address });
-
-    const tokenBalanceBefore = await tokenB.read.balanceOf([recipientClient.account.address]);
-    await router.write.swapExactTokensForTokensSupportingFeeOnTransferTokens(
-      [100n * 10n ** 18n, 1n, [feeToken.address, tokenB.address], recipientClient.account.address, await getDeadline()],
-      { account: traderClient.account.address }
-    );
-    ok(await tokenB.read.balanceOf([recipientClient.account.address]) > tokenBalanceBefore);
-
-    const feeEthPairAddress = await (async () => {
-      await factory.write.createPair([feeToken.address, WETH.address]);
-      return factory.read.getPair([feeToken.address, WETH.address]);
-    })();
-    const feeEthPair = await viem.getContractAt("FluxSwapPair", await feeEthPairAddress);
-
-    await feeToken.write.mint([lpClient.account.address, 20_000n * 10n ** 18n]);
-    await feeToken.write.transfer([feeEthPair.address, 10_000n * 10n ** 18n], { account: lpClient.account.address });
-    await WETH.write.deposit({ account: lpClient.account.address, value: 10n * 10n ** 18n });
-    await WETH.write.transfer([feeEthPair.address, 10n * 10n ** 18n], { account: lpClient.account.address });
-    await feeEthPair.write.mint([lpClient.account.address], { account: lpClient.account.address });
-
-    const feeTokenBefore = await feeToken.read.balanceOf([recipientClient.account.address]);
-    await router.write.swapExactETHForTokensSupportingFeeOnTransferTokens(
-      [1n, [WETH.address, feeToken.address], recipientClient.account.address, await getDeadline()],
-      { account: traderClient.account.address, value: 1n * 10n ** 18n }
-    );
-    ok(await feeToken.read.balanceOf([recipientClient.account.address]) > feeTokenBefore);
-
-    await feeToken.write.mint([traderClient.account.address, 1_000n * 10n ** 18n]);
-    const strayWETH = 2n * 10n ** 17n;
-    await WETH.write.deposit({ account: lpClient.account.address, value: strayWETH });
-    await WETH.write.transfer([router.address, strayWETH], { account: lpClient.account.address });
-
-    const ethBefore = await publicClient.getBalance({ address: recipientClient.account.address });
-    await router.write.swapExactTokensForETHSupportingFeeOnTransferTokens(
-      [100n * 10n ** 18n, 1n, [feeToken.address, WETH.address], recipientClient.account.address, await getDeadline()],
-      { account: traderClient.account.address }
-    );
-    ok((await publicClient.getBalance({ address: recipientClient.account.address })) > ethBefore);
-    strictEqual(await WETH.read.balanceOf([router.address]), strayWETH);
-  });
-
-  it("should reject invalid paths in supporting fee-on-transfer swap functions", async function () {
-    const feeToken = await viem.deployContract("MockFeeOnTransferERC20", ["Tax Token", "TAX", 18, 100n]);
-
-    await feeToken.write.mint([traderClient.account.address, 10n * 10n ** 18n]);
-    await feeToken.write.approve([router.address, 10n * 10n ** 18n], { account: traderClient.account.address });
-
-    await expectRevert(
-      router.write.swapExactTokensForTokensSupportingFeeOnTransferTokens(
-        [10n * 10n ** 18n, 1n, [feeToken.address], traderClient.account.address, await getDeadline()],
-        { account: traderClient.account.address }
-      ),
-      "FluxSwapRouter: INVALID_PATH"
-    );
-
-    await expectRevert(
-      router.write.swapExactETHForTokensSupportingFeeOnTransferTokens(
-        [1n, [WETH.address], traderClient.account.address, await getDeadline()],
-        { account: traderClient.account.address, value: 1n * 10n ** 18n }
-      ),
-      "FluxSwapRouter: INVALID_PATH"
-    );
-
-    await expectRevert(
-      router.write.swapExactTokensForETHSupportingFeeOnTransferTokens(
-        [10n * 10n ** 18n, 1n, [feeToken.address], traderClient.account.address, await getDeadline()],
-        { account: traderClient.account.address }
-      ),
-      "FluxSwapRouter: INVALID_PATH"
-    );
-  });
 });

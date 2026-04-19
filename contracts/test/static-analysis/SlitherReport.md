@@ -2,7 +2,7 @@
 
 ## 执行信息
 
-- 执行日期：2026-04-11 15:51:26 +08:00
+- 执行日期：`2026-04-11 15:51:26 +08:00`
 - 执行目录：`contracts`
 - 工具版本：`slither 0.11.5`
 - 编译入口：`Foundry`
@@ -12,7 +12,6 @@
 ## 摘要
 
 本次 `Slither` 已成功跑通并完成全量静态分析。
-
 工具原始摘要为：
 
 - `high`: `5`
@@ -28,9 +27,9 @@
 - tests: `6`
 - source SLOC: `2573`
 
-## 如何解读本报告
+## 如何理解这份报告
 
-这份报告的重点不是复述全部原始告警，而是把当前阶段真正值得保留的人工判断收口出来。
+这份报告的重点不是逐条复述全部原始告警，而是把当前阶段真正值得保留的人工作判断收口出来。
 
 需要特别说明：
 
@@ -43,14 +42,14 @@
 
 本轮重点人工复核了以下生产实现：
 
-- [FluxSwapTreasury.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxSwapTreasury.sol)
-- [FluxRevenueDistributor.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxRevenueDistributor.sol)
-- [FluxMultiPoolManager.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxMultiPoolManager.sol)
-- [FluxBuybackExecutor.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxBuybackExecutor.sol)
-- [FluxSwapStakingRewards.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxSwapStakingRewards.sol)
-- [FluxSwapFactory.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxSwapFactory.sol)
-- [FluxSwapRouter.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxSwapRouter.sol)
-- [FluxSwapPair.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxSwapPair.sol)
+- [FluxSwapTreasury.sol](../../contracts/FluxSwapTreasury.sol)
+- [FluxRevenueDistributor.sol](../../contracts/FluxRevenueDistributor.sol)
+- [FluxMultiPoolManager.sol](../../contracts/FluxMultiPoolManager.sol)
+- [FluxBuybackExecutor.sol](../../contracts/FluxBuybackExecutor.sol)
+- [FluxSwapStakingRewards.sol](../../contracts/FluxSwapStakingRewards.sol)
+- [FluxSwapFactory.sol](../../contracts/FluxSwapFactory.sol)
+- [FluxSwapRouter.sol](../../contracts/FluxSwapRouter.sol)
+- [FluxSwapPair.sol](../../contracts/FluxSwapPair.sol)
 
 ## 收口结论
 
@@ -58,13 +57,13 @@
 
 #### `FluxSwapStakingRewards.notifyRewardAmount`
 
-- 位置：[FluxSwapStakingRewards.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxSwapStakingRewards.sol#L164)
+- 位置：[FluxSwapStakingRewards.sol](../../contracts/FluxSwapStakingRewards.sol#L164)
 - Slither 告警：`arbitrary-send-erc20`
 - 当前结论：设计可接受
 
 判断依据：
 
-- 非 treasury 模式下，合约会从 `rewardSource` 拉取奖励代币
+- 非 Treasury 模式下，合约会从 `rewardSource` 拉取奖励代币
 - `rewardSource` 与 `rewardNotifier` 都受 `owner` 治理控制
 - 该逻辑属于受控奖励结算入口，不属于任意地址可驱动的代扣路径
 
@@ -76,9 +75,9 @@
 #### `FluxPoolFactory` 的外部调用顺序提示
 
 - 位置：
-  - [FluxPoolFactory.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxPoolFactory.sol#L43)
-  - [FluxPoolFactory.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxPoolFactory.sol#L60)
-  - [FluxPoolFactory.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxPoolFactory.sol#L108)
+- [FluxPoolFactory.sol](../../contracts/FluxPoolFactory.sol#L43)
+- [FluxPoolFactory.sol](../../contracts/FluxPoolFactory.sol#L60)
+- [FluxPoolFactory.sol](../../contracts/FluxPoolFactory.sol#L108)
 - Slither 告警：`reentrancy-no-eth`
 - 当前结论：设计可接受
 
@@ -86,7 +85,7 @@
 
 - 外调目标是协议自有、受控部署的 pool / manager 合约
 - 相关入口由 `onlyOwner` 收紧
-- 即使目标合约试图回调，也不会天然获得 owner 权限
+- 即使目标合约尝试回调，也不会天然获得 owner 权限
 
 当前建议：
 
@@ -95,7 +94,7 @@
 
 #### `FluxSwapFactory.createPair`
 
-- 位置：[FluxSwapFactory.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxSwapFactory.sol#L24)
+- 位置：[FluxSwapFactory.sol](../../contracts/FluxSwapFactory.sol#L24)
 - Slither 告警：`reentrancy-no-eth`
 - 当前结论：设计可接受
 
@@ -113,10 +112,10 @@
 #### `FluxSwapStakingRewards` 的重入提示
 
 - 位置：
-  - [FluxSwapStakingRewards.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxSwapStakingRewards.sol#L116)
-  - [FluxSwapStakingRewards.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxSwapStakingRewards.sol#L143)
-  - [FluxSwapStakingRewards.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxSwapStakingRewards.sol#L149)
-  - [FluxSwapStakingRewards.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxSwapStakingRewards.sol#L183)
+- [FluxSwapStakingRewards.sol](../../contracts/FluxSwapStakingRewards.sol#L116)
+- [FluxSwapStakingRewards.sol](../../contracts/FluxSwapStakingRewards.sol#L143)
+- [FluxSwapStakingRewards.sol](../../contracts/FluxSwapStakingRewards.sol#L149)
+- [FluxSwapStakingRewards.sol](../../contracts/FluxSwapStakingRewards.sol#L183)
 - Slither 告警：`reentrancy-no-eth`
 - 当前结论：工具噪音倾向较强
 
@@ -134,19 +133,20 @@
 #### `FluxSwapPair / FluxSwapRouter` 的 AMM 模式提示
 
 - 位置：
-  - [FluxSwapPair.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxSwapPair.sol#L88)
-  - [FluxSwapPair.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxSwapPair.sol#L110)
-  - [FluxSwapRouter.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxSwapRouter.sol#L291)
-  - [FluxSwapRouter.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxSwapRouter.sol#L309)
-  - [FluxSwapRouter.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxSwapRouter.sol#L327)
+- [FluxSwapPair.sol](../../contracts/FluxSwapPair.sol#L88)
+- [FluxSwapPair.sol](../../contracts/FluxSwapPair.sol#L110)
+- [FluxSwapRouter.sol](../../contracts/FluxSwapRouter.sol#L291)
+- [FluxSwapRouter.sol](../../contracts/FluxSwapRouter.sol#L309)
+- [FluxSwapRouter.sol](../../contracts/FluxSwapRouter.sol#L327)
 - Slither 告警：`reentrancy-balance`、`reentrancy-no-eth`
 - 当前结论：工具噪音倾向较强
 
 判断依据：
 
 - 相关逻辑属于 DEX / AMM 常见的余额快照与结算路径
-- 其中包含协议费扣除、flash callback、fee-on-transfer 支持等结构
-- 这类路径不能只靠静态模式直接判定为漏洞，必须结合 AMM 语义人工复核
+- 其中包含协议费扣除、flash callback 等结构
+- fee-on-transfer 支持路径已经移除，当前 Router 只保留标准 ERC20 / WETH 语义
+- 这类路径不能只靠静态模式直接判定为漏洞，必须结合 AMM 语义做人工复核
 
 当前建议：
 
@@ -168,16 +168,16 @@
 
 `solhint` 当前最新实跑结果为 `0 error, 4 warnings`，均已人工接受：
 
-- [FluxSwapPair.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxSwapPair.sol#L204): `avoid-low-level-calls`
-- [FluxSwapFactory.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxSwapFactory.sol#L34): `no-inline-assembly`
-- [FluxSwapERC20.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxSwapERC20.sol#L25): `no-inline-assembly`
-- [FluxBuybackExecutor.sol](/D:/work/CodeLab/FluxSwap-DEX/contracts/contracts/FluxBuybackExecutor.sol#L201): `avoid-low-level-calls`
+- [FluxSwapPair.sol](../../contracts/FluxSwapPair.sol#L204): `avoid-low-level-calls`
+- [FluxSwapFactory.sol](../../contracts/FluxSwapFactory.sol#L34): `no-inline-assembly`
+- [FluxSwapERC20.sol](../../contracts/FluxSwapERC20.sol#L25): `no-inline-assembly`
+- [FluxBuybackExecutor.sol](../../contracts/FluxBuybackExecutor.sol#L201): `avoid-low-level-calls`
 
-这些项和本报告结论一致，都属于“需要披露和解释，但当前不作为阻塞修复”的范围。
+这些项与本报告结论一致，都属于“需要披露和解释，但当前不作为阻塞修复”的范围。
 
 ## 当前总判断
 
-- 当前未发现需要“立即修复后才能继续推进”的明确高危实现缺陷
+- 当前未发现需要“立刻修复后才能继续推进”的明确高危实现缺陷
 - 当前更适合保留实现，并补充设计说明与审计解释材料
 - 如果后续进入正式外部审计，建议把本报告中涉及的“信任前提、锁语义、AMM 设计语义”整理为独立审计说明
 
@@ -186,5 +186,5 @@
 - 本次使用的是 `human-summary` 口径，适合做阶段性收口，不适合替代逐条原始 issue 台账
 - `Slither` 结果会随版本、依赖、编译口径变化而波动
 - 当前 WSL 环境会额外输出 `/etc/wsl.conf` 的重复配置提示
-  - 该提示不影响本次成功运行
-  - 但建议后续清理，降低环境噪音
+- 该提示不影响本次成功运行
+- 但建议后续清理，降低环境噪音

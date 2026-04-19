@@ -18,6 +18,7 @@ describe("FluxSignedOrderSettlement", async function () {
   let settlement: any;
   let tokenA: any;
   let tokenB: any;
+  let noReturnToken: any;
 
   const maxUint256 = (1n << 256n) - 1n;
   const zeroAddress = "0x0000000000000000000000000000000000000000" as const;
@@ -167,16 +168,18 @@ describe("FluxSignedOrderSettlement", async function () {
 
     tokenA = await viem.deployContract("MockERC20", ["Token A", "TKNA", 18]);
     tokenB = await viem.deployContract("MockERC20", ["Token B", "TKNB", 18]);
+    noReturnToken = await viem.deployContract("MockNoReturnERC20", ["No Return Token", "NRT", 18]);
 
     await tokenA.write.mint([makerClient.account.address, 1_000_000n * 10n ** 18n]);
     await tokenB.write.mint([makerClient.account.address, 1_000_000n * 10n ** 18n]);
     await tokenA.write.mint([recipientClient.account.address, 1_000_000n * 10n ** 18n]);
     await tokenB.write.mint([recipientClient.account.address, 1_000_000n * 10n ** 18n]);
+    await noReturnToken.write.mint([makerClient.account.address, 1_000_000n * 10n ** 18n]);
+    await noReturnToken.write.mint([recipientClient.account.address, 1_000_000n * 10n ** 18n]);
 
     await tokenA.write.approve([router.address, maxUint256], { account: makerClient.account.address });
     await tokenB.write.approve([router.address, maxUint256], { account: makerClient.account.address });
     await tokenA.write.approve([settlement.address, maxUint256], { account: makerClient.account.address });
-
     await addTokenLiquidity();
   });
 
@@ -257,19 +260,11 @@ describe("FluxSignedOrderSettlement", async function () {
     strictEqual(await publicClient.getBalance({ address: settlement.address }), 0n);
   });
 
-  it("should execute a signed native-input order by settling through maker WETH", async function () {
+  it("should reject native-input orders and require wrapped ERC20 input instead", async function () {
     await factory.write.createPair([tokenA.address, weth.address], {
       account: ownerClient.account.address,
     });
     await addTokenEthLiquidity();
-
-    await weth.write.deposit({
-      account: makerClient.account.address,
-      value: 5n * 10n ** 18n,
-    });
-    await weth.write.approve([settlement.address, maxUint256], {
-      account: makerClient.account.address,
-    });
 
     const order = {
       maker: makerClient.account.address,
@@ -285,21 +280,114 @@ describe("FluxSignedOrderSettlement", async function () {
     } as const satisfies SettlementOrder;
 
     const signature = await signOrder(order);
+
+    await expectRevert(
+      settlement.read.getOrderQuote([order]),
+      "FluxSignedOrderSettlement: INPUT_TOKEN_MUST_BE_ERC20",
+    );
+
+    await expectRevert(
+      settlement.write.executeOrder([order, signature, await getDeadline(), 0n], {
+        account: executorClient.account.address,
+      }),
+      "FluxSignedOrderSettlement: INPUT_TOKEN_MUST_BE_ERC20",
+    );
+  });
+
+  it("should execute orders for supported no-return ERC20 tokens after safe approve compatibility handling", async function () {
+    await noReturnToken.write.approve([router.address, maxUint256], {
+      account: makerClient.account.address,
+    });
+    await tokenB.write.approve([router.address, maxUint256], {
+      account: makerClient.account.address,
+    });
+
+    await router.write.addLiquidity(
+      [
+        noReturnToken.address,
+        tokenB.address,
+        20_000n * 10n ** 18n,
+        40_000n * 10n ** 18n,
+        0n,
+        0n,
+        makerClient.account.address,
+        await getDeadline(),
+      ],
+      { account: makerClient.account.address },
+    );
+
+    await noReturnToken.write.approve([settlement.address, maxUint256], {
+      account: makerClient.account.address,
+    });
+
+    const order = {
+      maker: makerClient.account.address,
+      inputToken: noReturnToken.address,
+      outputToken: tokenB.address,
+      amountIn: 100n * 10n ** 18n,
+      minAmountOut: 190n * 10n ** 18n,
+      maxExecutorRewardBps: 3_000n,
+      triggerPriceX18: 19n * 10n ** 17n,
+      expiry: await getDeadline(),
+      nonce: 23n,
+      recipient: recipientClient.account.address,
+    } as const satisfies SettlementOrder;
+
+    const signature = await signOrder(order);
     const quote = await settlement.read.getOrderQuote([order]);
     const executorReward = calculateExecutorReward(order, quote);
-    const tokenBefore = await tokenA.read.balanceOf([recipientClient.account.address]);
-    const executorBefore = await tokenA.read.balanceOf([executorClient.account.address]);
-    const wethBefore = await weth.read.balanceOf([makerClient.account.address]);
 
     await settlement.write.executeOrder([order, signature, await getDeadline(), executorReward], {
       account: executorClient.account.address,
     });
 
-    strictEqual(await tokenA.read.balanceOf([recipientClient.account.address]), tokenBefore + quote - executorReward);
-    strictEqual(await tokenA.read.balanceOf([executorClient.account.address]), executorBefore + executorReward);
-    ok((await weth.read.balanceOf([makerClient.account.address])) < wethBefore);
-    strictEqual(await settlement.read.invalidatedNonce([makerClient.account.address, 21n]), true);
-    strictEqual(await tokenA.read.balanceOf([settlement.address]), 0n);
+    strictEqual(await settlement.read.invalidatedNonce([makerClient.account.address, 23n]), true);
+    strictEqual(await tokenB.read.balanceOf([settlement.address]), 0n);
+  });
+
+  it("should allow standard ERC20 outputs without chain whitelist gating", async function () {
+    await noReturnToken.write.approve([router.address, maxUint256], {
+      account: makerClient.account.address,
+    });
+    await noReturnToken.write.approve([settlement.address, maxUint256], {
+      account: makerClient.account.address,
+    });
+    await tokenB.write.approve([router.address, maxUint256], {
+      account: makerClient.account.address,
+    });
+    await router.write.addLiquidity(
+      [
+        noReturnToken.address,
+        tokenB.address,
+        20_000n * 10n ** 18n,
+        40_000n * 10n ** 18n,
+        0n,
+        0n,
+        makerClient.account.address,
+        await getDeadline(),
+      ],
+      { account: makerClient.account.address },
+    );
+
+    const order = {
+      maker: makerClient.account.address,
+      inputToken: noReturnToken.address,
+      outputToken: tokenB.address,
+      amountIn: 100n * 10n ** 18n,
+      minAmountOut: 190n * 10n ** 18n,
+      maxExecutorRewardBps: 3_000n,
+      triggerPriceX18: 19n * 10n ** 17n,
+      expiry: await getDeadline(),
+      nonce: 25n,
+      recipient: recipientClient.account.address,
+    } as const satisfies SettlementOrder;
+
+    const signature = await signOrder(order);
+    const quote = await settlement.read.getOrderQuote([order]);
+
+    await settlement.write.executeOrder([order, signature, await getDeadline(), calculateExecutorReward(order, quote)], {
+      account: executorClient.account.address,
+    });
   });
 
   it("should reject execution when the signature is invalid", async function () {
@@ -547,6 +635,57 @@ describe("FluxSignedOrderSettlement", async function () {
     const readiness = await settlement.read.canExecuteOrder([order]);
     strictEqual(readiness[0], false);
     strictEqual(readiness[1], "EXECUTOR_NOT_SET");
+  });
+
+  it("should report zero-address input as non-executable instead of reverting in readiness checks", async function () {
+    const order = {
+      maker: makerClient.account.address,
+      inputToken: zeroAddress,
+      outputToken: tokenB.address,
+      amountIn: 100n * 10n ** 18n,
+      minAmountOut: 1n,
+      maxExecutorRewardBps: 0n,
+      triggerPriceX18: 1n,
+      expiry: await getDeadline(),
+      nonce: 98n,
+      recipient: recipientClient.account.address,
+    } as const satisfies SettlementOrder;
+
+    const readiness = await settlement.read.canExecuteOrder([order]);
+    strictEqual(readiness[0], false);
+    strictEqual(readiness[1], "INPUT_TOKEN_MUST_BE_ERC20");
+  });
+
+  it("should report insufficient liquidity when the pair exists but reserves are empty", async function () {
+    const isolatedFactory = await viem.deployContract("FluxSwapFactory", [ownerClient.account.address]);
+    const isolatedRouter = await viem.deployContract("FluxSwapRouter", [isolatedFactory.address, weth.address]);
+    const isolatedSettlement = await viem.deployContract("FluxSignedOrderSettlement", [isolatedRouter.address]);
+
+    await isolatedFactory.write.createPair([tokenA.address, tokenB.address], {
+      account: ownerClient.account.address,
+    });
+
+    const order = {
+      maker: makerClient.account.address,
+      inputToken: tokenA.address,
+      outputToken: tokenB.address,
+      amountIn: 100n * 10n ** 18n,
+      minAmountOut: 1n,
+      maxExecutorRewardBps: 0n,
+      triggerPriceX18: 1n,
+      expiry: await getDeadline(),
+      nonce: 99n,
+      recipient: recipientClient.account.address,
+    } as const satisfies SettlementOrder;
+
+    const readiness = await isolatedSettlement.read.canExecuteOrder([order]);
+    strictEqual(readiness[0], false);
+    strictEqual(readiness[1], "INSUFFICIENT_LIQUIDITY");
+
+    await expectRevert(
+      isolatedSettlement.read.getOrderQuote([order]),
+      "FluxSwapRouter: INSUFFICIENT_LIQUIDITY",
+    );
   });
 
   it("should reject duplicate execution of the same signed order", async function () {

@@ -99,8 +99,8 @@ contract FluxMultiHopAmmStatefulFuzzTest is Test {
         expectedQuoteOutLp[2] = quoteOutPair.balanceOf(lpC);
     }
 
-    // 这组 stateful fuzz 把“纯 AMM 双 Pair 多跳”单独拉出来：
-    // 在不掺 fee-on-transfer 的前提下，把连续 add/remove 与单跳、双跳 swap 交错起来，
+    // 这组 stateful fuzz 把“纯 AMM + Pair 多跳”单独拉出来。
+    // 这里把连续 add/remove 与单跳、双跳 swap 交错起来，
     // 专门核对 treasury 协议费、recipient 到账、LP 份额、储备同步与三资产总账守恒。
     function testFuzz_multiHopSequence_preservesAccountingAcrossInterleavedChurnAndSwaps(
         uint8[10] memory actionSeeds,
@@ -115,7 +115,7 @@ contract FluxMultiHopAmmStatefulFuzzTest is Test {
         }
     }
 
-    // 这组 fuzz 专门把高频 liquidity churn 和普通 AMM 多跳 amountOutMin 边界揉在一起，
+    // 这组 fuzz 把高频 liquidity churn 和普通 AMM 多跳 amountOutMin 边界揉在一起，
     // 确认 quote 作为桥接资产时，连续换路后仍然只能按最终精确 quote 放行。
     function testFuzz_multiHopBoundaryAfterRepeatedChurn_keepsExactAmountOutMin(
         uint8[8] memory actorSeeds,

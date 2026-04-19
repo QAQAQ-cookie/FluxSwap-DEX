@@ -101,11 +101,19 @@ contract FluxToken is ERC20, ERC20Burnable, ERC20Capped, Ownable, AccessControl 
         require(newOwner != owner(), "FluxToken: SAME_OWNER");
 
         address previousOwner = owner();
+        bool previousOwnerWasMinter = hasRole(MINTER_ROLE, previousOwner);
         super.transferOwnership(newOwner);
 
         _grantRole(DEFAULT_ADMIN_ROLE, newOwner);
+        if (previousOwnerWasMinter) {
+            _grantRole(MINTER_ROLE, newOwner);
+            emit MinterUpdated(newOwner, true);
+        }
         _revokeRole(DEFAULT_ADMIN_ROLE, previousOwner);
-        _revokeRole(MINTER_ROLE, previousOwner);
+        if (previousOwnerWasMinter) {
+            _revokeRole(MINTER_ROLE, previousOwner);
+            emit MinterUpdated(previousOwner, false);
+        }
     }
 
     /**

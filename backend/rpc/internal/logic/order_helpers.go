@@ -510,6 +510,9 @@ func buildSettlementOrderFromRequest(req *executor.CreateOrderRequest) (chain.Se
 	if !isAddress(req.GetInputToken()) {
 		return chain.SettlementOrder{}, errors.New("inputToken must be a valid address")
 	}
+	if common.HexToAddress(normalizeAddress(req.GetInputToken())) == (common.Address{}) {
+		return chain.SettlementOrder{}, errors.New("inputToken must be an ERC20 token address")
+	}
 	if !isAddress(req.GetOutputToken()) {
 		return chain.SettlementOrder{}, errors.New("outputToken must be a valid address")
 	}

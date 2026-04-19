@@ -1,15 +1,15 @@
 # Integrated AMM 测试说明
 
-本目录用于存放“AMM 综合经济行为测试”。
+本目录用于存放更偏系统级、经济安全视角的 AMM 测试。
 
-## 当前测试文件
+## 当前覆盖
 
 ### `FluxSwap.test.ts`
 
-- 覆盖 Factory、Router、Pair、ETH 路径、LP 增减仓、多角色交易、多跳交换、协议费、flash swap、fee-on-transfer token 等 AMM 主链路
-- 这里更偏“系统级行为”和“完整业务流”，用于确认 DEX 在真实交互路径下整体可用
+- 覆盖 Factory、Router、Pair、ETH 路径、LP 增减仓、多角色交易、多跳交换、协议费、flash swap 等标准 AMM 主链路。
+- 更偏向系统级行为与完整业务流，而不是单个函数边界。
 
-## 当前状态
+## 兼容性说明
 
-- 协议费基础行为已经在这里有覆盖
-- 更细的手续费归集、burn / distribute 比例、奖励 rounding 等经济细节，已经转由上层 `fee-model` 子目录承接
+- 当前协议明确不支持 `fee-on-transfer` / `taxed token`。
+- 因此本目录不再覆盖税币路径。

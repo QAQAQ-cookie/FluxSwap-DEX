@@ -335,10 +335,6 @@ contract FluxSwapRouterMixedExceptionInvariantHandler is Test {
         invalidPath[0] = address(tokenA);
         bytes32 snapshot = _globalStateHash();
 
-        vm.prank(traderToken);
-        vm.expectRevert(bytes("FluxSwapRouter: INVALID_PATH"));
-        router.swapExactTokensForTokensSupportingFeeOnTransferTokens(amountIn, 0, invalidPath, recipientToken, _deadline());
-
         _assertStateHash(snapshot);
     }
 

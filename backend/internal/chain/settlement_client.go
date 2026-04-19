@@ -333,11 +333,11 @@ func (c *SettlementClient) CheckMakerFunding(ctx context.Context, order Settleme
 	if order.AmountIn == nil || order.AmountIn.Sign() <= 0 {
 		return nil, fmt.Errorf("amountIn must be a positive integer")
 	}
+	if order.InputToken == (common.Address{}) {
+		return nil, fmt.Errorf("input token must be an ERC20 token address")
+	}
 
 	token := order.InputToken
-	if token == (common.Address{}) {
-		token = c.wethAddress
-	}
 
 	balance, err := c.readERC20Uint256(ctx, token, "balanceOf", order.Maker)
 	if err != nil {

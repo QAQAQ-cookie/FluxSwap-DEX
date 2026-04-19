@@ -10,7 +10,7 @@ import "../libraries/TransferHelper.sol";
 
 /**
  * @title Flux Router
- * @notice 为流动性增删、精确输入输出换币以及 fee-on-transfer 兼容路径提供统一入口。
+ * @notice 为流动性增删以及精确输入输出换币提供统一入口。
  * @dev Router 不自行保留业务资金，除临时中转 WETH 解包场景外，资产应尽快流向 Pair 或最终接收方。
  */
 contract FluxSwapRouter is IFluxSwapRouter {
@@ -442,83 +442,6 @@ contract FluxSwapRouter is IFluxSwapRouter {
     }
 
     /**
-     * @notice 支持 fee-on-transfer 代币的 ERC20 精确输入换币。
-     * @param amountIn 输入数量。
-     * @param amountOutMin 最小可接受输出。
-     * @param path 兑换路径。
-     * @param to 接收输出资产的地址。
-     * @param deadline 交易截止时间。
-     */
-    function swapExactTokensForTokensSupportingFeeOnTransferTokens(
-        uint256 amountIn,
-        uint256 amountOutMin,
-        address[] calldata path,
-        address to,
-        uint256 deadline
-    ) external override ensure(deadline) {
-        require(path.length >= 2, "FluxSwapRouter: INVALID_PATH");
-        address pair = _getPairOrRevert(path[0], path[1]);
-        TransferHelper.safeTransferFrom(path[0], msg.sender, pair, amountIn);
-        uint256 balanceBefore = IERC20(path[path.length - 1]).balanceOf(to);
-        _swapSupportingFeeOnTransferTokens(path, to);
-        require(
-            IERC20(path[path.length - 1]).balanceOf(to) - balanceBefore >= amountOutMin,
-            "FluxSwapRouter: INSUFFICIENT_OUTPUT_AMOUNT"
-        );
-    }
-
-    /**
-     * @notice 支持 fee-on-transfer 代币的 ETH 精确输入换币。
-     * @param amountOutMin 最小可接受输出。
-     * @param path 兑换路径，首项必须是 WETH。
-     * @param to 接收输出资产的地址。
-     * @param deadline 交易截止时间。
-     */
-    function swapExactETHForTokensSupportingFeeOnTransferTokens(
-        uint256 amountOutMin,
-        address[] calldata path,
-        address to,
-        uint256 deadline
-    ) external payable override ensure(deadline) {
-        require(path.length >= 2, "FluxSwapRouter: INVALID_PATH");
-        require(path[0] == WETH, "FluxSwapRouter: INVALID_PATH");
-        uint256 balanceBefore = IERC20(path[path.length - 1]).balanceOf(to);
-        IWETH(WETH).deposit{value: msg.value}();
-        assert(IWETH(WETH).transfer(_getPairOrRevert(path[0], path[1]), msg.value));
-        _swapSupportingFeeOnTransferTokens(path, to);
-        require(
-            IERC20(path[path.length - 1]).balanceOf(to) - balanceBefore >= amountOutMin,
-            "FluxSwapRouter: INSUFFICIENT_OUTPUT_AMOUNT"
-        );
-    }
-
-    /**
-     * @notice 支持 fee-on-transfer 代币的 ERC20 精确输入换 ETH。
-     * @param amountIn 输入数量。
-     * @param amountOutMin 最小可接受 ETH 输出。
-     * @param path 兑换路径，末项必须是 WETH。
-     * @param to 接收 ETH 的地址。
-     * @param deadline 交易截止时间。
-     */
-    function swapExactTokensForETHSupportingFeeOnTransferTokens(
-        uint256 amountIn,
-        uint256 amountOutMin,
-        address[] calldata path,
-        address to,
-        uint256 deadline
-    ) external override ensure(deadline) {
-        require(path.length >= 2, "FluxSwapRouter: INVALID_PATH");
-        require(path[path.length - 1] == WETH, "FluxSwapRouter: INVALID_PATH");
-        address pair = _getPairOrRevert(path[0], path[1]);
-        TransferHelper.safeTransferFrom(path[0], msg.sender, pair, amountIn);
-        uint256 balanceBefore = IERC20(WETH).balanceOf(address(this));
-        _swapSupportingFeeOnTransferTokens(path, address(this));
-        uint256 amountOut = IERC20(WETH).balanceOf(address(this)) - balanceBefore;
-        require(amountOut >= amountOutMin, "FluxSwapRouter: INSUFFICIENT_OUTPUT_AMOUNT");
-        IWETH(WETH).withdraw(amountOut);
-        TransferHelper.safeTransferETH(to, amountOut);
-    }
-    /**
      * @notice 根据当前储备推导精确输入路径的逐跳输出。
      * @param amountIn 初始输入数量。
      * @param path 兑换路径。
@@ -630,33 +553,6 @@ contract FluxSwapRouter is IFluxSwapRouter {
         }
     }
 
-    /**
-     * @notice 通过 Pair 实际到账差额，逐跳执行 fee-on-transfer 兼容交换。
-     * @param path 兑换路径。
-     * @param _to 最终接收地址。
-     */
-    function _swapSupportingFeeOnTransferTokens(address[] memory path, address _to) internal {
-        for (uint256 i = 0; i < path.length - 1; i++) {
-            (address input, address output) = (path[i], path[i + 1]);
-            address pairAddress = _getPairOrRevert(input, output);
-            IFluxSwapPair pair = IFluxSwapPair(pairAddress);
-            uint256 amountOutput;
-            uint256 amount0Out;
-            uint256 amount1Out;
-            {
-                (address token0, ) = sortTokens(input, output);
-                (uint112 reserve0, uint112 reserve1, ) = pair.getReserves();
-                (uint256 reserveInput, uint256 reserveOutput) =
-                    input == token0 ? (reserve0, reserve1) : (reserve1, reserve0);
-                uint256 amountInput = IERC20(input).balanceOf(pairAddress) - reserveInput;
-                amountOutput = getAmountOut(amountInput, reserveInput, reserveOutput);
-                (amount0Out, amount1Out) =
-                    input == token0 ? (uint256(0), amountOutput) : (amountOutput, uint256(0));
-            }
-            address to = i < path.length - 2 ? _getPairOrRevert(output, path[i + 2]) : _to;
-            pair.swap(amount0Out, amount1Out, to, new bytes(0));
-        }
-    }
     /**
      * @notice 为 ERC20/ERC20 自动建池并添加流动性。
      * @param params 添加流动性所需参数结构体。
