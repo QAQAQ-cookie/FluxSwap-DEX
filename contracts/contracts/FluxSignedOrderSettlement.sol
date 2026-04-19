@@ -32,7 +32,7 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
 
     // EIP-712 订单结构体类型哈希。
     bytes32 private constant ORDER_TYPEHASH = keccak256(
-        "SignedOrder(address maker,address inputToken,address outputToken,uint256 amountIn,uint256 minAmountOut,uint256 executorFee,uint256 triggerPriceX18,uint256 expiry,uint256 nonce,address recipient)"
+        "SignedOrder(address maker,address inputToken,address outputToken,uint256 amountIn,uint256 minAmountOut,uint256 maxExecutorRewardBps,uint256 triggerPriceX18,uint256 expiry,uint256 nonce,address recipient)"
     );
     // EIP-712 批量 nonce 失效结构体类型哈希。
     bytes32 private constant INVALIDATE_NONCES_TYPEHASH =
@@ -108,7 +108,7 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
                 order.outputToken,
                 order.amountIn,
                 order.minAmountOut,
-                order.executorFee,
+                order.maxExecutorRewardBps,
                 order.triggerPriceX18,
                 order.expiry,
                 order.nonce,
@@ -130,7 +130,8 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
     function executeOrder(
         SignedOrder calldata order,
         bytes calldata signature,
-        uint256 deadline
+        uint256 deadline,
+        uint256 executorReward
     ) external override nonReentrant whenNotPaused returns (uint256 amountOut) {
         _validateExecutor(msg.sender);
         _validateOrder(order);
@@ -142,10 +143,12 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
         _verifyOrderSignature(orderHash, order.maker, signature);
 
         amountOut = _getAmountOut(order.inputToken, order.outputToken, order.amountIn);
-        uint256 totalRequiredOut = order.minAmountOut + order.executorFee;
-        require(totalRequiredOut >= order.minAmountOut, "FluxSignedOrderSettlement: EXECUTOR_FEE_OVERFLOW");
-        require(amountOut >= totalRequiredOut, "FluxSignedOrderSettlement: INSUFFICIENT_OUTPUT");
+        require(amountOut >= order.minAmountOut, "FluxSignedOrderSettlement: INSUFFICIENT_OUTPUT");
         require(_meetsTrigger(order.amountIn, amountOut, order.triggerPriceX18), "FluxSignedOrderSettlement: PRICE_NOT_REACHED");
+
+        uint256 surplus = amountOut - order.minAmountOut;
+        uint256 maxAllowedReward = (surplus * order.maxExecutorRewardBps) / 10_000;
+        require(executorReward <= maxAllowedReward, "FluxSignedOrderSettlement: EXECUTOR_REWARD_TOO_HIGH");
 
         orderExecuted[orderHash] = true;
         invalidatedNonce[order.maker][order.nonce] = true;
@@ -154,8 +157,8 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
         TransferHelper.safeTransferFrom(settlementInputToken, order.maker, address(this), order.amountIn);
         _approveIfNeeded(settlementInputToken, router, order.amountIn);
 
-        _settleAndDistribute(order, deadline, totalRequiredOut, amountOut, msg.sender);
-        _emitOrderExecuted(orderHash, order, msg.sender, amountOut);
+        _settleAndDistribute(order, deadline, amountOut, executorReward, msg.sender);
+        _emitOrderExecuted(orderHash, order, msg.sender, amountOut, executorReward);
     }
 
     /**
@@ -223,8 +226,8 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
         if (order.minAmountOut == 0) {
             return (false, "ZERO_MIN_AMOUNT_OUT");
         }
-        if (order.executorFee > type(uint256).max - order.minAmountOut) {
-            return (false, "EXECUTOR_FEE_OVERFLOW");
+        if (order.maxExecutorRewardBps > 10_000) {
+            return (false, "INVALID_EXECUTOR_REWARD_BPS");
         }
         if (order.triggerPriceX18 == 0) {
             return (false, "ZERO_TRIGGER_PRICE");
@@ -248,7 +251,7 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
         }
 
         uint256 amountOut = _getAmountOut(order.inputToken, order.outputToken, order.amountIn);
-        if (amountOut < order.minAmountOut + order.executorFee) {
+        if (amountOut < order.minAmountOut) {
             return (false, "INSUFFICIENT_OUTPUT");
         }
         if (!_meetsTrigger(order.amountIn, amountOut, order.triggerPriceX18)) {
@@ -327,7 +330,7 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
         require(!_hasIdenticalAssets(order.inputToken, order.outputToken), "FluxSignedOrderSettlement: IDENTICAL_TOKENS");
         require(order.amountIn > 0, "FluxSignedOrderSettlement: ZERO_AMOUNT_IN");
         require(order.minAmountOut > 0, "FluxSignedOrderSettlement: ZERO_MIN_AMOUNT_OUT");
-        require(order.executorFee <= type(uint256).max - order.minAmountOut, "FluxSignedOrderSettlement: EXECUTOR_FEE_OVERFLOW");
+        require(order.maxExecutorRewardBps <= 10_000, "FluxSignedOrderSettlement: INVALID_EXECUTOR_REWARD_BPS");
         require(order.triggerPriceX18 > 0, "FluxSignedOrderSettlement: ZERO_TRIGGER_PRICE");
         require(order.expiry >= block.timestamp, "FluxSignedOrderSettlement: ORDER_EXPIRED");
         require(order.recipient != address(0), "FluxSignedOrderSettlement: ZERO_RECIPIENT");
@@ -466,41 +469,42 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
     }
 
     /**
-     * @notice 通过 Router 完成真实结算，并把成交输出按“用户净收款 + 执行费”语义分配。
+     * @notice 通过 Router 完成真实结算，并把成交输出按“用户净收款 + 执行奖励”语义分配。
      * @param order 原始签名订单。
      * @param deadline 本次链上执行截止时间。
-     * @param totalRequiredOut 用户净收款与执行费之和对应的最小输出。
      * @param amountOut 当前链上预估的成交总输出。
+     * @param executorReward 本次实际分配给执行器的奖励数量。
      * @param executor 本次代理执行的地址。
      */
     function _settleAndDistribute(
         SignedOrder calldata order,
         uint256 deadline,
-        uint256 totalRequiredOut,
         uint256 amountOut,
+        uint256 executorReward,
         address executor
     ) private {
         address[] memory path = _buildPath(order.inputToken, order.outputToken);
+        uint256 requiredSettlementOut = order.minAmountOut + executorReward;
         if (order.outputToken == address(0)) {
             IFluxSwapRouter(router).swapExactTokensForETH(
                 order.amountIn,
-                totalRequiredOut,
+                requiredSettlementOut,
                 path,
                 address(this),
                 deadline
             );
-            _distributeNativeOutput(order.recipient, executor, amountOut, order.executorFee);
+            _distributeNativeOutput(order.recipient, executor, amountOut, executorReward);
             return;
         }
 
         IFluxSwapRouter(router).swapExactTokensForTokens(
             order.amountIn,
-            totalRequiredOut,
+            requiredSettlementOut,
             path,
             address(this),
             deadline
         );
-        _distributeTokenOutput(order.outputToken, order.recipient, executor, amountOut, order.executorFee);
+        _distributeTokenOutput(order.outputToken, order.recipient, executor, amountOut, executorReward);
     }
 
     /**
@@ -514,7 +518,8 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
         bytes32 orderHash,
         SignedOrder calldata order,
         address executor,
-        uint256 amountOut
+        uint256 amountOut,
+        uint256 executorReward
     ) private {
         emit OrderExecuted(
             orderHash,
@@ -524,51 +529,51 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
             order.outputToken,
             order.amountIn,
             amountOut,
-            amountOut - order.executorFee,
-            order.executorFee,
+            amountOut - executorReward,
+            executorReward,
             order.recipient
         );
     }
 
     /**
-     * @notice 按用户净收款与执行费语义分配 ERC20 输出资产。
+     * @notice 按用户净收款与执行奖励语义分配 ERC20 输出资产。
      * @param outputToken 原始订单的输出代币地址。
      * @param recipient 用户最终收款地址。
      * @param executor 本次代理执行的地址。
      * @param amountOut 本次成交的总输出量。
-     * @param executorFee 本次应支付给执行器的执行费。
+     * @param executorReward 本次应支付给执行器的执行奖励。
      */
     function _distributeTokenOutput(
         address outputToken,
         address recipient,
         address executor,
         uint256 amountOut,
-        uint256 executorFee
+        uint256 executorReward
     ) private {
-        uint256 recipientAmount = amountOut - executorFee;
+        uint256 recipientAmount = amountOut - executorReward;
         TransferHelper.safeTransfer(outputToken, recipient, recipientAmount);
-        if (executorFee > 0) {
-            TransferHelper.safeTransfer(outputToken, executor, executorFee);
+        if (executorReward > 0) {
+            TransferHelper.safeTransfer(outputToken, executor, executorReward);
         }
     }
 
     /**
-     * @notice 按用户净收款与执行费语义分配 ETH 输出资产。
+     * @notice 按用户净收款与执行奖励语义分配 ETH 输出资产。
      * @param recipient 用户最终收款地址。
      * @param executor 本次代理执行的地址。
      * @param amountOut 本次成交的总输出量。
-     * @param executorFee 本次应支付给执行器的执行费。
+     * @param executorReward 本次应支付给执行器的执行奖励。
      */
     function _distributeNativeOutput(
         address recipient,
         address executor,
         uint256 amountOut,
-        uint256 executorFee
+        uint256 executorReward
     ) private {
-        uint256 recipientAmount = amountOut - executorFee;
+        uint256 recipientAmount = amountOut - executorReward;
         TransferHelper.safeTransferETH(recipient, recipientAmount);
-        if (executorFee > 0) {
-            TransferHelper.safeTransferETH(executor, executorFee);
+        if (executorReward > 0) {
+            TransferHelper.safeTransferETH(executor, executorReward);
         }
     }
 

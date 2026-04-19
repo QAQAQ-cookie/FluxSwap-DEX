@@ -47,8 +47,9 @@ type settlementChainClient interface {
 	CurrentBlockTimestamp(ctx context.Context) (uint64, error)
 	CheckMakerFunding(ctx context.Context, order chain.SettlementOrder) (*chain.FundingCheckResult, error)
 	CanExecuteOrder(ctx context.Context, order chain.SettlementOrder) (bool, string, error)
+	GetOrderQuote(ctx context.Context, order chain.SettlementOrder) (*big.Int, error)
 	SuggestExecutorFee(ctx context.Context, outputToken common.Address, estimatedGasUsed uint64, safetyBps int64) (*big.Int, *big.Int, error)
-	ExecuteOrder(ctx context.Context, order chain.SettlementOrder, signature []byte, deadline *big.Int) (string, error)
+	ExecuteOrder(ctx context.Context, order chain.SettlementOrder, signature []byte, deadline *big.Int, executorReward *big.Int) (string, error)
 	ReceiptStatus(ctx context.Context, txHash string) (*types.Receipt, error)
 	TransactionKnown(ctx context.Context, txHash string) (bool, error)
 	IsOrderExecuted(ctx context.Context, orderHash string) (bool, error)
@@ -415,6 +416,22 @@ func (w *Worker) evaluateOrder(ctx context.Context, order *domain.Order) error {
 			)
 		}
 
+		quotedAmountOut, quoteErr := w.settlementClient.GetOrderQuote(ctx, payload)
+		if quoteErr != nil {
+			statusReason := shortenReason("order_quote_failed: " + quoteErr.Error())
+			return w.updateOrderIfStatusIn(
+				ctx,
+				order,
+				allowedStatuses,
+				withExecutionMetadata(baseUpdates, map[string]interface{}{
+					"status":            "open",
+					"status_reason":     statusReason,
+					"last_block_reason": statusReason,
+				}),
+			)
+		}
+
+		maxExecutorReward := calculateMaxExecutorReward(payload, quotedAmountOut)
 		requiredExecutorFee, gasPriceAtQuote, feeErr := w.settlementClient.SuggestExecutorFee(
 			ctx,
 			payload.OutputToken,
@@ -444,16 +461,16 @@ func (w *Worker) evaluateOrder(ctx context.Context, order *domain.Order) error {
 			"last_required_executor_fee": requiredExecutorFee.String(),
 		})
 
-		if payload.ExecutorFee.Cmp(requiredExecutorFee) < 0 {
+		if maxExecutorReward.Cmp(requiredExecutorFee) < 0 {
 			return w.updateOrderIfStatusIn(
 				ctx,
 				order,
 				allowedStatuses,
 				withExecutionMetadata(feeQuoteUpdates, map[string]interface{}{
 					"status":        "open",
-					"status_reason": shortenReason("executor_fee_insufficient_for_current_gas"),
+					"status_reason": shortenReason("executor_reward_insufficient_for_current_gas"),
 					"last_block_reason": shortenReason(
-						fmt.Sprintf("signed_executor_fee_%s_below_required_%s", payload.ExecutorFee.String(), requiredExecutorFee.String()),
+						fmt.Sprintf("max_executor_reward_%s_below_required_%s", maxExecutorReward.String(), requiredExecutorFee.String()),
 					),
 				}),
 			)
@@ -491,7 +508,7 @@ func (w *Worker) evaluateOrder(ctx context.Context, order *domain.Order) error {
 			)
 		}
 
-		txHash, executeErr := w.settlementClient.ExecuteOrder(ctx, payload, signature, deadline)
+		txHash, executeErr := w.settlementClient.ExecuteOrder(ctx, payload, signature, deadline, requiredExecutorFee)
 		if executeErr != nil {
 			fmt.Printf("submit order %s failed: %v\n", order.OrderHash, executeErr)
 			order.StatusReason = shortenReason("submit_failed: " + executeErr.Error())
@@ -1049,9 +1066,12 @@ func buildSettlementOrder(order *domain.Order) (chain.SettlementOrder, error) {
 	if err != nil {
 		return chain.SettlementOrder{}, err
 	}
-	executorFee, err := parseNonNegativeBigInt(order.ExecutorFee, "executor_fee")
+	maxExecutorRewardBps, err := parseNonNegativeBigInt(order.ExecutorFee, "max_executor_reward_bps")
 	if err != nil {
 		return chain.SettlementOrder{}, err
+	}
+	if maxExecutorRewardBps.Cmp(big.NewInt(10_000)) > 0 {
+		return chain.SettlementOrder{}, fmt.Errorf("invalid max_executor_reward_bps")
 	}
 	triggerPriceX18, err := parsePositiveBigInt(order.TriggerPriceX18, "trigger_price_x18")
 	if err != nil {
@@ -1067,16 +1087,16 @@ func buildSettlementOrder(order *domain.Order) (chain.SettlementOrder, error) {
 	}
 
 	return chain.SettlementOrder{
-		Maker:           common.HexToAddress(order.Maker),
-		InputToken:      common.HexToAddress(order.InputToken),
-		OutputToken:     common.HexToAddress(order.OutputToken),
-		AmountIn:        amountIn,
-		MinAmountOut:    minAmountOut,
-		ExecutorFee:     executorFee,
-		TriggerPriceX18: triggerPriceX18,
-		Expiry:          expiry,
-		Nonce:           nonce,
-		Recipient:       common.HexToAddress(order.Recipient),
+		Maker:                common.HexToAddress(order.Maker),
+		InputToken:           common.HexToAddress(order.InputToken),
+		OutputToken:          common.HexToAddress(order.OutputToken),
+		AmountIn:             amountIn,
+		MinAmountOut:         minAmountOut,
+		MaxExecutorRewardBps: maxExecutorRewardBps,
+		TriggerPriceX18:      triggerPriceX18,
+		Expiry:               expiry,
+		Nonce:                nonce,
+		Recipient:            common.HexToAddress(order.Recipient),
 	}, nil
 }
 
@@ -1113,6 +1133,20 @@ func parseNonNegativeBigInt(value string, field string) (*big.Int, error) {
 }
 
 // updateOrderIfStatusIn 带状态保护地更新订单，避免并发流程互相覆盖结果。
+// calculateMaxExecutorReward 按合约同款公式计算当前报价下最多可支付给执行器的 surplus 奖励。
+func calculateMaxExecutorReward(order chain.SettlementOrder, quotedAmountOut *big.Int) *big.Int {
+	if quotedAmountOut == nil || order.MinAmountOut == nil || quotedAmountOut.Cmp(order.MinAmountOut) <= 0 {
+		return big.NewInt(0)
+	}
+	if order.MaxExecutorRewardBps == nil || order.MaxExecutorRewardBps.Sign() <= 0 {
+		return big.NewInt(0)
+	}
+
+	surplus := new(big.Int).Sub(quotedAmountOut, order.MinAmountOut)
+	reward := new(big.Int).Mul(surplus, order.MaxExecutorRewardBps)
+	return reward.Div(reward, big.NewInt(10_000))
+}
+
 func (w *Worker) updateOrderIfStatusIn(
 	ctx context.Context,
 	order *domain.Order,

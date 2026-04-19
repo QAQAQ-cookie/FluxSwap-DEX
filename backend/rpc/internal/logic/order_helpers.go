@@ -1,4 +1,4 @@
-﻿package logic
+package logic
 
 import (
 	"context"
@@ -55,40 +55,40 @@ func orderToResponse(order *domain.Order) *executor.GetOrderResponse {
 	}
 
 	return &executor.GetOrderResponse{
-		Id:                      payload.ID,
-		ChainId:                 payload.ChainID,
-		SettlementAddress:       payload.SettlementAddress,
-		OrderHash:               payload.OrderHash,
-		Maker:                   payload.Maker,
-		InputToken:              payload.InputToken,
-		OutputToken:             payload.OutputToken,
-		AmountIn:                payload.AmountIn,
-		MinAmountOut:            payload.MinAmountOut,
-		ExecutorFee:             payload.ExecutorFee,
-		ExecutorFeeToken:        payload.ExecutorFeeToken,
-		TriggerPriceX18:         payload.TriggerPriceX18,
-		Expiry:                  payload.Expiry,
-		Nonce:                   payload.Nonce,
-		Recipient:               payload.Recipient,
-		Source:                  payload.Source,
-		Status:                  payload.Status,
-		StatusReason:            payload.StatusReason,
-		EstimatedGasUsed:        payload.EstimatedGasUsed,
-		GasPriceAtQuote:         payload.GasPriceAtQuote,
-		FeeQuoteAt:              payload.FeeQuoteAt,
-		LastRequiredExecutorFee: payload.LastRequiredExecutorFee,
-		LastFeeCheckAt:          payload.LastFeeCheckAt,
-		LastExecutionCheckAt:    payload.LastExecutionCheckAt,
-		LastBlockReason:         payload.LastBlockReason,
-		SettledAmountOut:        payload.SettledAmountOut,
-		SettledExecutorFee:      payload.SettledExecutorFee,
-		SubmittedTxHash:         payload.SubmittedTxHash,
-		ExecutedTxHash:          payload.ExecutedTxHash,
-		CancelledTxHash:         payload.CancelledTxHash,
-		LastCheckedBlock:        payload.LastCheckedBlock,
-		CreatedAt:               payload.CreatedAt,
-		UpdatedAt:               payload.UpdatedAt,
-		Notice:                  nil,
+		Id:                         payload.ID,
+		ChainId:                    payload.ChainID,
+		SettlementAddress:          payload.SettlementAddress,
+		OrderHash:                  payload.OrderHash,
+		Maker:                      payload.Maker,
+		InputToken:                 payload.InputToken,
+		OutputToken:                payload.OutputToken,
+		AmountIn:                   payload.AmountIn,
+		MinAmountOut:               payload.MinAmountOut,
+		MaxExecutorRewardBps:       payload.ExecutorFee,
+		ExecutorFeeToken:           payload.ExecutorFeeToken,
+		TriggerPriceX18:            payload.TriggerPriceX18,
+		Expiry:                     payload.Expiry,
+		Nonce:                      payload.Nonce,
+		Recipient:                  payload.Recipient,
+		Source:                     payload.Source,
+		Status:                     payload.Status,
+		StatusReason:               payload.StatusReason,
+		EstimatedGasUsed:           payload.EstimatedGasUsed,
+		GasPriceAtQuote:            payload.GasPriceAtQuote,
+		RewardQuoteAt:              payload.FeeQuoteAt,
+		LastRequiredExecutorReward: payload.LastRequiredExecutorFee,
+		LastRewardCheckAt:          payload.LastFeeCheckAt,
+		LastExecutionCheckAt:       payload.LastExecutionCheckAt,
+		LastBlockReason:            payload.LastBlockReason,
+		SettledAmountOut:           payload.SettledAmountOut,
+		SettledExecutorReward:      payload.SettledExecutorFee,
+		SubmittedTxHash:            payload.SubmittedTxHash,
+		ExecutedTxHash:             payload.ExecutedTxHash,
+		CancelledTxHash:            payload.CancelledTxHash,
+		LastCheckedBlock:           payload.LastCheckedBlock,
+		CreatedAt:                  payload.CreatedAt,
+		UpdatedAt:                  payload.UpdatedAt,
+		Notice:                     nil,
 	}
 }
 
@@ -266,13 +266,12 @@ func buildOpenOrderNotice(statusReason string, lastBlockReason string) *executor
 			"请补足 maker 对结算合约的授权额度，订单会在后续检查中重新进入可执行判断。",
 			"readiness",
 		)
-	case statusReason == "executor_fee_insufficient_for_current_gas" ||
-		lastBlockReason == "signed_executor_fee_below_initial_required" ||
-		strings.HasPrefix(lastBlockReason, "signed_executor_fee_"):
+	case statusReason == "executor_reward_insufficient_for_current_gas" ||
+		strings.HasPrefix(lastBlockReason, "max_executor_reward_"):
 		return successNotice(
-			"ORDER_BLOCKED_BY_EXECUTOR_FEE",
-			"订单暂不可执行，签名执行费低于当前所需执行费",
-			"当前 gas 环境下执行成本更高，需要等待 gas 回落或重新下单。",
+			"ORDER_BLOCKED_BY_EXECUTOR_REWARD",
+			"订单暂不可执行，可分配给执行器的奖励不足",
+			"当前成交 surplus 不足以覆盖执行奖励，需要等待价格改善、gas 回落或重新下单。",
 			"readiness",
 		)
 	case hasReadinessReason(statusReason, lastBlockReason, "pair_not_found"):
@@ -519,16 +518,16 @@ func buildSettlementOrderFromRequest(req *executor.CreateOrderRequest) (chain.Se
 	}
 
 	return chain.SettlementOrder{
-		Maker:           common.HexToAddress(normalizeAddress(req.GetMaker())),
-		InputToken:      common.HexToAddress(normalizeAddress(req.GetInputToken())),
-		OutputToken:     common.HexToAddress(normalizeAddress(req.GetOutputToken())),
-		AmountIn:        mustBigInt(req.GetAmountIn()),
-		MinAmountOut:    mustBigInt(req.GetMinAmountOut()),
-		ExecutorFee:     mustBigInt(req.GetExecutorFee()),
-		TriggerPriceX18: mustBigInt(req.GetTriggerPriceX18()),
-		Expiry:          mustBigInt(req.GetExpiry()),
-		Nonce:           mustBigInt(req.GetNonce()),
-		Recipient:       common.HexToAddress(normalizeAddress(req.GetRecipient())),
+		Maker:                common.HexToAddress(normalizeAddress(req.GetMaker())),
+		InputToken:           common.HexToAddress(normalizeAddress(req.GetInputToken())),
+		OutputToken:          common.HexToAddress(normalizeAddress(req.GetOutputToken())),
+		AmountIn:             mustBigInt(req.GetAmountIn()),
+		MinAmountOut:         mustBigInt(req.GetMinAmountOut()),
+		MaxExecutorRewardBps: mustBigInt(req.GetMaxExecutorRewardBps()),
+		TriggerPriceX18:      mustBigInt(req.GetTriggerPriceX18()),
+		Expiry:               mustBigInt(req.GetExpiry()),
+		Nonce:                mustBigInt(req.GetNonce()),
+		Recipient:            common.HexToAddress(normalizeAddress(req.GetRecipient())),
 	}, nil
 }
 
@@ -644,4 +643,3 @@ func mapStatusError(err error) (string, string, string, string) {
 		return "UNKNOWN_ERROR", "操作失败", "请刷新状态后重试。", "unknown"
 	}
 }
-

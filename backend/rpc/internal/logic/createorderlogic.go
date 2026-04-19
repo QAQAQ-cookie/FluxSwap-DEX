@@ -82,10 +82,16 @@ func (l *CreateOrderLogic) CreateOrder(in *executor.CreateOrderRequest) (*execut
 		// minAmountOut 非法时无法保证订单执行后的最小到账数量。
 		return nil, status.Error(codes.InvalidArgument, "minAmountOut must be a positive integer string")
 	}
-	// 校验执行费字段必须是无符号整数字符串，允许为 0。
-	if !isUint(in.GetExecutorFee()) {
-		// executorFee 格式非法时拒绝请求，避免写入不可比较的费用值。
-		return nil, status.Error(codes.InvalidArgument, "executorFee must be an unsigned integer string")
+	// 校验最大执行奖励比例字段必须是无符号整数字符串，允许为空；空值后面按 0 处理。
+	if strings.TrimSpace(in.GetMaxExecutorRewardBps()) != "" && !isUint(in.GetMaxExecutorRewardBps()) {
+		// maxExecutorRewardBps 格式非法时拒绝请求，避免写入不可比较的比例值。
+		return nil, status.Error(codes.InvalidArgument, "maxExecutorRewardBps must be an unsigned integer string")
+	}
+	// 最大执行奖励比例使用 bps 表示，10000 表示 100%，不能超过全部 surplus。
+	if strings.TrimSpace(in.GetMaxExecutorRewardBps()) != "" &&
+		mustBigInt(in.GetMaxExecutorRewardBps()).Cmp(big.NewInt(10_000)) > 0 {
+		// 超过 10000 会让执行器奖励比例失去边界，因此在签名前直接拒绝。
+		return nil, status.Error(codes.InvalidArgument, "maxExecutorRewardBps must be less than or equal to 10000")
 	}
 	// 校验触发价格必须是正整数字符串，当前使用 1e18 精度表达价格。
 	if !isPositiveUint(in.GetTriggerPriceX18()) {
@@ -240,14 +246,13 @@ func (l *CreateOrderLogic) CreateOrder(in *executor.CreateOrderRequest) (*execut
 
 	// 记录当前 UTC 时间，后续多个时间字段共用同一个时间点。
 	now := time.Now().UTC()
-	// 读取并清理执行费字符串。
-	executorFee := strings.TrimSpace(in.GetExecutorFee())
-	// executorFee 允许为空，空值按 0 处理。
-	if executorFee == "" {
+	// 读取并清理最大执行奖励比例字符串。
+	maxExecutorRewardBps := strings.TrimSpace(in.GetMaxExecutorRewardBps())
+	// maxExecutorRewardBps 允许为空，空值按 0 处理。
+	if maxExecutorRewardBps == "" {
 		// 用 0 兜底，保证数据库里的数值字段始终可比较。
-		executorFee = "0"
+		maxExecutorRewardBps = "0"
 	}
-
 	// 初始化预估 gas 使用量，链客户端不可用时保持为 0。
 	estimatedGasUsed := "0"
 	// 初始化报价时的 gasPrice，链客户端不可用时保持为 0。
@@ -313,11 +318,6 @@ func (l *CreateOrderLogic) CreateOrder(in *executor.CreateOrderRequest) (*execut
 			gasPriceAtQuote = gasPrice.String()
 			// 保存本次报价计算出的最低所需执行费。
 			lastRequiredExecutorFee = requiredExecutorFee.String()
-			// 如果用户签名里的执行费低于当前所需执行费，则记录阻塞原因。
-			if mustBigInt(executorFee).Cmp(requiredExecutorFee) < 0 {
-				// 订单仍可落库，但执行器后续不会在费用不足时提交链上交易。
-				lastBlockReason = "signed_executor_fee_below_initial_required"
-			}
 		}
 	}
 
@@ -339,8 +339,8 @@ func (l *CreateOrderLogic) CreateOrder(in *executor.CreateOrderRequest) (*execut
 		AmountIn: strings.TrimSpace(in.GetAmountIn()),
 		// 保存最小输出数量字符串，去掉前后空格。
 		MinAmountOut: strings.TrimSpace(in.GetMinAmountOut()),
-		// 保存用户签名里的最大执行费。
-		ExecutorFee: executorFee,
+		// 数据库字段仍沿用 executor_fee，业务含义是用户签名允许的最大执行奖励比例。
+		ExecutorFee: maxExecutorRewardBps,
 		// 当前执行费按输出代币扣除，因此费用币种等于 outputToken。
 		ExecutorFeeToken: normalizeAddress(in.GetOutputToken()),
 		// 保存 1e18 精度的触发价格。

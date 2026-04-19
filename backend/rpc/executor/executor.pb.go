@@ -98,24 +98,24 @@ func (x *ResponseNotice) GetStage() string {
 }
 
 type CreateOrderRequest struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	ChainId           int64                  `protobuf:"varint,1,opt,name=chainId,proto3" json:"chainId,omitempty"`
-	SettlementAddress string                 `protobuf:"bytes,2,opt,name=settlementAddress,proto3" json:"settlementAddress,omitempty"`
-	OrderHash         string                 `protobuf:"bytes,3,opt,name=orderHash,proto3" json:"orderHash,omitempty"`
-	Maker             string                 `protobuf:"bytes,4,opt,name=maker,proto3" json:"maker,omitempty"`
-	InputToken        string                 `protobuf:"bytes,5,opt,name=inputToken,proto3" json:"inputToken,omitempty"`
-	OutputToken       string                 `protobuf:"bytes,6,opt,name=outputToken,proto3" json:"outputToken,omitempty"`
-	AmountIn          string                 `protobuf:"bytes,7,opt,name=amountIn,proto3" json:"amountIn,omitempty"`
-	MinAmountOut      string                 `protobuf:"bytes,8,opt,name=minAmountOut,proto3" json:"minAmountOut,omitempty"`
-	TriggerPriceX18   string                 `protobuf:"bytes,9,opt,name=triggerPriceX18,proto3" json:"triggerPriceX18,omitempty"`
-	Expiry            string                 `protobuf:"bytes,10,opt,name=expiry,proto3" json:"expiry,omitempty"`
-	Nonce             string                 `protobuf:"bytes,11,opt,name=nonce,proto3" json:"nonce,omitempty"`
-	Recipient         string                 `protobuf:"bytes,12,opt,name=recipient,proto3" json:"recipient,omitempty"`
-	Signature         string                 `protobuf:"bytes,13,opt,name=signature,proto3" json:"signature,omitempty"`
-	Source            string                 `protobuf:"bytes,14,opt,name=source,proto3" json:"source,omitempty"`
-	ExecutorFee       string                 `protobuf:"bytes,15,opt,name=executorFee,proto3" json:"executorFee,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	ChainId              int64                  `protobuf:"varint,1,opt,name=chainId,proto3" json:"chainId,omitempty"`
+	SettlementAddress    string                 `protobuf:"bytes,2,opt,name=settlementAddress,proto3" json:"settlementAddress,omitempty"`
+	OrderHash            string                 `protobuf:"bytes,3,opt,name=orderHash,proto3" json:"orderHash,omitempty"`
+	Maker                string                 `protobuf:"bytes,4,opt,name=maker,proto3" json:"maker,omitempty"`
+	InputToken           string                 `protobuf:"bytes,5,opt,name=inputToken,proto3" json:"inputToken,omitempty"`
+	OutputToken          string                 `protobuf:"bytes,6,opt,name=outputToken,proto3" json:"outputToken,omitempty"`
+	AmountIn             string                 `protobuf:"bytes,7,opt,name=amountIn,proto3" json:"amountIn,omitempty"`
+	MinAmountOut         string                 `protobuf:"bytes,8,opt,name=minAmountOut,proto3" json:"minAmountOut,omitempty"`
+	TriggerPriceX18      string                 `protobuf:"bytes,9,opt,name=triggerPriceX18,proto3" json:"triggerPriceX18,omitempty"`
+	Expiry               string                 `protobuf:"bytes,10,opt,name=expiry,proto3" json:"expiry,omitempty"`
+	Nonce                string                 `protobuf:"bytes,11,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	Recipient            string                 `protobuf:"bytes,12,opt,name=recipient,proto3" json:"recipient,omitempty"`
+	Signature            string                 `protobuf:"bytes,13,opt,name=signature,proto3" json:"signature,omitempty"`
+	Source               string                 `protobuf:"bytes,14,opt,name=source,proto3" json:"source,omitempty"`
+	MaxExecutorRewardBps string                 `protobuf:"bytes,15,opt,name=maxExecutorRewardBps,proto3" json:"maxExecutorRewardBps,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *CreateOrderRequest) Reset() {
@@ -246,9 +246,9 @@ func (x *CreateOrderRequest) GetSource() string {
 	return ""
 }
 
-func (x *CreateOrderRequest) GetExecutorFee() string {
+func (x *CreateOrderRequest) GetMaxExecutorRewardBps() string {
 	if x != nil {
-		return x.ExecutorFee
+		return x.MaxExecutorRewardBps
 	}
 	return ""
 }
@@ -678,43 +678,43 @@ func (x *GetOrderRequest) GetOrderHash() string {
 }
 
 type GetOrderResponse struct {
-	state                   protoimpl.MessageState `protogen:"open.v1"`
-	Id                      uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	ChainId                 int64                  `protobuf:"varint,2,opt,name=chainId,proto3" json:"chainId,omitempty"`
-	SettlementAddress       string                 `protobuf:"bytes,3,opt,name=settlementAddress,proto3" json:"settlementAddress,omitempty"`
-	OrderHash               string                 `protobuf:"bytes,4,opt,name=orderHash,proto3" json:"orderHash,omitempty"`
-	Maker                   string                 `protobuf:"bytes,5,opt,name=maker,proto3" json:"maker,omitempty"`
-	InputToken              string                 `protobuf:"bytes,6,opt,name=inputToken,proto3" json:"inputToken,omitempty"`
-	OutputToken             string                 `protobuf:"bytes,7,opt,name=outputToken,proto3" json:"outputToken,omitempty"`
-	AmountIn                string                 `protobuf:"bytes,8,opt,name=amountIn,proto3" json:"amountIn,omitempty"`
-	MinAmountOut            string                 `protobuf:"bytes,9,opt,name=minAmountOut,proto3" json:"minAmountOut,omitempty"`
-	TriggerPriceX18         string                 `protobuf:"bytes,10,opt,name=triggerPriceX18,proto3" json:"triggerPriceX18,omitempty"`
-	Expiry                  string                 `protobuf:"bytes,11,opt,name=expiry,proto3" json:"expiry,omitempty"`
-	Nonce                   string                 `protobuf:"bytes,12,opt,name=nonce,proto3" json:"nonce,omitempty"`
-	Recipient               string                 `protobuf:"bytes,13,opt,name=recipient,proto3" json:"recipient,omitempty"`
-	Source                  string                 `protobuf:"bytes,14,opt,name=source,proto3" json:"source,omitempty"`
-	Status                  string                 `protobuf:"bytes,15,opt,name=status,proto3" json:"status,omitempty"`
-	StatusReason            string                 `protobuf:"bytes,16,opt,name=statusReason,proto3" json:"statusReason,omitempty"`
-	SubmittedTxHash         string                 `protobuf:"bytes,17,opt,name=submittedTxHash,proto3" json:"submittedTxHash,omitempty"`
-	ExecutedTxHash          string                 `protobuf:"bytes,18,opt,name=executedTxHash,proto3" json:"executedTxHash,omitempty"`
-	CancelledTxHash         string                 `protobuf:"bytes,19,opt,name=cancelledTxHash,proto3" json:"cancelledTxHash,omitempty"`
-	LastCheckedBlock        int64                  `protobuf:"varint,20,opt,name=lastCheckedBlock,proto3" json:"lastCheckedBlock,omitempty"`
-	CreatedAt               string                 `protobuf:"bytes,21,opt,name=createdAt,proto3" json:"createdAt,omitempty"`
-	UpdatedAt               string                 `protobuf:"bytes,22,opt,name=updatedAt,proto3" json:"updatedAt,omitempty"`
-	Notice                  *ResponseNotice        `protobuf:"bytes,23,opt,name=notice,proto3" json:"notice,omitempty"`
-	ExecutorFee             string                 `protobuf:"bytes,24,opt,name=executorFee,proto3" json:"executorFee,omitempty"`
-	ExecutorFeeToken        string                 `protobuf:"bytes,25,opt,name=executorFeeToken,proto3" json:"executorFeeToken,omitempty"`
-	EstimatedGasUsed        string                 `protobuf:"bytes,26,opt,name=estimatedGasUsed,proto3" json:"estimatedGasUsed,omitempty"`
-	GasPriceAtQuote         string                 `protobuf:"bytes,27,opt,name=gasPriceAtQuote,proto3" json:"gasPriceAtQuote,omitempty"`
-	FeeQuoteAt              string                 `protobuf:"bytes,28,opt,name=feeQuoteAt,proto3" json:"feeQuoteAt,omitempty"`
-	LastRequiredExecutorFee string                 `protobuf:"bytes,29,opt,name=lastRequiredExecutorFee,proto3" json:"lastRequiredExecutorFee,omitempty"`
-	LastFeeCheckAt          string                 `protobuf:"bytes,30,opt,name=lastFeeCheckAt,proto3" json:"lastFeeCheckAt,omitempty"`
-	LastExecutionCheckAt    string                 `protobuf:"bytes,31,opt,name=lastExecutionCheckAt,proto3" json:"lastExecutionCheckAt,omitempty"`
-	LastBlockReason         string                 `protobuf:"bytes,32,opt,name=lastBlockReason,proto3" json:"lastBlockReason,omitempty"`
-	SettledAmountOut        string                 `protobuf:"bytes,33,opt,name=settledAmountOut,proto3" json:"settledAmountOut,omitempty"`
-	SettledExecutorFee      string                 `protobuf:"bytes,34,opt,name=settledExecutorFee,proto3" json:"settledExecutorFee,omitempty"`
-	unknownFields           protoimpl.UnknownFields
-	sizeCache               protoimpl.SizeCache
+	state                      protoimpl.MessageState `protogen:"open.v1"`
+	Id                         uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	ChainId                    int64                  `protobuf:"varint,2,opt,name=chainId,proto3" json:"chainId,omitempty"`
+	SettlementAddress          string                 `protobuf:"bytes,3,opt,name=settlementAddress,proto3" json:"settlementAddress,omitempty"`
+	OrderHash                  string                 `protobuf:"bytes,4,opt,name=orderHash,proto3" json:"orderHash,omitempty"`
+	Maker                      string                 `protobuf:"bytes,5,opt,name=maker,proto3" json:"maker,omitempty"`
+	InputToken                 string                 `protobuf:"bytes,6,opt,name=inputToken,proto3" json:"inputToken,omitempty"`
+	OutputToken                string                 `protobuf:"bytes,7,opt,name=outputToken,proto3" json:"outputToken,omitempty"`
+	AmountIn                   string                 `protobuf:"bytes,8,opt,name=amountIn,proto3" json:"amountIn,omitempty"`
+	MinAmountOut               string                 `protobuf:"bytes,9,opt,name=minAmountOut,proto3" json:"minAmountOut,omitempty"`
+	TriggerPriceX18            string                 `protobuf:"bytes,10,opt,name=triggerPriceX18,proto3" json:"triggerPriceX18,omitempty"`
+	Expiry                     string                 `protobuf:"bytes,11,opt,name=expiry,proto3" json:"expiry,omitempty"`
+	Nonce                      string                 `protobuf:"bytes,12,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	Recipient                  string                 `protobuf:"bytes,13,opt,name=recipient,proto3" json:"recipient,omitempty"`
+	Source                     string                 `protobuf:"bytes,14,opt,name=source,proto3" json:"source,omitempty"`
+	Status                     string                 `protobuf:"bytes,15,opt,name=status,proto3" json:"status,omitempty"`
+	StatusReason               string                 `protobuf:"bytes,16,opt,name=statusReason,proto3" json:"statusReason,omitempty"`
+	SubmittedTxHash            string                 `protobuf:"bytes,17,opt,name=submittedTxHash,proto3" json:"submittedTxHash,omitempty"`
+	ExecutedTxHash             string                 `protobuf:"bytes,18,opt,name=executedTxHash,proto3" json:"executedTxHash,omitempty"`
+	CancelledTxHash            string                 `protobuf:"bytes,19,opt,name=cancelledTxHash,proto3" json:"cancelledTxHash,omitempty"`
+	LastCheckedBlock           int64                  `protobuf:"varint,20,opt,name=lastCheckedBlock,proto3" json:"lastCheckedBlock,omitempty"`
+	CreatedAt                  string                 `protobuf:"bytes,21,opt,name=createdAt,proto3" json:"createdAt,omitempty"`
+	UpdatedAt                  string                 `protobuf:"bytes,22,opt,name=updatedAt,proto3" json:"updatedAt,omitempty"`
+	Notice                     *ResponseNotice        `protobuf:"bytes,23,opt,name=notice,proto3" json:"notice,omitempty"`
+	MaxExecutorRewardBps       string                 `protobuf:"bytes,24,opt,name=maxExecutorRewardBps,proto3" json:"maxExecutorRewardBps,omitempty"`
+	ExecutorFeeToken           string                 `protobuf:"bytes,25,opt,name=executorFeeToken,proto3" json:"executorFeeToken,omitempty"`
+	EstimatedGasUsed           string                 `protobuf:"bytes,26,opt,name=estimatedGasUsed,proto3" json:"estimatedGasUsed,omitempty"`
+	GasPriceAtQuote            string                 `protobuf:"bytes,27,opt,name=gasPriceAtQuote,proto3" json:"gasPriceAtQuote,omitempty"`
+	RewardQuoteAt              string                 `protobuf:"bytes,28,opt,name=rewardQuoteAt,proto3" json:"rewardQuoteAt,omitempty"`
+	LastRequiredExecutorReward string                 `protobuf:"bytes,29,opt,name=lastRequiredExecutorReward,proto3" json:"lastRequiredExecutorReward,omitempty"`
+	LastRewardCheckAt          string                 `protobuf:"bytes,30,opt,name=lastRewardCheckAt,proto3" json:"lastRewardCheckAt,omitempty"`
+	LastExecutionCheckAt       string                 `protobuf:"bytes,31,opt,name=lastExecutionCheckAt,proto3" json:"lastExecutionCheckAt,omitempty"`
+	LastBlockReason            string                 `protobuf:"bytes,32,opt,name=lastBlockReason,proto3" json:"lastBlockReason,omitempty"`
+	SettledAmountOut           string                 `protobuf:"bytes,33,opt,name=settledAmountOut,proto3" json:"settledAmountOut,omitempty"`
+	SettledExecutorReward      string                 `protobuf:"bytes,34,opt,name=settledExecutorReward,proto3" json:"settledExecutorReward,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
 }
 
 func (x *GetOrderResponse) Reset() {
@@ -908,9 +908,9 @@ func (x *GetOrderResponse) GetNotice() *ResponseNotice {
 	return nil
 }
 
-func (x *GetOrderResponse) GetExecutorFee() string {
+func (x *GetOrderResponse) GetMaxExecutorRewardBps() string {
 	if x != nil {
-		return x.ExecutorFee
+		return x.MaxExecutorRewardBps
 	}
 	return ""
 }
@@ -936,23 +936,23 @@ func (x *GetOrderResponse) GetGasPriceAtQuote() string {
 	return ""
 }
 
-func (x *GetOrderResponse) GetFeeQuoteAt() string {
+func (x *GetOrderResponse) GetRewardQuoteAt() string {
 	if x != nil {
-		return x.FeeQuoteAt
+		return x.RewardQuoteAt
 	}
 	return ""
 }
 
-func (x *GetOrderResponse) GetLastRequiredExecutorFee() string {
+func (x *GetOrderResponse) GetLastRequiredExecutorReward() string {
 	if x != nil {
-		return x.LastRequiredExecutorFee
+		return x.LastRequiredExecutorReward
 	}
 	return ""
 }
 
-func (x *GetOrderResponse) GetLastFeeCheckAt() string {
+func (x *GetOrderResponse) GetLastRewardCheckAt() string {
 	if x != nil {
-		return x.LastFeeCheckAt
+		return x.LastRewardCheckAt
 	}
 	return ""
 }
@@ -978,9 +978,9 @@ func (x *GetOrderResponse) GetSettledAmountOut() string {
 	return ""
 }
 
-func (x *GetOrderResponse) GetSettledExecutorFee() string {
+func (x *GetOrderResponse) GetSettledExecutorReward() string {
 	if x != nil {
-		return x.SettledExecutorFee
+		return x.SettledExecutorReward
 	}
 	return ""
 }
@@ -995,7 +995,7 @@ const file_proto_executor_proto_rawDesc = "" +
 	"\x04code\x18\x02 \x01(\tR\x04code\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x12\x12\n" +
 	"\x04hint\x18\x04 \x01(\tR\x04hint\x12\x14\n" +
-	"\x05stage\x18\x05 \x01(\tR\x05stage\"\xe0\x03\n" +
+	"\x05stage\x18\x05 \x01(\tR\x05stage\"\xf2\x03\n" +
 	"\x12CreateOrderRequest\x12\x18\n" +
 	"\achainId\x18\x01 \x01(\x03R\achainId\x12,\n" +
 	"\x11settlementAddress\x18\x02 \x01(\tR\x11settlementAddress\x12\x1c\n" +
@@ -1013,8 +1013,8 @@ const file_proto_executor_proto_rawDesc = "" +
 	"\x05nonce\x18\v \x01(\tR\x05nonce\x12\x1c\n" +
 	"\trecipient\x18\f \x01(\tR\trecipient\x12\x1c\n" +
 	"\tsignature\x18\r \x01(\tR\tsignature\x12\x16\n" +
-	"\x06source\x18\x0e \x01(\tR\x06source\x12 \n" +
-	"\vexecutorFee\x18\x0f \x01(\tR\vexecutorFee\"y\n" +
+	"\x06source\x18\x0e \x01(\tR\x06source\x122\n" +
+	"\x14maxExecutorRewardBps\x18\x0f \x01(\tR\x14maxExecutorRewardBps\"y\n" +
 	"\x13CreateOrderResponse\x120\n" +
 	"\x05order\x18\x01 \x01(\v2\x1a.executor.GetOrderResponseR\x05order\x120\n" +
 	"\x06notice\x18\x02 \x01(\v2\x18.executor.ResponseNoticeR\x06notice\"\xa5\x01\n" +
@@ -1047,7 +1047,8 @@ const file_proto_executor_proto_rawDesc = "" +
 	"\x0fGetOrderRequest\x12\x18\n" +
 	"\achainId\x18\x01 \x01(\x03R\achainId\x12,\n" +
 	"\x11settlementAddress\x18\x02 \x01(\tR\x11settlementAddress\x12\x1c\n" +
-	"\torderHash\x18\x03 \x01(\tR\torderHash\"\xe0\t\n" +
+	"\torderHash\x18\x03 \x01(\tR\torderHash\"\x8a\n" +
+	"\n" +
 	"\x10GetOrderResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x04R\x02id\x12\x18\n" +
 	"\achainId\x18\x02 \x01(\x03R\achainId\x12,\n" +
@@ -1074,20 +1075,18 @@ const file_proto_executor_proto_rawDesc = "" +
 	"\x10lastCheckedBlock\x18\x14 \x01(\x03R\x10lastCheckedBlock\x12\x1c\n" +
 	"\tcreatedAt\x18\x15 \x01(\tR\tcreatedAt\x12\x1c\n" +
 	"\tupdatedAt\x18\x16 \x01(\tR\tupdatedAt\x120\n" +
-	"\x06notice\x18\x17 \x01(\v2\x18.executor.ResponseNoticeR\x06notice\x12 \n" +
-	"\vexecutorFee\x18\x18 \x01(\tR\vexecutorFee\x12*\n" +
+	"\x06notice\x18\x17 \x01(\v2\x18.executor.ResponseNoticeR\x06notice\x122\n" +
+	"\x14maxExecutorRewardBps\x18\x18 \x01(\tR\x14maxExecutorRewardBps\x12*\n" +
 	"\x10executorFeeToken\x18\x19 \x01(\tR\x10executorFeeToken\x12*\n" +
 	"\x10estimatedGasUsed\x18\x1a \x01(\tR\x10estimatedGasUsed\x12(\n" +
-	"\x0fgasPriceAtQuote\x18\x1b \x01(\tR\x0fgasPriceAtQuote\x12\x1e\n" +
-	"\n" +
-	"feeQuoteAt\x18\x1c \x01(\tR\n" +
-	"feeQuoteAt\x128\n" +
-	"\x17lastRequiredExecutorFee\x18\x1d \x01(\tR\x17lastRequiredExecutorFee\x12&\n" +
-	"\x0elastFeeCheckAt\x18\x1e \x01(\tR\x0elastFeeCheckAt\x122\n" +
+	"\x0fgasPriceAtQuote\x18\x1b \x01(\tR\x0fgasPriceAtQuote\x12$\n" +
+	"\rrewardQuoteAt\x18\x1c \x01(\tR\rrewardQuoteAt\x12>\n" +
+	"\x1alastRequiredExecutorReward\x18\x1d \x01(\tR\x1alastRequiredExecutorReward\x12,\n" +
+	"\x11lastRewardCheckAt\x18\x1e \x01(\tR\x11lastRewardCheckAt\x122\n" +
 	"\x14lastExecutionCheckAt\x18\x1f \x01(\tR\x14lastExecutionCheckAt\x12(\n" +
 	"\x0flastBlockReason\x18  \x01(\tR\x0flastBlockReason\x12*\n" +
-	"\x10settledAmountOut\x18! \x01(\tR\x10settledAmountOut\x12.\n" +
-	"\x12settledExecutorFee\x18\" \x01(\tR\x12settledExecutorFee2\xe8\x01\n" +
+	"\x10settledAmountOut\x18! \x01(\tR\x10settledAmountOut\x124\n" +
+	"\x15settledExecutorReward\x18\" \x01(\tR\x15settledExecutorReward2\xe8\x01\n" +
 	"\bExecutor\x12J\n" +
 	"\vCreateOrder\x12\x1c.executor.CreateOrderRequest\x1a\x1d.executor.CreateOrderResponse\x12M\n" +
 	"\fCancelOrders\x12\x1d.executor.CancelOrdersRequest\x1a\x1e.executor.CancelOrdersResponse\x12A\n" +

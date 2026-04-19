@@ -60,7 +60,7 @@ func (s *stubRPCChainClient) ValidateCancelTransaction(context.Context, string, 
 	return nil, fmt.Errorf("unexpected call")
 }
 
-// 覆盖坏签名在建单阶段即被拦截，避免进入后续执行循环持续消耗执行器 gas。
+// 瑕嗙洊鍧忕鍚嶅湪寤哄崟闃舵鍗宠鎷︽埅锛岄伩鍏嶈繘鍏ュ悗缁墽琛屽惊鐜寔缁秷鑰楁墽琛屽櫒 gas銆
 func TestCreateOrderRejectsInvalidSignature(t *testing.T) {
 	db := openCreateOrderTestDB(t)
 	logic := NewCreateOrderLogic(context.Background(), &svc.ServiceContext{
@@ -75,16 +75,16 @@ func TestCreateOrderRejectsInvalidSignature(t *testing.T) {
 	require.NoError(t, err)
 
 	order := chain.SettlementOrder{
-		Maker:           maker,
-		InputToken:      common.HexToAddress("0x0000000000000000000000000000000000000001"),
-		OutputToken:     common.HexToAddress("0x0000000000000000000000000000000000000002"),
-		AmountIn:        big.NewInt(1000),
-		MinAmountOut:    big.NewInt(900),
-		ExecutorFee:     big.NewInt(10),
-		TriggerPriceX18: big.NewInt(1_000_000_000_000_000_000),
-		Expiry:          big.NewInt(time.Now().Add(time.Hour).Unix()),
-		Nonce:           big.NewInt(7),
-		Recipient:       maker,
+		Maker:                maker,
+		InputToken:           common.HexToAddress("0x0000000000000000000000000000000000000001"),
+		OutputToken:          common.HexToAddress("0x0000000000000000000000000000000000000002"),
+		AmountIn:             big.NewInt(1000),
+		MinAmountOut:         big.NewInt(900),
+		MaxExecutorRewardBps: big.NewInt(10),
+		TriggerPriceX18:      big.NewInt(1_000_000_000_000_000_000),
+		Expiry:               big.NewInt(time.Now().Add(time.Hour).Unix()),
+		Nonce:                big.NewInt(7),
+		Recipient:            maker,
 	}
 
 	digest, err := chain.ComputeOrderDigest(31337, "0x1111111111111111111111111111111111111111", order)
@@ -97,21 +97,21 @@ func TestCreateOrderRejectsInvalidSignature(t *testing.T) {
 	require.NoError(t, err)
 
 	resp, err := logic.CreateOrder(&executor.CreateOrderRequest{
-		ChainId:           31337,
-		SettlementAddress: "0x1111111111111111111111111111111111111111",
-		OrderHash:         orderHash.Hex(),
-		Maker:             maker.Hex(),
-		InputToken:        order.InputToken.Hex(),
-		OutputToken:       order.OutputToken.Hex(),
-		AmountIn:          order.AmountIn.String(),
-		MinAmountOut:      order.MinAmountOut.String(),
-		ExecutorFee:       order.ExecutorFee.String(),
-		TriggerPriceX18:   order.TriggerPriceX18.String(),
-		Expiry:            order.Expiry.String(),
-		Nonce:             order.Nonce.String(),
-		Recipient:         maker.Hex(),
-		Signature:         hexutil.Encode(invalidSignature),
-		Source:            "test",
+		ChainId:              31337,
+		SettlementAddress:    "0x1111111111111111111111111111111111111111",
+		OrderHash:            orderHash.Hex(),
+		Maker:                maker.Hex(),
+		InputToken:           order.InputToken.Hex(),
+		OutputToken:          order.OutputToken.Hex(),
+		AmountIn:             order.AmountIn.String(),
+		MinAmountOut:         order.MinAmountOut.String(),
+		MaxExecutorRewardBps: order.MaxExecutorRewardBps.String(),
+		TriggerPriceX18:      order.TriggerPriceX18.String(),
+		Expiry:               order.Expiry.String(),
+		Nonce:                order.Nonce.String(),
+		Recipient:            maker.Hex(),
+		Signature:            hexutil.Encode(invalidSignature),
+		Source:               "test",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
@@ -124,7 +124,7 @@ func TestCreateOrderRejectsInvalidSignature(t *testing.T) {
 	require.Equal(t, int64(0), count)
 }
 
-// 覆盖 orderHash 与订单字段不一致的脏请求，避免错误订单被写入数据库。
+// 瑕嗙洊 orderHash 涓庤鍗曞瓧娈典笉涓€鑷寸殑鑴忚姹傦紝閬垮厤閿欒璁㈠崟琚啓鍏ユ暟鎹簱銆
 func TestCreateOrderRejectsOrderHashMismatch(t *testing.T) {
 	db := openCreateOrderTestDB(t)
 	logic := NewCreateOrderLogic(context.Background(), &svc.ServiceContext{
@@ -137,16 +137,16 @@ func TestCreateOrderRejectsOrderHashMismatch(t *testing.T) {
 	maker := crypto.PubkeyToAddress(privateKey.PublicKey)
 
 	order := chain.SettlementOrder{
-		Maker:           maker,
-		InputToken:      common.HexToAddress("0x0000000000000000000000000000000000000001"),
-		OutputToken:     common.HexToAddress("0x0000000000000000000000000000000000000002"),
-		AmountIn:        big.NewInt(1000),
-		MinAmountOut:    big.NewInt(900),
-		ExecutorFee:     big.NewInt(10),
-		TriggerPriceX18: big.NewInt(1_000_000_000_000_000_000),
-		Expiry:          big.NewInt(time.Now().Add(time.Hour).Unix()),
-		Nonce:           big.NewInt(8),
-		Recipient:       maker,
+		Maker:                maker,
+		InputToken:           common.HexToAddress("0x0000000000000000000000000000000000000001"),
+		OutputToken:          common.HexToAddress("0x0000000000000000000000000000000000000002"),
+		AmountIn:             big.NewInt(1000),
+		MinAmountOut:         big.NewInt(900),
+		MaxExecutorRewardBps: big.NewInt(10),
+		TriggerPriceX18:      big.NewInt(1_000_000_000_000_000_000),
+		Expiry:               big.NewInt(time.Now().Add(time.Hour).Unix()),
+		Nonce:                big.NewInt(8),
+		Recipient:            maker,
 	}
 
 	digest, err := chain.ComputeOrderDigest(31337, "0x1111111111111111111111111111111111111111", order)
@@ -156,21 +156,21 @@ func TestCreateOrderRejectsOrderHashMismatch(t *testing.T) {
 	signature[64] += 27
 
 	resp, err := logic.CreateOrder(&executor.CreateOrderRequest{
-		ChainId:           31337,
-		SettlementAddress: "0x1111111111111111111111111111111111111111",
-		OrderHash:         "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		Maker:             maker.Hex(),
-		InputToken:        order.InputToken.Hex(),
-		OutputToken:       order.OutputToken.Hex(),
-		AmountIn:          order.AmountIn.String(),
-		MinAmountOut:      order.MinAmountOut.String(),
-		ExecutorFee:       order.ExecutorFee.String(),
-		TriggerPriceX18:   order.TriggerPriceX18.String(),
-		Expiry:            order.Expiry.String(),
-		Nonce:             order.Nonce.String(),
-		Recipient:         maker.Hex(),
-		Signature:         hexutil.Encode(signature),
-		Source:            "test",
+		ChainId:              31337,
+		SettlementAddress:    "0x1111111111111111111111111111111111111111",
+		OrderHash:            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Maker:                maker.Hex(),
+		InputToken:           order.InputToken.Hex(),
+		OutputToken:          order.OutputToken.Hex(),
+		AmountIn:             order.AmountIn.String(),
+		MinAmountOut:         order.MinAmountOut.String(),
+		MaxExecutorRewardBps: order.MaxExecutorRewardBps.String(),
+		TriggerPriceX18:      order.TriggerPriceX18.String(),
+		Expiry:               order.Expiry.String(),
+		Nonce:                order.Nonce.String(),
+		Recipient:            maker.Hex(),
+		Signature:            hexutil.Encode(signature),
+		Source:               "test",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
@@ -179,7 +179,7 @@ func TestCreateOrderRejectsOrderHashMismatch(t *testing.T) {
 	require.False(t, resp.Notice.Success)
 }
 
-// 这里覆盖链客户端缺失时必须拒绝收单，避免订单被写入半可用系统。
+// 瑕嗙洊閾惧鎴风缂哄け鏃朵粛鍙惤搴擄紝骞惰褰曢摼涓婃鏌ラ檷绾у師鍥犮€
 func TestCreateOrderStoresOrderWhenChainClientUnavailable(t *testing.T) {
 	db := openCreateOrderTestDB(t)
 	logic := NewCreateOrderLogic(context.Background(), &svc.ServiceContext{
@@ -192,16 +192,16 @@ func TestCreateOrderStoresOrderWhenChainClientUnavailable(t *testing.T) {
 	maker := crypto.PubkeyToAddress(privateKey.PublicKey)
 
 	order := chain.SettlementOrder{
-		Maker:           maker,
-		InputToken:      common.HexToAddress("0x0000000000000000000000000000000000000001"),
-		OutputToken:     common.HexToAddress("0x0000000000000000000000000000000000000002"),
-		AmountIn:        big.NewInt(1000),
-		MinAmountOut:    big.NewInt(900),
-		ExecutorFee:     big.NewInt(10),
-		TriggerPriceX18: big.NewInt(1_000_000_000_000_000_000),
-		Expiry:          big.NewInt(time.Now().Add(time.Hour).Unix()),
-		Nonce:           big.NewInt(9),
-		Recipient:       maker,
+		Maker:                maker,
+		InputToken:           common.HexToAddress("0x0000000000000000000000000000000000000001"),
+		OutputToken:          common.HexToAddress("0x0000000000000000000000000000000000000002"),
+		AmountIn:             big.NewInt(1000),
+		MinAmountOut:         big.NewInt(900),
+		MaxExecutorRewardBps: big.NewInt(10),
+		TriggerPriceX18:      big.NewInt(1_000_000_000_000_000_000),
+		Expiry:               big.NewInt(time.Now().Add(time.Hour).Unix()),
+		Nonce:                big.NewInt(9),
+		Recipient:            maker,
 	}
 
 	digest, err := chain.ComputeOrderDigest(31337, "0x1111111111111111111111111111111111111111", order)
@@ -214,21 +214,21 @@ func TestCreateOrderStoresOrderWhenChainClientUnavailable(t *testing.T) {
 	require.NoError(t, err)
 
 	resp, err := logic.CreateOrder(&executor.CreateOrderRequest{
-		ChainId:           31337,
-		SettlementAddress: "0x1111111111111111111111111111111111111111",
-		OrderHash:         orderHash.Hex(),
-		Maker:             maker.Hex(),
-		InputToken:        order.InputToken.Hex(),
-		OutputToken:       order.OutputToken.Hex(),
-		AmountIn:          order.AmountIn.String(),
-		MinAmountOut:      order.MinAmountOut.String(),
-		ExecutorFee:       order.ExecutorFee.String(),
-		TriggerPriceX18:   order.TriggerPriceX18.String(),
-		Expiry:            order.Expiry.String(),
-		Nonce:             order.Nonce.String(),
-		Recipient:         maker.Hex(),
-		Signature:         hexutil.Encode(signature),
-		Source:            "test",
+		ChainId:              31337,
+		SettlementAddress:    "0x1111111111111111111111111111111111111111",
+		OrderHash:            orderHash.Hex(),
+		Maker:                maker.Hex(),
+		InputToken:           order.InputToken.Hex(),
+		OutputToken:          order.OutputToken.Hex(),
+		AmountIn:             order.AmountIn.String(),
+		MinAmountOut:         order.MinAmountOut.String(),
+		MaxExecutorRewardBps: order.MaxExecutorRewardBps.String(),
+		TriggerPriceX18:      order.TriggerPriceX18.String(),
+		Expiry:               order.Expiry.String(),
+		Nonce:                order.Nonce.String(),
+		Recipient:            maker.Hex(),
+		Signature:            hexutil.Encode(signature),
+		Source:               "test",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
@@ -248,7 +248,7 @@ func TestCreateOrderStoresOrderWhenChainClientUnavailable(t *testing.T) {
 	require.Equal(t, "chain_client_unavailable_at_create", stored.LastBlockReason)
 }
 
-func TestCreateOrderReturnsExecutorFeeBlockedNoticeWhenSignedFeeTooLowAtCreate(t *testing.T) {
+func TestCreateOrderStoresInitialFeeQuoteWithoutBlockingAtCreate(t *testing.T) {
 	db := openCreateOrderTestDB(t)
 	settlementAddress := "0x1111111111111111111111111111111111111111"
 	logic := NewCreateOrderLogic(context.Background(), &svc.ServiceContext{
@@ -273,16 +273,16 @@ func TestCreateOrderReturnsExecutorFeeBlockedNoticeWhenSignedFeeTooLowAtCreate(t
 	maker := crypto.PubkeyToAddress(privateKey.PublicKey)
 
 	order := chain.SettlementOrder{
-		Maker:           maker,
-		InputToken:      common.HexToAddress("0x0000000000000000000000000000000000000001"),
-		OutputToken:     common.HexToAddress("0x0000000000000000000000000000000000000002"),
-		AmountIn:        big.NewInt(1000),
-		MinAmountOut:    big.NewInt(900),
-		ExecutorFee:     big.NewInt(10),
-		TriggerPriceX18: big.NewInt(1_000_000_000_000_000_000),
-		Expiry:          big.NewInt(time.Now().Add(time.Hour).Unix()),
-		Nonce:           big.NewInt(11),
-		Recipient:       maker,
+		Maker:                maker,
+		InputToken:           common.HexToAddress("0x0000000000000000000000000000000000000001"),
+		OutputToken:          common.HexToAddress("0x0000000000000000000000000000000000000002"),
+		AmountIn:             big.NewInt(1000),
+		MinAmountOut:         big.NewInt(900),
+		MaxExecutorRewardBps: big.NewInt(10),
+		TriggerPriceX18:      big.NewInt(1_000_000_000_000_000_000),
+		Expiry:               big.NewInt(time.Now().Add(time.Hour).Unix()),
+		Nonce:                big.NewInt(11),
+		Recipient:            maker,
 	}
 
 	digest, err := chain.ComputeOrderDigest(31337, settlementAddress, order)
@@ -295,27 +295,27 @@ func TestCreateOrderReturnsExecutorFeeBlockedNoticeWhenSignedFeeTooLowAtCreate(t
 	require.NoError(t, err)
 
 	resp, err := logic.CreateOrder(&executor.CreateOrderRequest{
-		ChainId:           31337,
-		SettlementAddress: settlementAddress,
-		OrderHash:         orderHash.Hex(),
-		Maker:             maker.Hex(),
-		InputToken:        order.InputToken.Hex(),
-		OutputToken:       order.OutputToken.Hex(),
-		AmountIn:          order.AmountIn.String(),
-		MinAmountOut:      order.MinAmountOut.String(),
-		ExecutorFee:       order.ExecutorFee.String(),
-		TriggerPriceX18:   order.TriggerPriceX18.String(),
-		Expiry:            order.Expiry.String(),
-		Nonce:             order.Nonce.String(),
-		Recipient:         maker.Hex(),
-		Signature:         hexutil.Encode(signature),
-		Source:            "test",
+		ChainId:              31337,
+		SettlementAddress:    settlementAddress,
+		OrderHash:            orderHash.Hex(),
+		Maker:                maker.Hex(),
+		InputToken:           order.InputToken.Hex(),
+		OutputToken:          order.OutputToken.Hex(),
+		AmountIn:             order.AmountIn.String(),
+		MinAmountOut:         order.MinAmountOut.String(),
+		MaxExecutorRewardBps: order.MaxExecutorRewardBps.String(),
+		TriggerPriceX18:      order.TriggerPriceX18.String(),
+		Expiry:               order.Expiry.String(),
+		Nonce:                order.Nonce.String(),
+		Recipient:            maker.Hex(),
+		Signature:            hexutil.Encode(signature),
+		Source:               "test",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	require.NotNil(t, resp.Order)
 	require.NotNil(t, resp.Notice)
-	require.Equal(t, "ORDER_BLOCKED_BY_EXECUTOR_FEE", resp.Notice.Code)
+	require.Equal(t, "ORDER_CREATED", resp.Notice.Code)
 	require.True(t, resp.Notice.Success)
 
 	stored, queryErr := repo.NewOrderRepository(db).GetByOrderHash(
@@ -325,7 +325,7 @@ func TestCreateOrderReturnsExecutorFeeBlockedNoticeWhenSignedFeeTooLowAtCreate(t
 		orderHash.Hex(),
 	)
 	require.NoError(t, queryErr)
-	require.Equal(t, "signed_executor_fee_below_initial_required", stored.LastBlockReason)
+	require.Equal(t, "", stored.LastBlockReason)
 	require.Equal(t, "20", stored.LastRequiredExecutorFee)
 }
 
@@ -347,16 +347,16 @@ func TestCreateOrderRejectsExpiredByChainTime(t *testing.T) {
 	maker := crypto.PubkeyToAddress(privateKey.PublicKey)
 
 	order := chain.SettlementOrder{
-		Maker:           maker,
-		InputToken:      common.HexToAddress("0x0000000000000000000000000000000000000001"),
-		OutputToken:     common.HexToAddress("0x0000000000000000000000000000000000000002"),
-		AmountIn:        big.NewInt(1000),
-		MinAmountOut:    big.NewInt(900),
-		ExecutorFee:     big.NewInt(10),
-		TriggerPriceX18: big.NewInt(1_000_000_000_000_000_000),
-		Expiry:          big.NewInt(3500),
-		Nonce:           big.NewInt(10),
-		Recipient:       maker,
+		Maker:                maker,
+		InputToken:           common.HexToAddress("0x0000000000000000000000000000000000000001"),
+		OutputToken:          common.HexToAddress("0x0000000000000000000000000000000000000002"),
+		AmountIn:             big.NewInt(1000),
+		MinAmountOut:         big.NewInt(900),
+		MaxExecutorRewardBps: big.NewInt(10),
+		TriggerPriceX18:      big.NewInt(1_000_000_000_000_000_000),
+		Expiry:               big.NewInt(3500),
+		Nonce:                big.NewInt(10),
+		Recipient:            maker,
 	}
 
 	digest, err := chain.ComputeOrderDigest(31337, settlementAddress, order)
@@ -369,21 +369,21 @@ func TestCreateOrderRejectsExpiredByChainTime(t *testing.T) {
 	require.NoError(t, err)
 
 	resp, err := logic.CreateOrder(&executor.CreateOrderRequest{
-		ChainId:           31337,
-		SettlementAddress: settlementAddress,
-		OrderHash:         orderHash.Hex(),
-		Maker:             maker.Hex(),
-		InputToken:        order.InputToken.Hex(),
-		OutputToken:       order.OutputToken.Hex(),
-		AmountIn:          order.AmountIn.String(),
-		MinAmountOut:      order.MinAmountOut.String(),
-		ExecutorFee:       order.ExecutorFee.String(),
-		TriggerPriceX18:   order.TriggerPriceX18.String(),
-		Expiry:            order.Expiry.String(),
-		Nonce:             order.Nonce.String(),
-		Recipient:         maker.Hex(),
-		Signature:         hexutil.Encode(signature),
-		Source:            "test",
+		ChainId:              31337,
+		SettlementAddress:    settlementAddress,
+		OrderHash:            orderHash.Hex(),
+		Maker:                maker.Hex(),
+		InputToken:           order.InputToken.Hex(),
+		OutputToken:          order.OutputToken.Hex(),
+		AmountIn:             order.AmountIn.String(),
+		MinAmountOut:         order.MinAmountOut.String(),
+		MaxExecutorRewardBps: order.MaxExecutorRewardBps.String(),
+		TriggerPriceX18:      order.TriggerPriceX18.String(),
+		Expiry:               order.Expiry.String(),
+		Nonce:                order.Nonce.String(),
+		Recipient:            maker.Hex(),
+		Signature:            hexutil.Encode(signature),
+		Source:               "test",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
@@ -396,7 +396,36 @@ func TestCreateOrderRejectsExpiredByChainTime(t *testing.T) {
 	require.Equal(t, int64(0), count)
 }
 
-// 创建订单阶段不再根据历史取消事件回填状态，旧事件应被忽略，新单仍保持 open。
+func TestCreateOrderRejectsMaxExecutorRewardBpsAboveLimit(t *testing.T) {
+	db := openCreateOrderTestDB(t)
+	logic := NewCreateOrderLogic(context.Background(), &svc.ServiceContext{
+		Config: config.Config{},
+		DB:     db,
+	})
+
+	resp, err := logic.CreateOrder(&executor.CreateOrderRequest{
+		ChainId:              31337,
+		SettlementAddress:    "0x1111111111111111111111111111111111111111",
+		OrderHash:            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Maker:                "0x2222222222222222222222222222222222222222",
+		InputToken:           "0x3333333333333333333333333333333333333333",
+		OutputToken:          "0x4444444444444444444444444444444444444444",
+		AmountIn:             "100",
+		MinAmountOut:         "90",
+		MaxExecutorRewardBps: "10001",
+		TriggerPriceX18:      "1000000000000000000",
+		Expiry:               "9999999999",
+		Nonce:                "1",
+		Recipient:            "0x5555555555555555555555555555555555555555",
+		Signature:            "0x" + strings.Repeat("11", 65),
+		Source:               "test",
+	})
+	require.Error(t, err)
+	require.Nil(t, resp)
+	require.Contains(t, err.Error(), "maxExecutorRewardBps must be less than or equal to 10000")
+}
+
+// 鍒涘缓璁㈠崟闃舵涓嶅啀鏍规嵁鍘嗗彶鍙栨秷浜嬩欢鍥炲～鐘舵€侊紝鏃т簨浠跺簲琚拷鐣ワ紝鏂板崟浠嶄繚鎸?open銆
 func TestCreateOrderIgnoresHistoricalCancelledEventWhenCreatingOrder(t *testing.T) {
 	db := openCreateOrderTestDB(t)
 	settlementAddress := "0x1111111111111111111111111111111111111111"
@@ -406,16 +435,16 @@ func TestCreateOrderIgnoresHistoricalCancelledEventWhenCreatingOrder(t *testing.
 	maker := crypto.PubkeyToAddress(privateKey.PublicKey)
 
 	order := chain.SettlementOrder{
-		Maker:           maker,
-		InputToken:      common.HexToAddress("0x0000000000000000000000000000000000000001"),
-		OutputToken:     common.HexToAddress("0x0000000000000000000000000000000000000002"),
-		AmountIn:        big.NewInt(1000),
-		MinAmountOut:    big.NewInt(900),
-		ExecutorFee:     big.NewInt(10),
-		TriggerPriceX18: big.NewInt(1_000_000_000_000_000_000),
-		Expiry:          big.NewInt(time.Now().Add(time.Hour).Unix()),
-		Nonce:           big.NewInt(17),
-		Recipient:       maker,
+		Maker:                maker,
+		InputToken:           common.HexToAddress("0x0000000000000000000000000000000000000001"),
+		OutputToken:          common.HexToAddress("0x0000000000000000000000000000000000000002"),
+		AmountIn:             big.NewInt(1000),
+		MinAmountOut:         big.NewInt(900),
+		MaxExecutorRewardBps: big.NewInt(10),
+		TriggerPriceX18:      big.NewInt(1_000_000_000_000_000_000),
+		Expiry:               big.NewInt(time.Now().Add(time.Hour).Unix()),
+		Nonce:                big.NewInt(17),
+		Recipient:            maker,
 	}
 
 	digest, err := chain.ComputeOrderDigest(31337, settlementAddress, order)
@@ -433,21 +462,21 @@ func TestCreateOrderIgnoresHistoricalCancelledEventWhenCreatingOrder(t *testing.
 	})
 
 	resp, err := logic.CreateOrder(&executor.CreateOrderRequest{
-		ChainId:           31337,
-		SettlementAddress: settlementAddress,
-		OrderHash:         orderHash.Hex(),
-		Maker:             maker.Hex(),
-		InputToken:        order.InputToken.Hex(),
-		OutputToken:       order.OutputToken.Hex(),
-		AmountIn:          order.AmountIn.String(),
-		MinAmountOut:      order.MinAmountOut.String(),
-		ExecutorFee:       order.ExecutorFee.String(),
-		TriggerPriceX18:   order.TriggerPriceX18.String(),
-		Expiry:            order.Expiry.String(),
-		Nonce:             order.Nonce.String(),
-		Recipient:         maker.Hex(),
-		Signature:         hexutil.Encode(signature),
-		Source:            "test",
+		ChainId:              31337,
+		SettlementAddress:    settlementAddress,
+		OrderHash:            orderHash.Hex(),
+		Maker:                maker.Hex(),
+		InputToken:           order.InputToken.Hex(),
+		OutputToken:          order.OutputToken.Hex(),
+		AmountIn:             order.AmountIn.String(),
+		MinAmountOut:         order.MinAmountOut.String(),
+		MaxExecutorRewardBps: order.MaxExecutorRewardBps.String(),
+		TriggerPriceX18:      order.TriggerPriceX18.String(),
+		Expiry:               order.Expiry.String(),
+		Nonce:                order.Nonce.String(),
+		Recipient:            maker.Hex(),
+		Signature:            hexutil.Encode(signature),
+		Source:               "test",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
@@ -457,7 +486,7 @@ func TestCreateOrderIgnoresHistoricalCancelledEventWhenCreatingOrder(t *testing.
 	require.Equal(t, "", resp.Order.CancelledTxHash)
 }
 
-// 创建订单阶段不再根据历史成交事件回填状态，旧事件应被忽略，新单仍保持 open。
+// 鍒涘缓璁㈠崟闃舵涓嶅啀鏍规嵁鍘嗗彶鎴愪氦浜嬩欢鍥炲～鐘舵€侊紝鏃т簨浠跺簲琚拷鐣ワ紝鏂板崟浠嶄繚鎸?open銆
 func TestCreateOrderIgnoresHistoricalExecutedEventWhenCreatingOrder(t *testing.T) {
 	db := openCreateOrderTestDB(t)
 	settlementAddress := "0x1111111111111111111111111111111111111111"
@@ -467,16 +496,16 @@ func TestCreateOrderIgnoresHistoricalExecutedEventWhenCreatingOrder(t *testing.T
 	maker := crypto.PubkeyToAddress(privateKey.PublicKey)
 
 	order := chain.SettlementOrder{
-		Maker:           maker,
-		InputToken:      common.HexToAddress("0x0000000000000000000000000000000000000001"),
-		OutputToken:     common.HexToAddress("0x0000000000000000000000000000000000000002"),
-		AmountIn:        big.NewInt(1000),
-		MinAmountOut:    big.NewInt(900),
-		ExecutorFee:     big.NewInt(10),
-		TriggerPriceX18: big.NewInt(1_000_000_000_000_000_000),
-		Expiry:          big.NewInt(time.Now().Add(time.Hour).Unix()),
-		Nonce:           big.NewInt(18),
-		Recipient:       maker,
+		Maker:                maker,
+		InputToken:           common.HexToAddress("0x0000000000000000000000000000000000000001"),
+		OutputToken:          common.HexToAddress("0x0000000000000000000000000000000000000002"),
+		AmountIn:             big.NewInt(1000),
+		MinAmountOut:         big.NewInt(900),
+		MaxExecutorRewardBps: big.NewInt(10),
+		TriggerPriceX18:      big.NewInt(1_000_000_000_000_000_000),
+		Expiry:               big.NewInt(time.Now().Add(time.Hour).Unix()),
+		Nonce:                big.NewInt(18),
+		Recipient:            maker,
 	}
 
 	digest, err := chain.ComputeOrderDigest(31337, settlementAddress, order)
@@ -494,21 +523,21 @@ func TestCreateOrderIgnoresHistoricalExecutedEventWhenCreatingOrder(t *testing.T
 	})
 
 	resp, err := logic.CreateOrder(&executor.CreateOrderRequest{
-		ChainId:           31337,
-		SettlementAddress: settlementAddress,
-		OrderHash:         orderHash.Hex(),
-		Maker:             maker.Hex(),
-		InputToken:        order.InputToken.Hex(),
-		OutputToken:       order.OutputToken.Hex(),
-		AmountIn:          order.AmountIn.String(),
-		MinAmountOut:      order.MinAmountOut.String(),
-		ExecutorFee:       order.ExecutorFee.String(),
-		TriggerPriceX18:   order.TriggerPriceX18.String(),
-		Expiry:            order.Expiry.String(),
-		Nonce:             order.Nonce.String(),
-		Recipient:         maker.Hex(),
-		Signature:         hexutil.Encode(signature),
-		Source:            "test",
+		ChainId:              31337,
+		SettlementAddress:    settlementAddress,
+		OrderHash:            orderHash.Hex(),
+		Maker:                maker.Hex(),
+		InputToken:           order.InputToken.Hex(),
+		OutputToken:          order.OutputToken.Hex(),
+		AmountIn:             order.AmountIn.String(),
+		MinAmountOut:         order.MinAmountOut.String(),
+		MaxExecutorRewardBps: order.MaxExecutorRewardBps.String(),
+		TriggerPriceX18:      order.TriggerPriceX18.String(),
+		Expiry:               order.Expiry.String(),
+		Nonce:                order.Nonce.String(),
+		Recipient:            maker.Hex(),
+		Signature:            hexutil.Encode(signature),
+		Source:               "test",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
@@ -517,7 +546,7 @@ func TestCreateOrderIgnoresHistoricalExecutedEventWhenCreatingOrder(t *testing.T
 	require.Equal(t, "", resp.Order.StatusReason)
 	require.Equal(t, "", resp.Order.ExecutedTxHash)
 	require.Equal(t, "0", resp.Order.SettledAmountOut)
-	require.Equal(t, "0", resp.Order.SettledExecutorFee)
+	require.Equal(t, "0", resp.Order.SettledExecutorReward)
 }
 
 func openCreateOrderTestDB(t *testing.T) *gorm.DB {

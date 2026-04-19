@@ -29,16 +29,16 @@ type SettlementConfig struct {
 
 // SettlementOrder 对应 FluxSignedOrderSettlement 合约里的 SignedOrder tuple。
 type SettlementOrder struct {
-	Maker           common.Address
-	InputToken      common.Address
-	OutputToken     common.Address
-	AmountIn        *big.Int
-	MinAmountOut    *big.Int
-	ExecutorFee     *big.Int
-	TriggerPriceX18 *big.Int
-	Expiry          *big.Int
-	Nonce           *big.Int
-	Recipient       common.Address
+	Maker                common.Address
+	InputToken           common.Address
+	OutputToken          common.Address
+	AmountIn             *big.Int
+	MinAmountOut         *big.Int
+	MaxExecutorRewardBps *big.Int
+	TriggerPriceX18      *big.Int
+	Expiry               *big.Int
+	Nonce                *big.Int
+	Recipient            common.Address
 }
 
 // SettlementClient 统一封装签名限价单结算合约的链上读写能力。
@@ -256,12 +256,28 @@ func (c *SettlementClient) CanExecuteOrder(ctx context.Context, order Settlement
 	return result.Executable, result.Reason, nil
 }
 
+// GetOrderQuote 读取当前 AMM 报价，用于执行器在链下计算本次可分配的 surplus 奖励。
+func (c *SettlementClient) GetOrderQuote(ctx context.Context, order SettlementOrder) (*big.Int, error) {
+	if c == nil {
+		return nil, fmt.Errorf("settlement client is nil")
+	}
+
+	amountOut, err := c.contract.GetOrderQuote(&bind.CallOpts{
+		Context: ctx,
+	}, toBindingOrder(order))
+	if err != nil {
+		return nil, fmt.Errorf("call getOrderQuote: %w", err)
+	}
+	return amountOut, nil
+}
+
 // ExecuteOrder 发送 executeOrder 交易，由结算合约再次验价后完成最终链上结算。
 func (c *SettlementClient) ExecuteOrder(
 	ctx context.Context,
 	order SettlementOrder,
 	signature []byte,
 	deadline *big.Int,
+	executorReward *big.Int,
 ) (string, error) {
 	if c == nil {
 		return "", fmt.Errorf("settlement client is nil")
@@ -271,6 +287,9 @@ func (c *SettlementClient) ExecuteOrder(
 	}
 	if deadline == nil || deadline.Sign() <= 0 {
 		return "", fmt.Errorf("deadline must be a positive integer")
+	}
+	if executorReward == nil || executorReward.Sign() < 0 {
+		return "", fmt.Errorf("executor reward must be a non-negative integer")
 	}
 
 	txOpts, err := c.newTransactOpts(ctx)
@@ -283,6 +302,7 @@ func (c *SettlementClient) ExecuteOrder(
 		toBindingOrder(order),
 		signature,
 		deadline,
+		executorReward,
 	)
 	if err != nil {
 		return "", fmt.Errorf("send executeOrder transaction: %w", err)
@@ -669,16 +689,16 @@ func (c *SettlementClient) readERC20Uint256(ctx context.Context, token common.Ad
 // toBindingOrder 把业务侧订单结构转换成 abigen 生成 binding 所需的 tuple 结构。
 func toBindingOrder(order SettlementOrder) IFluxSignedOrderSettlementSignedOrder {
 	return IFluxSignedOrderSettlementSignedOrder{
-		Maker:           order.Maker,
-		InputToken:      order.InputToken,
-		OutputToken:     order.OutputToken,
-		AmountIn:        order.AmountIn,
-		MinAmountOut:    order.MinAmountOut,
-		ExecutorFee:     order.ExecutorFee,
-		TriggerPriceX18: order.TriggerPriceX18,
-		Expiry:          order.Expiry,
-		Nonce:           order.Nonce,
-		Recipient:       order.Recipient,
+		Maker:                order.Maker,
+		InputToken:           order.InputToken,
+		OutputToken:          order.OutputToken,
+		AmountIn:             order.AmountIn,
+		MinAmountOut:         order.MinAmountOut,
+		MaxExecutorRewardBps: order.MaxExecutorRewardBps,
+		TriggerPriceX18:      order.TriggerPriceX18,
+		Expiry:               order.Expiry,
+		Nonce:                order.Nonce,
+		Recipient:            order.Recipient,
 	}
 }
 

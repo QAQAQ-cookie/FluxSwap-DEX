@@ -6,6 +6,7 @@ const contractNames = [
   'FluxMultiPoolManager',
   'FluxPoolFactory',
   'FluxRevenueDistributor',
+  'FluxSignedOrderSettlement',
   'FluxSwapERC20',
   'FluxSwapFactory',
   'FluxSwapLPStakingPool',

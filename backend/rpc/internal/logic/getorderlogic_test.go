@@ -1,4 +1,4 @@
-﻿package logic
+package logic
 
 import (
 	"context"
@@ -469,7 +469,7 @@ func TestGetOrderReturnsLiquidityBlockedNotice(t *testing.T) {
 	require.Equal(t, "ORDER_BLOCKED_BY_LIQUIDITY", resp.Notice.Code)
 }
 
-func TestGetOrderReturnsInitialExecutorFeeBlockedNotice(t *testing.T) {
+func TestGetOrderReturnsInitialExecutorRewardBlockedNotice(t *testing.T) {
 	db := openGetOrderTestDB(t)
 	order := createGetOrderFixture(t, db, &domain.Order{
 		ChainID:           31337,
@@ -490,7 +490,7 @@ func TestGetOrderReturnsInitialExecutorFeeBlockedNotice(t *testing.T) {
 		Source:            "test",
 		Status:            "open",
 		StatusReason:      "",
-		LastBlockReason:   "signed_executor_fee_below_initial_required",
+		LastBlockReason:   "max_executor_reward_10_below_required_20",
 	})
 
 	logic := NewGetOrderLogic(context.Background(), &svc.ServiceContext{
@@ -506,7 +506,7 @@ func TestGetOrderReturnsInitialExecutorFeeBlockedNotice(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	require.NotNil(t, resp.Notice)
-	require.Equal(t, "ORDER_BLOCKED_BY_EXECUTOR_FEE", resp.Notice.Code)
+	require.Equal(t, "ORDER_BLOCKED_BY_EXECUTOR_REWARD", resp.Notice.Code)
 }
 
 func TestGetOrderReturnsCreatePhaseChainClientDegradedNotice(t *testing.T) {
@@ -608,4 +608,3 @@ func createGetOrderFixture(t *testing.T, db *gorm.DB, order *domain.Order) *doma
 	require.NoError(t, repo.NewOrderRepository(db).Create(context.Background(), order))
 	return order
 }
-

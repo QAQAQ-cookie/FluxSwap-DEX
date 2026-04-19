@@ -14,7 +14,7 @@ import (
 
 var (
 	orderTypeHash = crypto.Keccak256Hash([]byte(
-		"SignedOrder(address maker,address inputToken,address outputToken,uint256 amountIn,uint256 minAmountOut,uint256 executorFee,uint256 triggerPriceX18,uint256 expiry,uint256 nonce,address recipient)",
+		"SignedOrder(address maker,address inputToken,address outputToken,uint256 amountIn,uint256 minAmountOut,uint256 maxExecutorRewardBps,uint256 triggerPriceX18,uint256 expiry,uint256 nonce,address recipient)",
 	))
 	invalidateNoncesTypeHash = crypto.Keccak256Hash([]byte(
 		"InvalidateNonces(address maker,bytes32 noncesHash,uint256 deadline)",
@@ -45,7 +45,7 @@ func ComputeOrderHash(order SettlementOrder) (common.Hash, error) {
 		{Name: "outputToken", Type: addressType},
 		{Name: "amountIn", Type: uint256Type},
 		{Name: "minAmountOut", Type: uint256Type},
-		{Name: "executorFee", Type: uint256Type},
+		{Name: "maxExecutorRewardBps", Type: uint256Type},
 		{Name: "triggerPriceX18", Type: uint256Type},
 		{Name: "expiry", Type: uint256Type},
 		{Name: "nonce", Type: uint256Type},
@@ -59,7 +59,7 @@ func ComputeOrderHash(order SettlementOrder) (common.Hash, error) {
 		order.OutputToken,
 		zeroBigInt(order.AmountIn),
 		zeroBigInt(order.MinAmountOut),
-		zeroBigInt(order.ExecutorFee),
+		zeroBigInt(order.MaxExecutorRewardBps),
 		zeroBigInt(order.TriggerPriceX18),
 		zeroBigInt(order.Expiry),
 		zeroBigInt(order.Nonce),

@@ -44,9 +44,12 @@ type stubSettlementClient struct {
 	suggestFee        *big.Int
 	suggestGasPrice   *big.Int
 	suggestFeeErr     error
+	orderQuote        *big.Int
+	orderQuoteErr     error
 	executeTxHash     string
 	executeErr        error
 	executeDeadline   *big.Int
+	executeReward     *big.Int
 }
 
 func (s *stubSettlementClient) Close() {}
@@ -88,11 +91,26 @@ func (s *stubSettlementClient) SuggestExecutorFee(context.Context, common.Addres
 	return s.suggestFee, s.suggestGasPrice, nil
 }
 
-func (s *stubSettlementClient) ExecuteOrder(_ context.Context, _ chain.SettlementOrder, _ []byte, deadline *big.Int) (string, error) {
+func (s *stubSettlementClient) GetOrderQuote(context.Context, chain.SettlementOrder) (*big.Int, error) {
+	if s.orderQuoteErr != nil {
+		return nil, s.orderQuoteErr
+	}
+	if s.orderQuote == nil {
+		return big.NewInt(1000), nil
+	}
+	return new(big.Int).Set(s.orderQuote), nil
+}
+
+func (s *stubSettlementClient) ExecuteOrder(_ context.Context, _ chain.SettlementOrder, _ []byte, deadline *big.Int, executorReward *big.Int) (string, error) {
 	if deadline != nil {
 		s.executeDeadline = new(big.Int).Set(deadline)
 	} else {
 		s.executeDeadline = nil
+	}
+	if executorReward != nil {
+		s.executeReward = new(big.Int).Set(executorReward)
+	} else {
+		s.executeReward = nil
 	}
 	if s.executeErr != nil {
 		return "", s.executeErr
@@ -777,7 +795,7 @@ func TestEvaluateOrderClaimsOpenOrderBeforeSubmitting(t *testing.T) {
 		OutputToken:       "0x4444444444444444444444444444444444444444",
 		AmountIn:          "100",
 		MinAmountOut:      "90",
-		ExecutorFee:       "20",
+		ExecutorFee:       "10000",
 		ExecutorFeeToken:  "0x4444444444444444444444444444444444444444",
 		TriggerPriceX18:   "1",
 		Expiry:            "9999999999",
@@ -807,6 +825,7 @@ func TestEvaluateOrderClaimsOpenOrderBeforeSubmitting(t *testing.T) {
 				HasEnoughBalance:   true,
 				HasEnoughAllowance: true,
 			},
+			orderQuote:      big.NewInt(100),
 			suggestFee:      big.NewInt(10),
 			suggestGasPrice: big.NewInt(1),
 			executeTxHash:   "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -834,7 +853,7 @@ func TestEvaluateOrderPersistsFeeQuoteMetadataAndUsesChainTimeDeadline(t *testin
 		OutputToken:       "0x4444444444444444444444444444444444444444",
 		AmountIn:          "100",
 		MinAmountOut:      "90",
-		ExecutorFee:       "20",
+		ExecutorFee:       "10000",
 		ExecutorFeeToken:  "0x4444444444444444444444444444444444444444",
 		TriggerPriceX18:   "1",
 		Expiry:            "500",
@@ -860,6 +879,7 @@ func TestEvaluateOrderPersistsFeeQuoteMetadataAndUsesChainTimeDeadline(t *testin
 			HasEnoughBalance:   true,
 			HasEnoughAllowance: true,
 		},
+		orderQuote:      big.NewInt(100),
 		suggestFee:      big.NewInt(10),
 		suggestGasPrice: big.NewInt(7),
 		executeTxHash:   "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

@@ -65,9 +65,10 @@ contract FluxSignedOrderSettlementInvariantHandler is Test {
 
         uint256 slackBps = bound(uint256(rawSlackBps), 0, 500);
         uint256 minAmountOut = (quoted[1] * (10_000 - slackBps)) / 10_000;
-        uint256 executorFee = (quoted[1] * bound(uint256(rawFeeBps), 0, 100)) / 10_000;
+        uint256 maxExecutorRewardBps = bound(uint256(rawFeeBps), 0, 10_000);
+        uint256 executorReward = ((quoted[1] - minAmountOut) * maxExecutorRewardBps) / 10_000;
         uint256 triggerPriceX18 = ((quoted[1] * 1e18) / amountIn) * 99 / 100;
-        if (minAmountOut == 0 || triggerPriceX18 == 0 || minAmountOut + executorFee > quoted[1]) {
+        if (minAmountOut == 0 || triggerPriceX18 == 0) {
             return;
         }
 
@@ -81,7 +82,7 @@ contract FluxSignedOrderSettlementInvariantHandler is Test {
             outputToken: address(tokenB),
             amountIn: amountIn,
             minAmountOut: minAmountOut,
-            executorFee: executorFee,
+            maxExecutorRewardBps: maxExecutorRewardBps,
             triggerPriceX18: triggerPriceX18,
             expiry: _deadline(),
             nonce: nextNonce,
@@ -90,7 +91,7 @@ contract FluxSignedOrderSettlementInvariantHandler is Test {
 
         bytes memory signature = _signOrder(order);
         vm.prank(executor);
-        settlement.executeOrder(order, signature, _deadline());
+        settlement.executeOrder(order, signature, _deadline(), executorReward);
 
         executedCount += 1;
         nextNonce += 1;
@@ -126,7 +127,7 @@ contract FluxSignedOrderSettlementInvariantHandler is Test {
             outputToken: address(tokenB),
             amountIn: 1e18,
             minAmountOut: 1,
-            executorFee: 0,
+            maxExecutorRewardBps: 0,
             triggerPriceX18: 1,
             expiry: _deadline(),
             nonce: nonce,
@@ -139,14 +140,14 @@ contract FluxSignedOrderSettlementInvariantHandler is Test {
         bytes32 structHash = keccak256(
             abi.encode(
                 keccak256(
-                    "SignedOrder(address maker,address inputToken,address outputToken,uint256 amountIn,uint256 minAmountOut,uint256 executorFee,uint256 triggerPriceX18,uint256 expiry,uint256 nonce,address recipient)"
+                    "SignedOrder(address maker,address inputToken,address outputToken,uint256 amountIn,uint256 minAmountOut,uint256 maxExecutorRewardBps,uint256 triggerPriceX18,uint256 expiry,uint256 nonce,address recipient)"
                 ),
                 order.maker,
                 order.inputToken,
                 order.outputToken,
                 order.amountIn,
                 order.minAmountOut,
-                order.executorFee,
+                order.maxExecutorRewardBps,
                 order.triggerPriceX18,
                 order.expiry,
                 order.nonce,

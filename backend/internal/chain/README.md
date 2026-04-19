@@ -1,25 +1,37 @@
 # Chain Modules
 
-当前目录放的是执行器真正使用的链上交互代码。
+这个目录保存后端真实使用的链上交互代码。
 
-包含内容：
+## 文件说明
 
 - `flux_signed_order_settlement.go`
-  - 使用 `abigen` 基于 `FluxSignedOrderSettlement` 最新 artifact 重新生成
+  - 使用 `abigen` 基于 `FluxSignedOrderSettlement` 最新编译产物生成。
+  - 当前 `SignedOrder` 使用 `maxExecutorRewardBps`，表示执行器最多可拿走 surplus 的比例上限。
 - `flux_swap_router.go`
-  - 使用 `abigen` 基于 `FluxSwapRouter` 最新 artifact 生成
+  - 使用 `abigen` 基于 `FluxSwapRouter` 最新编译产物生成。
+  - 用于查询兑换路径、估算执行成本对应的输出代币数量。
 - `settlement_client.go`
-  - 执行器使用的结算客户端
-  - 结算合约和 Router 都直接依赖 `abigen` 重新生成后的 Go binding
-  - 当前负责：
-    - 查询订单是否可执行 `CanExecuteOrder`
-    - 估算输出币口径的执行费 `SuggestExecutorFee`
-    - 提交订单执行交易 `ExecuteOrder`
-    - 校验用户已提交的批量 nonce 撤单交易 `ValidateCancelTransaction`
-    - 查询交易回执 `ReceiptStatus`
+  - 封装执行器使用的链上读写能力。
+  - 负责读取订单报价、检查订单是否可执行、估算执行成本、提交执行交易、校验撤单交易和读取回执。
+- `order_signature.go`
+  - 按合约一致的 EIP-712 规则计算订单哈希和签名摘要。
 
-说明：
+## 当前限价单费用模型
 
-- 当前 [flux_signed_order_settlement.go](/D:/work/CodeLab/FluxSwap-DEX/backend/internal/chain/flux_signed_order_settlement.go) 已按最新合约重新生成，`SignedOrder` 已包含 `executorFee`。
-- 当前 [flux_swap_router.go](/D:/work/CodeLab/FluxSwap-DEX/backend/internal/chain/flux_swap_router.go) 也已生成，执行费估算使用的是它的 `GetAmountsIn`。
-- 之后如果合约结构继续变动，建议先重新编译 `contracts`，再重新生成这份 binding。
+- 用户签名里不再写固定 `executorFee` 数量。
+- 用户签名里写 `maxExecutorRewardBps`，表示执行器最多可拿走成交 surplus 的多少比例。
+- 执行器执行前会读取当前报价，计算：
+  - `surplus = amountOut - minAmountOut`
+  - `maxExecutorReward = surplus * maxExecutorRewardBps / 10000`
+- 执行器再根据当前 gas 成本估算本次需要的 `executorReward`。
+- 链上 `executeOrder` 会再次校验 `executorReward <= maxExecutorReward`，并保证用户至少收到 `minAmountOut`。
+
+## 生成命令
+
+在 `backend` 目录下执行：
+
+```bash
+go run github.com/ethereum/go-ethereum/cmd/abigen --abi <FluxSignedOrderSettlement.abi.json> --pkg chain --type FluxSignedOrderSettlement --out internal/chain/flux_signed_order_settlement.go
+```
+
+`<FluxSignedOrderSettlement.abi.json>` 可以从 `contracts/artifacts/contracts/FluxSignedOrderSettlement.sol/FluxSignedOrderSettlement.json` 中提取 `abi` 字段生成。

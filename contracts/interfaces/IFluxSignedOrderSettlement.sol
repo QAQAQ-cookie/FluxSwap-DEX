@@ -8,7 +8,7 @@ interface IFluxSignedOrderSettlement {
         address outputToken;
         uint256 amountIn;
         uint256 minAmountOut;
-        uint256 executorFee;
+        uint256 maxExecutorRewardBps;
         uint256 triggerPriceX18;
         uint256 expiry;
         uint256 nonce;
@@ -46,7 +46,8 @@ interface IFluxSignedOrderSettlement {
     function executeOrder(
         SignedOrder calldata order,
         bytes calldata signature,
-        uint256 deadline
+        uint256 deadline,
+        uint256 executorReward
     ) external returns (uint256 amountOut);
 
     function invalidateNoncesBySig(

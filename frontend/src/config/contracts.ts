@@ -27,6 +27,7 @@ const sepoliaContracts = compactAddressMap({
   FluxMultiPoolManager: process.env.NEXT_PUBLIC_SEPOLIA_FLUX_MULTI_POOL_MANAGER as OptionalAddress,
   FluxPoolFactory: process.env.NEXT_PUBLIC_SEPOLIA_FLUX_POOL_FACTORY as OptionalAddress,
   FluxRevenueDistributor: process.env.NEXT_PUBLIC_SEPOLIA_FLUX_REVENUE_DISTRIBUTOR as OptionalAddress,
+  FluxSignedOrderSettlement: process.env.NEXT_PUBLIC_SEPOLIA_FLUX_SIGNED_ORDER_SETTLEMENT as OptionalAddress,
   FluxSwapFactory: process.env.NEXT_PUBLIC_SEPOLIA_FLUX_SWAP_FACTORY as OptionalAddress,
   FluxSwapRouter: process.env.NEXT_PUBLIC_SEPOLIA_FLUX_SWAP_ROUTER as OptionalAddress,
   FluxSwapTreasury: process.env.NEXT_PUBLIC_SEPOLIA_FLUX_SWAP_TREASURY as OptionalAddress,

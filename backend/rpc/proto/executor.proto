@@ -33,7 +33,7 @@ message CreateOrderRequest {
   string recipient = 12;
   string signature = 13;
   string source = 14;
-  string executorFee = 15;
+  string maxExecutorRewardBps = 15;
 }
 
 message CreateOrderResponse {
@@ -104,15 +104,15 @@ message GetOrderResponse {
   string createdAt = 21;
   string updatedAt = 22;
   ResponseNotice notice = 23;
-  string executorFee = 24;
+  string maxExecutorRewardBps = 24;
   string executorFeeToken = 25;
   string estimatedGasUsed = 26;
   string gasPriceAtQuote = 27;
-  string feeQuoteAt = 28;
-  string lastRequiredExecutorFee = 29;
-  string lastFeeCheckAt = 30;
+  string rewardQuoteAt = 28;
+  string lastRequiredExecutorReward = 29;
+  string lastRewardCheckAt = 30;
   string lastExecutionCheckAt = 31;
   string lastBlockReason = 32;
   string settledAmountOut = 33;
-  string settledExecutorFee = 34;
+  string settledExecutorReward = 34;
 }

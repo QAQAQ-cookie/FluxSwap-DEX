@@ -8,6 +8,7 @@ import {
   useBalance,
   useChainId,
   usePublicClient,
+  useSignTypedData,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from 'wagmi';
@@ -19,7 +20,7 @@ import {
   ShieldOff,
   Wallet,
 } from 'lucide-react';
-import { maxUint256, zeroAddress } from 'viem';
+import { maxUint256, parseAbi, zeroAddress } from 'viem';
 
 import { ActionButton } from '@/components/ActionButton';
 import {
@@ -51,10 +52,18 @@ import {
   parsePercentToBps,
 } from '@/lib/amounts';
 import { formatErrorMessage } from '@/lib/errors';
+import {
+  LIMIT_ORDER_DEFAULT_MAX_EXECUTOR_REWARD_BPS,
+  buildSignedLimitOrderTypedData,
+  calculateTriggerPriceX18,
+  hashSignedLimitOrder,
+  toSignedLimitOrderTokenAddress,
+  type SignedLimitOrder,
+} from '@/lib/limitOrders';
 import { watchWalletAsset } from '@/lib/wallet';
 
 type SelectorTarget = 'pay' | 'receive' | null;
-type ActionKind = 'approve' | 'revoke' | 'swap' | null;
+type ActionKind = 'approve' | 'revoke' | 'swap' | 'limit' | 'wrap' | null;
 type InputMode = 'pay' | 'receive';
 type TradeMode = 'swap' | 'limit';
 type LimitPricePreset = 'market' | '0.1' | '0.5' | '1.0' | 'custom';
@@ -148,7 +157,8 @@ export function SwapWidget({
       : 'Contracts are not configured for this network. Please switch to a supported network.',
     quotePending: isZh ? '等待链上报价中' : 'Waiting for live quote',
     quoteError: isZh ? '当前无法获取链上报价' : 'Unable to fetch a live quote right now',
-    allowance: isZh ? 'Router 授权额度' : 'Router Allowance',
+    routerAllowance: isZh ? 'Router 授权额度' : 'Router Allowance',
+    settlementAllowance: isZh ? '限价结算授权额度' : 'Settlement Allowance',
     poolState: isZh ? '池子状态' : 'Pool Status',
     approveButton: (symbol: string) => (isZh ? `授权 ${symbol}` : `Approve ${symbol}`),
     approving: isZh ? '授权中...' : 'Approving...',
@@ -164,10 +174,19 @@ export function SwapWidget({
     limitVsMarket: isZh ? '较市场价' : 'Vs market',
     marketPrice: isZh ? '市场' : 'Market',
     limitOrderNotice: isZh
-      ? '当前前端已提供限价单录入界面，但合约侧还没有原生限价撮合能力。你可以先填写目标价格与数量，后续接入执行器后即可自动触发。'
-      : 'The limit order form is available in the frontend, but native on-chain matching is not wired yet. You can prepare target price and amount now, and plug in an executor later.',
+      ? '限价单会签名一组链上可验证参数。执行器实际成交时，只能从超过最低购买数量的 surplus 中领取不超过比例上限的奖励。'
+      : 'Limit orders sign chain-verifiable parameters. At execution, the executor can only take a capped share of surplus above the minimum buy amount.',
     limitOrderSubmit: isZh ? '创建限价单' : 'Create Limit Order',
-    limitOrderPending: isZh ? '限价单功能接入中' : 'Limit order support is in progress',
+    limitOrderPending: isZh ? '请在钱包中确认限价单签名' : 'Confirm the limit order signature in your wallet',
+    limitOrderSigned: isZh ? '限价单已签名' : 'Limit order signed',
+    limitOrderStored: isZh ? '限价单已创建，等待执行器扫描' : 'Limit order created and waiting for executor scan',
+    limitWrapNotice: isZh
+      ? '限价单卖出原生币时，会先将对应数量包装为 WETH，再继续授权与下单。'
+      : 'Selling the native token with a limit order wraps that amount into WETH before approval and order creation.',
+    wrapForLimit: isZh ? '先包装为 WETH' : 'Wrap to WETH first',
+    wrapping: isZh ? '包装中...' : 'Wrapping...',
+    wrapSubmitted: isZh ? 'WETH 包装已提交' : 'WETH wrap submitted',
+    wrapConfirmed: isZh ? 'WETH 包装已确认' : 'WETH wrap confirmed',
     liveQuote: isZh ? '链上报价已就绪' : 'Live quote ready',
     txSubmitted: isZh ? '交易已提交' : 'Transaction submitted',
     txConfirmed: isZh ? '交易已确认' : 'Transaction confirmed',
@@ -190,6 +209,7 @@ export function SwapWidget({
   const { openConnectModal } = useConnectModal();
   const { writeContractAsync, data: hash, isPending: isWritePending } =
     useWriteContract();
+  const { signTypedDataAsync, isPending: isSigningLimitOrder } = useSignTypedData();
   const { isLoading: isConfirming, isSuccess: isConfirmed } =
     useWaitForTransactionReceipt({
       hash,
@@ -202,11 +222,13 @@ export function SwapWidget({
     useState<SwapTokenSymbol>('FLUX');
   const [payAmount, setPayAmount] = useState('');
   const [receiveAmountInput, setReceiveAmountInput] = useState('');
-  const [slippage, setSlippage] = useState('0.5');
+  const [slippage] = useState('0.5');
   const [deadline] = useState('20');
   const [openSelector, setOpenSelector] = useState<SelectorTarget>(null);
   const [txError, setTxError] = useState<string | null>(null);
   const [walletNotice, setWalletNotice] = useState<string | null>(null);
+  const [lastLimitOrderHash, setLastLimitOrderHash] = useState<string | null>(null);
+  const [lastLimitOrderSignature, setLastLimitOrderSignature] = useState<string | null>(null);
   const [lastAction, setLastAction] = useState<ActionKind>(null);
   const [inputMode, setInputMode] = useState<InputMode>('pay');
   const [tradeMode, setTradeMode] = useState<TradeMode>('swap');
@@ -221,6 +243,7 @@ export function SwapWidget({
   const deferredReceiveAmount = useDeferredValue(receiveAmountInput);
   const supportedChain = isFluxSupportedChain(effectiveChainId);
   const routerAddress = getContractAddress('FluxSwapRouter', effectiveChainId);
+  const settlementAddress = getContractAddress('FluxSignedOrderSettlement', effectiveChainId);
   const factoryAddress = getContractAddress('FluxSwapFactory', effectiveChainId);
   const fluxTokenAddress = getContractAddress('FluxToken', effectiveChainId);
   const wrappedNativeAddress = getContractAddress('MockWETH', effectiveChainId);
@@ -237,6 +260,31 @@ export function SwapWidget({
       : isZh
         ? '当前交易对'
         : 'the selected pair';
+  const approvalSpenderAddress = isLimitMode ? settlementAddress : routerAddress;
+  const approvalTokenAddress =
+    payToken?.kind === 'erc20'
+      ? payToken.address
+      : isLimitMode
+        ? wrappedNativeAddress
+        : undefined;
+  const approvalTokenSymbol =
+    payToken?.kind === 'erc20'
+      ? payToken.symbol
+      : isLimitMode
+        ? 'WETH'
+        : payToken?.symbol;
+  const approvalTokenDecimals =
+    payToken?.kind === 'erc20'
+      ? payToken.decimals
+      : isLimitMode
+        ? 18
+        : payToken?.decimals ?? 18;
+  const payBalanceTokenAddress =
+    payToken?.kind === 'erc20'
+      ? payToken.address
+      : isLimitMode
+        ? wrappedNativeAddress
+        : undefined;
 
   const parsedPayAmount = parseAmount(
     deferredPayAmount,
@@ -258,7 +306,7 @@ export function SwapWidget({
   const { data: payBalanceData } = useBalance({
     address,
     chainId,
-    token: payToken?.kind === 'erc20' ? payToken.address : undefined,
+    token: payBalanceTokenAddress,
     query: {
       enabled: mounted && isConnected && !!address && !!payToken,
       refetchInterval: 8000,
@@ -271,6 +319,14 @@ export function SwapWidget({
     token: receiveToken?.kind === 'erc20' ? receiveToken.address : undefined,
     query: {
       enabled: mounted && isConnected && !!address && !!receiveToken,
+      refetchInterval: 8000,
+    },
+  });
+  const { data: nativeBalanceData } = useBalance({
+    address,
+    chainId,
+    query: {
+      enabled: mounted && isConnected && !!address,
       refetchInterval: 8000,
     },
   });
@@ -388,17 +444,16 @@ export function SwapWidget({
   const quotedRateOut = rateQuoteAmounts?.[rateQuoteAmounts.length - 1];
 
   const { data: allowance } = useReadFluxTokenAllowance({
-    address: payToken?.kind === 'erc20' ? payToken.address ?? zeroAddress : zeroAddress,
+    address: approvalTokenAddress ?? zeroAddress,
     chainId,
-    args: [address ?? zeroAddress, routerAddress ?? zeroAddress],
+    args: [address ?? zeroAddress, approvalSpenderAddress ?? zeroAddress],
     query: {
       enabled:
         mounted &&
         isConnected &&
         !!address &&
-        !!routerAddress &&
-        !!payToken?.address &&
-        payToken?.kind === 'erc20',
+        !!approvalSpenderAddress &&
+        !!approvalTokenAddress,
       refetchInterval: 8000,
     },
   });
@@ -429,6 +484,10 @@ export function SwapWidget({
       : inputMode === 'receive'
       ? receiveAmountInput
       : formatBigIntAmount(quotedAmountOut, receiveToken?.decimals ?? 18);
+  const parsedLimitReceiveAmount =
+    isLimitMode && receiveToken
+      ? parseAmount(limitReceiveAmount, receiveToken.decimals)
+      : undefined;
   const payAmountDisplay =
     inputMode === 'pay'
       ? payAmount
@@ -486,15 +545,26 @@ export function SwapWidget({
       payBalanceData?.value !== undefined &&
       quotedAmountIn > payBalanceData.value,
   );
+  const needsWrapForLimit = Boolean(
+    isLimitMode &&
+      payToken?.kind === 'native' &&
+      parsedPayAmount &&
+      parsedPayAmount > BigInt(0) &&
+      wrappedNativeAddress &&
+      nativeBalanceData?.value !== undefined &&
+      payBalanceData?.value !== undefined &&
+      parsedPayAmount > payBalanceData.value &&
+      parsedPayAmount <= nativeBalanceData.value,
+  );
 
   const needsApproval = Boolean(
-    payToken?.kind === 'erc20' &&
+    approvalTokenAddress &&
       quotedAmountIn &&
       allowance !== undefined &&
       quotedAmountIn > allowance,
   );
   const canRevokeAllowance = Boolean(
-    payToken?.kind === 'erc20' &&
+    approvalTokenAddress &&
       allowance !== undefined &&
       allowance > BigInt(0),
   );
@@ -508,8 +578,9 @@ export function SwapWidget({
     quotedAmountIn !== undefined
       ? (quotedAmountIn * (BigInt(10000) + slippageBps)) / BigInt(10000)
       : undefined;
-  const isSubmitting = isWritePending || isConfirming;
+  const isSubmitting = isWritePending || isConfirming || isSigningLimitOrder;
   const localGasOverride = getLocalGasOverride(chainId);
+  const limitExpirySeconds = BigInt(Math.max(1, Number.parseInt(limitExpiry, 10) || 7) * 24 * 60 * 60);
 
   useEffect(() => {
     if (!isConfirmed || lastAction !== 'swap') {
@@ -568,9 +639,58 @@ export function SwapWidget({
         : copy.txSubmitted;
 
   if (isLimitMode) {
-    actionLabel = copy.limitOrderSubmit;
-    actionDisabled = true;
-    actionKind = null;
+    actionLabel = isSigningLimitOrder ? copy.limitOrderPending : copy.limitOrderSubmit;
+    actionKind = 'limit';
+
+    if (!mounted || !isConnected) {
+      actionLabel = t('swap.connectWallet');
+      actionKind = null;
+    } else if (!supportedChain || !settlementAddress || !factoryAddress) {
+      actionLabel = copy.unsupportedChain;
+      actionDisabled = true;
+      actionKind = null;
+    } else if (!payToken || !receiveToken) {
+      actionLabel = copy.unsupportedPair;
+      actionDisabled = true;
+      actionKind = null;
+    } else if (!payAmount || !limitRate) {
+      actionLabel = copy.enterAmount;
+      actionDisabled = true;
+      actionKind = null;
+    } else if (
+      !parsedPayAmount ||
+      parsedPayAmount <= BigInt(0) ||
+      !parsedLimitReceiveAmount ||
+      calculateTriggerPriceX18(
+        parsedPayAmount,
+        parsedLimitReceiveAmount,
+      ) <= BigInt(0)
+    ) {
+      actionLabel = copy.invalidAmount;
+      actionDisabled = true;
+      actionKind = null;
+    } else if (needsWrapForLimit) {
+      actionLabel = copy.wrapForLimit;
+      actionKind = 'wrap';
+    } else if (insufficientBalance) {
+      actionLabel = copy.insufficientBalance;
+      actionDisabled = true;
+      actionKind = null;
+    } else if (!normalizedPairAddress) {
+      actionLabel = noPoolLabel;
+      actionDisabled = true;
+      actionKind = null;
+    } else if (!hasLiquidity) {
+      actionLabel = noLiquidityLabel;
+      actionDisabled = true;
+      actionKind = null;
+    } else if (isSubmitting) {
+      actionDisabled = true;
+      actionKind = null;
+    } else if (needsApproval) {
+      actionLabel = copy.approveButton(approvalTokenSymbol ?? payToken.symbol);
+      actionKind = 'approve';
+    }
   } else if (!mounted || !isConnected) {
     actionLabel = t('swap.connectWallet');
     actionKind = null;
@@ -593,6 +713,9 @@ export function SwapWidget({
     actionLabel = copy.invalidAmount;
     actionDisabled = true;
     actionKind = null;
+  } else if (needsWrapForLimit) {
+    actionLabel = copy.wrapForLimit;
+    actionKind = 'wrap';
   } else if (insufficientBalance) {
     actionLabel = copy.insufficientBalance;
     actionDisabled = true;
@@ -618,11 +741,15 @@ export function SwapWidget({
     actionLabel =
       lastAction === 'approve' || lastAction === 'revoke'
         ? copy.approving
-        : copy.swapping;
+        : lastAction === 'wrap'
+          ? copy.wrapping
+        : lastAction === 'limit'
+          ? copy.limitOrderPending
+          : copy.swapping;
     actionDisabled = true;
     actionKind = null;
   } else if (needsApproval) {
-    actionLabel = copy.approveButton(payToken.symbol);
+    actionLabel = copy.approveButton(approvalTokenSymbol ?? payToken.symbol);
     actionKind = 'approve';
   }
 
@@ -651,13 +778,14 @@ export function SwapWidget({
         : 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300';
 
   const allowanceStatus =
-    payToken?.kind !== 'erc20'
+    !approvalTokenAddress
       ? copy.nativeAsset
       : allowance === undefined
         ? copy.loading
         : allowance === maxUint256
           ? (isZh ? '无限授权' : 'Unlimited')
-          : formatBigIntAmount(allowance, payToken.decimals, 4);
+          : formatBigIntAmount(allowance, approvalTokenDecimals, 4);
+  const allowanceLabel = isLimitMode ? copy.settlementAllowance : copy.routerAllowance;
 
   const handlePayAmountChange = (value: string) => {
     if (!DECIMAL_INPUT_REGEX.test(value)) {
@@ -674,6 +802,8 @@ export function SwapWidget({
 
     setInputMode('pay');
     setPayAmount(normalizedValue);
+    setLastLimitOrderHash(null);
+    setLastLimitOrderSignature(null);
     if (normalizedValue === '') {
       setReceiveAmountInput('');
     }
@@ -702,27 +832,11 @@ export function SwapWidget({
 
     setInputMode('receive');
     setReceiveAmountInput(normalizedValue);
+    setLastLimitOrderHash(null);
+    setLastLimitOrderSignature(null);
     if (normalizedValue === '') {
       setPayAmount('');
     }
-  };
-
-  const handleSlippageChange = (value: string) => {
-    if (value === '') {
-      setSlippage('');
-      return;
-    }
-
-    if (!DECIMAL_INPUT_REGEX.test(value)) {
-      return;
-    }
-
-    const numeric = Number(value);
-    if (!Number.isFinite(numeric) || numeric < 0) {
-      return;
-    }
-
-    setSlippage(value);
   };
 
   const adjustLimitPremium = (delta: number) => {
@@ -736,6 +850,8 @@ export function SwapWidget({
     const nextPremium = nextValue.toFixed(1);
     setLimitPremium(nextPremium);
     setLimitPricePreset('custom');
+    setLastLimitOrderHash(null);
+    setLastLimitOrderSignature(null);
 
     if (!limitMarketRateDisplay) {
       setLimitRate('');
@@ -754,6 +870,8 @@ export function SwapWidget({
 
   const applyLimitPreset = (preset: Exclude<LimitPricePreset, 'custom'>) => {
     setLimitPricePreset(preset);
+    setLastLimitOrderHash(null);
+    setLastLimitOrderSignature(null);
 
     if (!limitMarketRateDisplay) {
       setLimitPremium('0.0');
@@ -793,6 +911,8 @@ export function SwapWidget({
       setPayAmount('');
       setReceiveAmountInput('');
       setInputMode('pay');
+      setLastLimitOrderHash(null);
+      setLastLimitOrderSignature(null);
       return;
     }
 
@@ -803,6 +923,8 @@ export function SwapWidget({
     setPayAmount('');
     setReceiveAmountInput('');
     setInputMode('pay');
+    setLastLimitOrderHash(null);
+    setLastLimitOrderSignature(null);
   };
 
   const handleFlip = () => {
@@ -818,6 +940,8 @@ export function SwapWidget({
     setLimitRate('');
     setLimitPremium('0.0');
     setLimitPricePreset('market');
+    setLastLimitOrderHash(null);
+    setLastLimitOrderSignature(null);
   };
 
   const handleMaxPay = () => {
@@ -855,7 +979,7 @@ export function SwapWidget({
   };
 
   const handleRevokeAllowance = async () => {
-    if (!payToken?.address || !routerAddress) {
+    if (!approvalTokenAddress || !approvalSpenderAddress) {
       return;
     }
 
@@ -864,10 +988,10 @@ export function SwapWidget({
 
     try {
       await writeContractAsync({
-        address: payToken.address,
+        address: approvalTokenAddress,
         abi: fluxTokenAbi,
         functionName: 'approve',
-        args: [routerAddress, BigInt(0)],
+        args: [approvalSpenderAddress, BigInt(0)],
         chainId,
         ...localGasOverride,
       });
@@ -881,17 +1005,12 @@ export function SwapWidget({
   };
 
   const handleAction = async () => {
-    if (isLimitMode) {
-      setTxError(copy.limitOrderPending);
-      return;
-    }
-
     if (!mounted || !isConnected) {
       openConnectModal?.();
       return;
     }
 
-    if (!actionKind || !address || !payToken || !receiveToken || !routerAddress) {
+    if (!actionKind || !address || !payToken || !receiveToken) {
       return;
     }
 
@@ -899,23 +1018,119 @@ export function SwapWidget({
     setLastAction(actionKind);
 
     try {
-      if (actionKind === 'approve') {
-        if (!payToken.address) {
+      if (actionKind === 'wrap') {
+        if (!wrappedNativeAddress || !parsedPayAmount || parsedPayAmount <= BigInt(0)) {
           return;
         }
 
         await writeContractAsync({
-          address: payToken.address,
-          abi: fluxTokenAbi,
-          functionName: 'approve',
-          args: [routerAddress, maxUint256],
+          address: wrappedNativeAddress,
+          abi: parseAbi(['function deposit() payable']),
+          functionName: 'deposit',
+          value: parsedPayAmount,
           chainId,
           ...localGasOverride,
         });
         return;
       }
 
-      if (!quotedAmountIn || !quotedAmountOut) {
+      if (actionKind === 'approve') {
+        const spender = isLimitMode ? settlementAddress : routerAddress;
+        if (!approvalTokenAddress || !spender) {
+          return;
+        }
+
+        await writeContractAsync({
+          address: approvalTokenAddress,
+          abi: fluxTokenAbi,
+          functionName: 'approve',
+          args: [spender, maxUint256],
+          chainId,
+          ...localGasOverride,
+        });
+        return;
+      }
+
+      if (actionKind === 'limit') {
+        if (!settlementAddress || !publicClient || !parsedPayAmount || !receiveToken) {
+          return;
+        }
+
+        const minAmountOut = parsedLimitReceiveAmount;
+        if (!minAmountOut || minAmountOut <= BigInt(0)) {
+          setTxError(copy.invalidAmount);
+          return;
+        }
+
+        const latestBlock = await publicClient.getBlock();
+        const nonceSeed = new Uint32Array(2);
+        globalThis.crypto.getRandomValues(nonceSeed);
+        const nonce = (BigInt(nonceSeed[0]) << BigInt(32)) + BigInt(nonceSeed[1]);
+        const expiry = latestBlock.timestamp + limitExpirySeconds;
+        const order: SignedLimitOrder = {
+          maker: address,
+          inputToken:
+            payToken.kind === 'native'
+              ? (wrappedNativeAddress ?? zeroAddress)
+              : toSignedLimitOrderTokenAddress(payToken.address, false),
+          outputToken: toSignedLimitOrderTokenAddress(receiveToken.address, receiveToken.kind === 'native'),
+          amountIn: parsedPayAmount,
+          minAmountOut,
+          maxExecutorRewardBps: LIMIT_ORDER_DEFAULT_MAX_EXECUTOR_REWARD_BPS,
+          triggerPriceX18: calculateTriggerPriceX18(parsedPayAmount, minAmountOut),
+          expiry,
+          nonce,
+          recipient: address,
+        };
+
+        const typedData = buildSignedLimitOrderTypedData(chainId, settlementAddress, order);
+        const signature = await signTypedDataAsync(typedData);
+        const orderHash = hashSignedLimitOrder(chainId, settlementAddress, order);
+        const createOrderResponse = await fetch('/api/orders', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            chainId,
+            settlementAddress,
+            orderHash,
+            maker: order.maker,
+            inputToken: order.inputToken,
+            outputToken: order.outputToken,
+            amountIn: order.amountIn.toString(),
+            minAmountOut: order.minAmountOut.toString(),
+            maxExecutorRewardBps: order.maxExecutorRewardBps.toString(),
+            triggerPriceX18: order.triggerPriceX18.toString(),
+            expiry: order.expiry.toString(),
+            nonce: order.nonce.toString(),
+            recipient: order.recipient,
+            signature,
+            source: 'frontend',
+          }),
+        });
+        const createOrderResult = await createOrderResponse.json().catch(() => null) as {
+          notice?: {
+            success?: boolean;
+            message?: string;
+            hint?: string;
+          };
+        } | null;
+
+        if (!createOrderResponse.ok || createOrderResult?.notice?.success === false) {
+          const message = createOrderResult?.notice?.message ?? (isZh ? '限价单创建失败' : 'Create limit order failed');
+          const hint = createOrderResult?.notice?.hint;
+
+          throw new Error(hint ? `${message}: ${hint}` : message);
+        }
+
+        setLastLimitOrderHash(orderHash);
+        setLastLimitOrderSignature(signature);
+        setWalletNotice(createOrderResult?.notice?.message ?? copy.limitOrderStored);
+        return;
+      }
+
+      if (!routerAddress || !quotedAmountIn || !quotedAmountOut) {
         return;
       }
 
@@ -995,6 +1210,8 @@ export function SwapWidget({
           rejectedMessage:
             actionKind === 'approve'
               ? '你已取消本次授权'
+              : actionKind === 'limit'
+                ? '你已取消本次限价单签名'
               : '你已取消本次交易',
         }),
       );
@@ -1029,7 +1246,7 @@ export function SwapWidget({
         {pairStatusHint}
       </div>
       <div className="flex items-center justify-between text-gray-600 dark:text-gray-300">
-        <span>{copy.allowance}</span>
+        <span>{allowanceLabel}</span>
         <span className="font-medium">{allowanceStatus}</span>
       </div>
       <div className="flex flex-wrap gap-2">
@@ -1042,14 +1259,14 @@ export function SwapWidget({
           <span>{addFluxToWalletLabel}</span>
         </button>
 
-        {canRevokeAllowance && payToken?.kind === 'erc20' && (
+        {canRevokeAllowance && approvalTokenAddress && (
           <button
             onClick={handleRevokeAllowance}
             disabled={isSubmitting}
             className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-900/60 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/20"
           >
             <ShieldOff size={14} />
-            <span>{revokeApprovalLabel(payToken.symbol)}</span>
+            <span>{revokeApprovalLabel(approvalTokenSymbol ?? payToken?.symbol ?? '')}</span>
           </button>
         )}
       </div>
@@ -1072,6 +1289,18 @@ export function SwapWidget({
       {hash && (
         <div className="rounded-xl bg-blue-50 px-3 py-2 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">
           {statusLabel}: {hash.slice(0, 10)}...
+        </div>
+      )}
+      {lastLimitOrderHash && (
+        <div className="space-y-1 rounded-xl bg-emerald-50 px-3 py-2 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
+          <div>
+            {copy.limitOrderSigned}: {lastLimitOrderHash.slice(0, 10)}...
+          </div>
+          {lastLimitOrderSignature && (
+            <div className="text-xs opacity-80">
+              Signature: {lastLimitOrderSignature.slice(0, 10)}...
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1359,6 +1588,11 @@ export function SwapWidget({
               <div className="rounded-2xl bg-white/80 px-4 py-3 text-sm leading-6 text-gray-600 dark:bg-gray-900/60 dark:text-gray-300">
                 {copy.limitOrderNotice}
               </div>
+              {payToken?.kind === 'native' && (
+                <div className="rounded-2xl bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-700 dark:bg-amber-500/10 dark:text-amber-200">
+                  {copy.limitWrapNotice}
+                </div>
+              )}
             </div>
           )}
 

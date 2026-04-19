@@ -29,16 +29,16 @@ func TestDecodeHexSignatureNormalizesRecoveryID(t *testing.T) {
 
 func TestComputeOrderHashLoadsABITypesWithoutPanic(t *testing.T) {
 	order := SettlementOrder{
-		Maker:           common.HexToAddress("0x1111111111111111111111111111111111111111"),
-		InputToken:      common.HexToAddress("0x2222222222222222222222222222222222222222"),
-		OutputToken:     common.HexToAddress("0x3333333333333333333333333333333333333333"),
-		AmountIn:        big.NewInt(100),
-		MinAmountOut:    big.NewInt(90),
-		ExecutorFee:     big.NewInt(1),
-		TriggerPriceX18: big.NewInt(1),
-		Expiry:          big.NewInt(9999999999),
-		Nonce:           big.NewInt(7),
-		Recipient:       common.HexToAddress("0x4444444444444444444444444444444444444444"),
+		Maker:                common.HexToAddress("0x1111111111111111111111111111111111111111"),
+		InputToken:           common.HexToAddress("0x2222222222222222222222222222222222222222"),
+		OutputToken:          common.HexToAddress("0x3333333333333333333333333333333333333333"),
+		AmountIn:             big.NewInt(100),
+		MinAmountOut:         big.NewInt(90),
+		MaxExecutorRewardBps: big.NewInt(1),
+		TriggerPriceX18:      big.NewInt(1),
+		Expiry:               big.NewInt(9999999999),
+		Nonce:                big.NewInt(7),
+		Recipient:            common.HexToAddress("0x4444444444444444444444444444444444444444"),
 	}
 
 	hash, err := ComputeOrderHash(order)

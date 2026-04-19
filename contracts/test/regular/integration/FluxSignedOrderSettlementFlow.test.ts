@@ -1,14 +1,10 @@
-import { ethers } from "ethers";
+﻿import { ethers } from "ethers";
 import { network } from "hardhat";
 import { beforeEach, describe, it } from "node:test";
 import { ok, strictEqual } from "node:assert";
 
 /*
- * 集成目标：
- * 1. 验证签名订单结算合约与 Factory、Router、Pair 的真实联动。
- * 2. 验证链下签名订单在链上达到条件后，可以走真实 AMM 路径完成结算与执行费分配。
- * 3. 验证签名批量 nonce 失效、暂停与 restricted executor 策略在集成流转中生效。
- */
+ * 闆嗘垚鐩爣锛? * 1. 楠岃瘉绛惧悕璁㈠崟缁撶畻鍚堢害涓?Factory銆丷outer銆丳air 鐨勭湡瀹炶仈鍔ㄣ€? * 2. 楠岃瘉閾句笅绛惧悕璁㈠崟鍦ㄩ摼涓婅揪鍒版潯浠跺悗锛屽彲浠ヨ蛋鐪熷疄 AMM 璺緞瀹屾垚缁撶畻涓庢墽琛岃垂鍒嗛厤銆? * 3. 楠岃瘉绛惧悕鎵归噺 nonce 澶辨晥銆佹殏鍋滀笌 restricted executor 绛栫暐鍦ㄩ泦鎴愭祦杞腑鐢熸晥銆? */
 describe("FluxSignedOrderSettlementFlow", async function () {
   const hardhatNetwork = await network.connect();
   const { viem, networkHelpers } = hardhatNetwork;
@@ -33,7 +29,7 @@ describe("FluxSignedOrderSettlementFlow", async function () {
     outputToken: `0x${string}`;
     amountIn: bigint;
     minAmountOut: bigint;
-    executorFee: bigint;
+    maxExecutorRewardBps: bigint;
     triggerPriceX18: bigint;
     expiry: bigint;
     nonce: bigint;
@@ -77,7 +73,7 @@ describe("FluxSignedOrderSettlementFlow", async function () {
           { name: "outputToken", type: "address" },
           { name: "amountIn", type: "uint256" },
           { name: "minAmountOut", type: "uint256" },
-          { name: "executorFee", type: "uint256" },
+          { name: "maxExecutorRewardBps", type: "uint256" },
           { name: "triggerPriceX18", type: "uint256" },
           { name: "expiry", type: "uint256" },
           { name: "nonce", type: "uint256" },
@@ -87,6 +83,15 @@ describe("FluxSignedOrderSettlementFlow", async function () {
       primaryType: "SignedOrder",
       message: order,
     });
+  }
+
+  function calculateExecutorReward(order: SettlementOrder, amountOut: bigint) {
+    if (amountOut <= order.minAmountOut) {
+      return 0n;
+    }
+
+    const surplus = amountOut - order.minAmountOut;
+    return (surplus * order.maxExecutorRewardBps) / 10_000n;
   }
 
   async function signInvalidateNonces(
@@ -175,14 +180,14 @@ describe("FluxSignedOrderSettlementFlow", async function () {
     await seedTokenPair();
   });
 
-  it("should settle a signed token-to-token order through the live router and split executor fees", async function () {
+  it("should settle a signed token-to-token order through the live router and split surplus reward", async function () {
     const order = {
       maker: makerClient.account.address,
       inputToken: tokenA.address,
       outputToken: tokenB.address,
       amountIn: 250n * 10n ** 18n,
       minAmountOut: 480n * 10n ** 18n,
-      executorFee: 5n * 10n ** 18n,
+      maxExecutorRewardBps: 3_000n,
       triggerPriceX18: 19n * 10n ** 17n,
       expiry: await getDeadline(),
       nonce: 1n,
@@ -191,22 +196,23 @@ describe("FluxSignedOrderSettlementFlow", async function () {
 
     const signature = await signOrder(order);
     const quote = await settlement.read.getOrderQuote([order]);
+    const executorReward = calculateExecutorReward(order, quote);
     const reservesBefore = await pair.read.getReserves();
     const recipientBefore = await tokenB.read.balanceOf([recipientClient.account.address]);
     const executorBefore = await tokenB.read.balanceOf([executorClient.account.address]);
 
-    await settlement.write.executeOrder([order, signature, await getDeadline()], {
+    await settlement.write.executeOrder([order, signature, await getDeadline(), executorReward], {
       account: executorClient.account.address,
     });
 
     const reservesAfter = await pair.read.getReserves();
     strictEqual(
       await tokenB.read.balanceOf([recipientClient.account.address]),
-      recipientBefore + quote - order.executorFee,
+      recipientBefore + quote - executorReward,
     );
     strictEqual(
       await tokenB.read.balanceOf([executorClient.account.address]),
-      executorBefore + order.executorFee,
+      executorBefore + executorReward,
     );
     strictEqual(await tokenB.read.balanceOf([settlement.address]), 0n);
     ok(reservesBefore[0] !== reservesAfter[0] || reservesBefore[1] !== reservesAfter[1]);
@@ -224,7 +230,7 @@ describe("FluxSignedOrderSettlementFlow", async function () {
       outputToken: zeroAddress,
       amountIn: 200n * 10n ** 18n,
       minAmountOut: 3n * 10n ** 17n,
-      executorFee: 1n * 10n ** 15n,
+      maxExecutorRewardBps: 3_000n,
       triggerPriceX18: 15n * 10n ** 14n,
       expiry: await getDeadline(),
       nonce: 2n,
@@ -233,14 +239,15 @@ describe("FluxSignedOrderSettlementFlow", async function () {
 
     const signature = await signOrder(order);
     const quote = await settlement.read.getOrderQuote([order]);
+    const executorReward = calculateExecutorReward(order, quote);
     const balanceBefore = await publicClient.getBalance({ address: recipientClient.account.address });
 
-    await settlement.write.executeOrder([order, signature, await getDeadline()], {
+    await settlement.write.executeOrder([order, signature, await getDeadline(), executorReward], {
       account: executorClient.account.address,
       gas: 3_000_000n,
     });
 
-    ok((await publicClient.getBalance({ address: recipientClient.account.address })) >= balanceBefore + quote - order.executorFee);
+    ok((await publicClient.getBalance({ address: recipientClient.account.address })) >= balanceBefore + quote - executorReward);
     strictEqual(await publicClient.getBalance({ address: settlement.address }), 0n);
   });
 
@@ -267,7 +274,7 @@ describe("FluxSignedOrderSettlementFlow", async function () {
       outputToken: tokenA.address,
       amountIn: 1n * 10n ** 18n,
       minAmountOut: 400n * 10n ** 18n,
-      executorFee: 2n * 10n ** 18n,
+      maxExecutorRewardBps: 3_000n,
       triggerPriceX18: 400n * 10n ** 18n,
       expiry: await getDeadline(),
       nonce: 7n,
@@ -276,17 +283,18 @@ describe("FluxSignedOrderSettlementFlow", async function () {
 
     const signature = await signOrder(order);
     const quote = await settlement.read.getOrderQuote([order]);
+    const executorReward = calculateExecutorReward(order, quote);
     const reservesBefore = await wethPair.read.getReserves();
     const tokenBefore = await tokenA.read.balanceOf([recipientClient.account.address]);
     const executorBefore = await tokenA.read.balanceOf([executorClient.account.address]);
 
-    await settlement.write.executeOrder([order, signature, await getDeadline()], {
+    await settlement.write.executeOrder([order, signature, await getDeadline(), executorReward], {
       account: executorClient.account.address,
     });
 
     const reservesAfter = await wethPair.read.getReserves();
-    strictEqual(await tokenA.read.balanceOf([recipientClient.account.address]), tokenBefore + quote - order.executorFee);
-    strictEqual(await tokenA.read.balanceOf([executorClient.account.address]), executorBefore + order.executorFee);
+    strictEqual(await tokenA.read.balanceOf([recipientClient.account.address]), tokenBefore + quote - executorReward);
+    strictEqual(await tokenA.read.balanceOf([executorClient.account.address]), executorBefore + executorReward);
     strictEqual(await tokenA.read.balanceOf([settlement.address]), 0n);
     ok(reservesBefore[0] !== reservesAfter[0] || reservesBefore[1] !== reservesAfter[1]);
   });
@@ -298,7 +306,7 @@ describe("FluxSignedOrderSettlementFlow", async function () {
       outputToken: tokenB.address,
       amountIn: 100n * 10n ** 18n,
       minAmountOut: 190n * 10n ** 18n,
-      executorFee: 1n * 10n ** 18n,
+      maxExecutorRewardBps: 3_000n,
       triggerPriceX18: 19n * 10n ** 17n,
       expiry: await getDeadline(),
       nonce: 3n,
@@ -315,7 +323,7 @@ describe("FluxSignedOrderSettlementFlow", async function () {
     );
 
     await expectRevert(
-      settlement.write.executeOrder([order, signature, await getDeadline()], {
+      settlement.write.executeOrder([order, signature, await getDeadline(), 0n], {
         account: executorClient.account.address,
       }),
       "FluxSignedOrderSettlement: NONCE_INVALIDATED",
@@ -329,7 +337,7 @@ describe("FluxSignedOrderSettlementFlow", async function () {
       outputToken: tokenB.address,
       amountIn: 100n * 10n ** 18n,
       minAmountOut: 190n * 10n ** 18n,
-      executorFee: 1n * 10n ** 18n,
+      maxExecutorRewardBps: 3_000n,
       triggerPriceX18: 19n * 10n ** 17n,
       expiry: await getDeadline(),
       nonce: 31n,
@@ -342,7 +350,7 @@ describe("FluxSignedOrderSettlementFlow", async function () {
       outputToken: tokenB.address,
       amountIn: 120n * 10n ** 18n,
       minAmountOut: 220n * 10n ** 18n,
-      executorFee: 2n * 10n ** 18n,
+      maxExecutorRewardBps: 3_000n,
       triggerPriceX18: 18n * 10n ** 17n,
       expiry: await getDeadline(),
       nonce: 32n,
@@ -360,14 +368,14 @@ describe("FluxSignedOrderSettlementFlow", async function () {
     );
 
     await expectRevert(
-      settlement.write.executeOrder([orderA, signatureA, await getDeadline()], {
+      settlement.write.executeOrder([orderA, signatureA, await getDeadline(), 0n], {
         account: executorClient.account.address,
       }),
       "FluxSignedOrderSettlement: NONCE_INVALIDATED",
     );
 
     await expectRevert(
-      settlement.write.executeOrder([orderB, signatureB, await getDeadline()], {
+      settlement.write.executeOrder([orderB, signatureB, await getDeadline(), 0n], {
         account: executorClient.account.address,
       }),
       "FluxSignedOrderSettlement: NONCE_INVALIDATED",
@@ -381,7 +389,7 @@ describe("FluxSignedOrderSettlementFlow", async function () {
       outputToken: tokenB.address,
       amountIn: 100n * 10n ** 18n,
       minAmountOut: 190n * 10n ** 18n,
-      executorFee: 1n * 10n ** 18n,
+      maxExecutorRewardBps: 3_000n,
       triggerPriceX18: 19n * 10n ** 17n,
       expiry: await getDeadline(),
       nonce: 5n,
@@ -396,7 +404,7 @@ describe("FluxSignedOrderSettlementFlow", async function () {
     strictEqual(pausedReadiness[1], "PAUSED");
 
     await expectRevert(
-      settlement.write.executeOrder([order, signature, await getDeadline()], {
+      settlement.write.executeOrder([order, signature, await getDeadline(), 0n], {
         account: executorClient.account.address,
       }),
       "FluxSignedOrderSettlement: PAUSED",
@@ -411,13 +419,13 @@ describe("FluxSignedOrderSettlementFlow", async function () {
     });
 
     await expectRevert(
-      settlement.write.executeOrder([order, signature, await getDeadline()], {
+      settlement.write.executeOrder([order, signature, await getDeadline(), 0n], {
         account: strangerClient.account.address,
       }),
       "FluxSignedOrderSettlement: EXECUTOR_FORBIDDEN",
     );
 
-    await settlement.write.executeOrder([order, signature, await getDeadline()], {
+    await settlement.write.executeOrder([order, signature, await getDeadline(), 0n], {
       account: executorClient.account.address,
     });
   });
@@ -429,7 +437,7 @@ describe("FluxSignedOrderSettlementFlow", async function () {
       outputToken: tokenB.address,
       amountIn: 100n * 10n ** 18n,
       minAmountOut: 190n * 10n ** 18n,
-      executorFee: 1n * 10n ** 18n,
+      maxExecutorRewardBps: 3_000n,
       triggerPriceX18: 19n * 10n ** 17n,
       expiry: await getDeadline(3n),
       nonce: 6n,

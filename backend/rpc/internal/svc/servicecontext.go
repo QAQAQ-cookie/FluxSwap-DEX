@@ -1,4 +1,4 @@
-﻿package svc
+package svc
 
 import (
 	"context"
@@ -115,10 +115,10 @@ func NewServiceContext(c config.Config) (*ServiceContext, error) {
 			// 透传应用名，供逻辑层做最小元信息展示。
 			Name: c.App.Name,
 			// 透传运行环境，供逻辑层或日志层判断当前模式。
-			Env:  c.App.Env,
+			Env: c.App.Env,
 		},
 		// 保存数据库连接，供 repo 层复用。
-		DB:           db,
+		DB: db,
 		// 保存所有链客户端，供 logic 按链路由。
 		ChainClients: chainClients,
 	}, nil
@@ -170,4 +170,3 @@ func closeChainClients(chainClients map[string]ChainClient) {
 		}
 	}
 }
-
