@@ -153,6 +153,14 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
         invalidatedNonce[order.maker][order.nonce] = true;
 
         address settlementInputToken = _normalizeInputToken(order.inputToken);
+        require(
+            IERC20(settlementInputToken).balanceOf(order.maker) >= order.amountIn,
+            "FluxSignedOrderSettlement: INSUFFICIENT_BALANCE"
+        );
+        require(
+            IERC20(settlementInputToken).allowance(order.maker, address(this)) >= order.amountIn,
+            "FluxSignedOrderSettlement: INSUFFICIENT_ALLOWANCE"
+        );
         TransferHelper.safeTransferFrom(settlementInputToken, order.maker, address(this), order.amountIn);
         _approveIfNeeded(settlementInputToken, router, order.amountIn);
 
@@ -250,6 +258,12 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
         }
         if (!_pairExists(order.inputToken, order.outputToken)) {
             return (false, "PAIR_NOT_FOUND");
+        }
+        if (!_hasEnoughBalance(order.maker, order.inputToken, order.amountIn)) {
+            return (false, "INSUFFICIENT_BALANCE");
+        }
+        if (!_hasEnoughAllowance(order.maker, order.inputToken, order.amountIn)) {
+            return (false, "INSUFFICIENT_ALLOWANCE");
         }
 
         (bool quoteOk, uint256 amountOut) = _tryGetAmountOut(order.inputToken, order.outputToken, order.amountIn);
@@ -488,6 +502,30 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
      */
     function _isNonceUnavailable(address maker, uint256 nonce) private view returns (bool) {
         return invalidatedNonce[maker][nonce];
+    }
+
+    /**
+     * @notice 检查 maker 当前余额是否足以覆盖本次订单输入数量。
+     * @param maker 订单签名者地址。
+     * @param inputToken 订单输入资产地址。
+     * @param amountIn 本次订单输入数量。
+     * @return 若 maker 当前余额充足则返回 true。
+     */
+    function _hasEnoughBalance(address maker, address inputToken, uint256 amountIn) private view returns (bool) {
+        address settlementInputToken = _normalizeInputToken(inputToken);
+        return IERC20(settlementInputToken).balanceOf(maker) >= amountIn;
+    }
+
+    /**
+     * @notice 检查 maker 对 settlement 的授权是否足以覆盖本次订单输入数量。
+     * @param maker 订单签名者地址。
+     * @param inputToken 订单输入资产地址。
+     * @param amountIn 本次订单输入数量。
+     * @return 若 maker 当前授权充足则返回 true。
+     */
+    function _hasEnoughAllowance(address maker, address inputToken, uint256 amountIn) private view returns (bool) {
+        address settlementInputToken = _normalizeInputToken(inputToken);
+        return IERC20(settlementInputToken).allowance(maker, address(this)) >= amountIn;
     }
 
     /**

@@ -661,6 +661,10 @@ describe("FluxSignedOrderSettlement", async function () {
     const isolatedRouter = await viem.deployContract("FluxSwapRouter", [isolatedFactory.address, weth.address]);
     const isolatedSettlement = await viem.deployContract("FluxSignedOrderSettlement", [isolatedRouter.address]);
 
+    await tokenA.write.approve([isolatedSettlement.address, maxUint256], {
+      account: makerClient.account.address,
+    });
+
     await isolatedFactory.write.createPair([tokenA.address, tokenB.address], {
       account: ownerClient.account.address,
     });
@@ -685,6 +689,62 @@ describe("FluxSignedOrderSettlement", async function () {
     await expectRevert(
       isolatedSettlement.read.getOrderQuote([order]),
       "FluxSwapRouter: INSUFFICIENT_LIQUIDITY",
+    );
+  });
+
+  it("should report insufficient maker balance in readiness checks and execution", async function () {
+    const order = {
+      maker: makerClient.account.address,
+      inputToken: tokenA.address,
+      outputToken: tokenB.address,
+      amountIn: 2_000_000n * 10n ** 18n,
+      minAmountOut: 1n,
+      maxExecutorRewardBps: 0n,
+      triggerPriceX18: 1n,
+      expiry: await getDeadline(),
+      nonce: 100n,
+      recipient: recipientClient.account.address,
+    } as const satisfies SettlementOrder;
+
+    const readiness = await settlement.read.canExecuteOrder([order]);
+    strictEqual(readiness[0], false);
+    strictEqual(readiness[1], "INSUFFICIENT_BALANCE");
+
+    const signature = await signOrder(order);
+    await expectRevert(
+      settlement.write.executeOrder([order, signature, await getDeadline(), 0n], {
+        account: executorClient.account.address,
+      }),
+      "FluxSignedOrderSettlement: INSUFFICIENT_BALANCE",
+    );
+  });
+
+  it("should report insufficient maker allowance in readiness checks and execution", async function () {
+    const order = {
+      maker: makerClient.account.address,
+      inputToken: tokenA.address,
+      outputToken: tokenB.address,
+      amountIn: 100n * 10n ** 18n,
+      minAmountOut: 1n,
+      maxExecutorRewardBps: 0n,
+      triggerPriceX18: 1n,
+      expiry: await getDeadline(),
+      nonce: 101n,
+      recipient: recipientClient.account.address,
+    } as const satisfies SettlementOrder;
+
+    await tokenA.write.approve([settlement.address, 0n], { account: makerClient.account.address });
+
+    const readiness = await settlement.read.canExecuteOrder([order]);
+    strictEqual(readiness[0], false);
+    strictEqual(readiness[1], "INSUFFICIENT_ALLOWANCE");
+
+    const signature = await signOrder(order);
+    await expectRevert(
+      settlement.write.executeOrder([order, signature, await getDeadline(), 0n], {
+        account: executorClient.account.address,
+      }),
+      "FluxSignedOrderSettlement: INSUFFICIENT_ALLOWANCE",
     );
   });
 
