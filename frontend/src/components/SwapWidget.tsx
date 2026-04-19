@@ -161,6 +161,7 @@ export function SwapWidget({
     limitTitle: isZh ? '创建限价单' : 'Create Limit Order',
     limitTargetRate: isZh ? '目标价格' : 'Target price',
     limitExpiry: isZh ? '有效期' : 'Expiry',
+    limitVsMarket: isZh ? '较市场价' : 'Vs market',
     marketPrice: isZh ? '市场' : 'Market',
     limitOrderNotice: isZh
       ? '当前前端已提供限价单录入界面，但合约侧还没有原生限价撮合能力。你可以先填写目标价格与数量，后续接入执行器后即可自动触发。'
@@ -440,6 +441,12 @@ export function SwapWidget({
     receiveToken && quotedRateOut
       ? formatBigIntAmount(quotedRateOut, receiveToken.decimals, 8)
       : '';
+  const limitTargetRateDisplay =
+    payToken && receiveToken
+      ? limitRate
+        ? `1 ${payToken.symbol} = ${limitRate} ${receiveToken.symbol}`
+        : `1 ${payToken.symbol} = -- ${receiveToken.symbol}`
+      : '--';
   const payTokenIsToken0 =
     Boolean(token0 && payToken) &&
     token0?.toLowerCase() === payToken?.routeAddress.toLowerCase();
@@ -718,7 +725,7 @@ export function SwapWidget({
     setSlippage(value);
   };
 
-  const adjustSlippage = (delta: number) => {
+  const adjustLimitPremium = (delta: number) => {
     const current = Number(limitPremium || '0');
     const safeCurrent = Number.isFinite(current) && current >= 0 ? current : 0;
     const nextValue = Math.max(
@@ -1239,10 +1246,7 @@ export function SwapWidget({
                   {copy.limitTargetRate}
                 </span>
                 <div className="flex items-center justify-between rounded-2xl border border-gray-200 bg-white px-4 py-3 text-base font-medium text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white">
-                  <span>{limitRate || '--'}</span>
-                  <span className="ml-3 shrink-0 text-sm text-gray-500 dark:text-gray-400">
-                    {receiveToken?.symbol ?? '--'}
-                  </span>
+                  <span>{limitTargetRateDisplay}</span>
                 </div>
               </div>
 
@@ -1275,7 +1279,7 @@ export function SwapWidget({
 
               <div>
                 <div className="mb-2 block text-sm text-gray-500 dark:text-gray-400">
-                  {t('swap.slippage')}
+                  {copy.limitVsMarket}
                 </div>
                 <div className="flex items-center gap-1.5">
                   <button
@@ -1310,7 +1314,6 @@ export function SwapWidget({
                       value={limitPremium}
                       onChange={(event) => {
                         const nextValue = event.target.value;
-                        handleSlippageChange(nextValue);
                         setLimitPremium(nextValue === '' ? '' : nextValue);
                         setLimitPricePreset('custom');
 
@@ -1336,14 +1339,14 @@ export function SwapWidget({
                     <div className="ml-1.5 flex w-5 shrink-0 flex-col overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
                       <button
                         type="button"
-                        onClick={() => adjustSlippage(0.1)}
+                        onClick={() => adjustLimitPremium(0.1)}
                         className="flex h-4 w-full items-center justify-center bg-gray-50 text-gray-500 transition-colors hover:bg-sky-100 hover:text-sky-600 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-sky-500/20 dark:hover:text-sky-300"
                       >
                         <ChevronUp size={12} />
                       </button>
                       <button
                         type="button"
-                        onClick={() => adjustSlippage(-0.1)}
+                        onClick={() => adjustLimitPremium(-0.1)}
                         className="flex h-4 w-full items-center justify-center border-t border-gray-200 bg-gray-50 text-gray-500 transition-colors hover:bg-sky-100 hover:text-sky-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-sky-500/20 dark:hover:text-sky-300"
                       >
                         <ChevronDown size={12} />

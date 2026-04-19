@@ -18,8 +18,8 @@
   },
   "swap": {
     "title": "Exchange",
-    "pay": "You pay",
-    "receive": "You receive",
+    "pay": "Sell",
+    "receive": "Buy",
     "selectToken": "Select Token",
     "connectWallet": "Connect Wallet",
     "button": "Exchange",

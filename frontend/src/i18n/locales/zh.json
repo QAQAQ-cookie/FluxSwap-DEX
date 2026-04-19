@@ -15,8 +15,8 @@
   },
   "swap": {
     "title": "兑换 (Swap)",
-    "pay": "支付 (You pay)",
-    "receive": "收到 (You receive)",
+    "pay": "出售",
+    "receive": "购买",
     "selectToken": "选择代币",
     "connectWallet": "连接钱包 (Connect Wallet)",
     "button": "兑换 (Swap)",
