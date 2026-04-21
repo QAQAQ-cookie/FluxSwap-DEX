@@ -19,6 +19,7 @@ describe("FluxSignedOrderSettlement", async function () {
   let tokenA: any;
   let tokenB: any;
   let noReturnToken: any;
+  let usdt: any;
 
   const maxUint256 = (1n << 256n) - 1n;
   const zeroAddress = "0x0000000000000000000000000000000000000000" as const;
@@ -168,18 +169,23 @@ describe("FluxSignedOrderSettlement", async function () {
 
     tokenA = await viem.deployContract("MockERC20", ["Token A", "TKNA", 18]);
     tokenB = await viem.deployContract("MockERC20", ["Token B", "TKNB", 18]);
+    usdt = await viem.deployContract("MockERC20", ["Tether USD", "USDT", 6]);
     noReturnToken = await viem.deployContract("MockNoReturnERC20", ["No Return Token", "NRT", 18]);
 
     await tokenA.write.mint([makerClient.account.address, 1_000_000n * 10n ** 18n]);
     await tokenB.write.mint([makerClient.account.address, 1_000_000n * 10n ** 18n]);
     await tokenA.write.mint([recipientClient.account.address, 1_000_000n * 10n ** 18n]);
     await tokenB.write.mint([recipientClient.account.address, 1_000_000n * 10n ** 18n]);
+    await usdt.write.mint([makerClient.account.address, 1_000_000n * 10n ** 6n]);
+    await usdt.write.mint([recipientClient.account.address, 1_000_000n * 10n ** 6n]);
     await noReturnToken.write.mint([makerClient.account.address, 1_000_000n * 10n ** 18n]);
     await noReturnToken.write.mint([recipientClient.account.address, 1_000_000n * 10n ** 18n]);
 
     await tokenA.write.approve([router.address, maxUint256], { account: makerClient.account.address });
     await tokenB.write.approve([router.address, maxUint256], { account: makerClient.account.address });
     await tokenA.write.approve([settlement.address, maxUint256], { account: makerClient.account.address });
+    await usdt.write.approve([router.address, maxUint256], { account: makerClient.account.address });
+    await usdt.write.approve([settlement.address, maxUint256], { account: makerClient.account.address });
     await addTokenLiquidity();
   });
 
@@ -292,6 +298,51 @@ describe("FluxSignedOrderSettlement", async function () {
       }),
       "FluxSignedOrderSettlement: INPUT_TOKEN_MUST_BE_ERC20",
     );
+  });
+
+  it("should compare trigger price correctly for 6-decimal output tokens", async function () {
+    await factory.write.createPair([tokenA.address, usdt.address], {
+      account: ownerClient.account.address,
+    });
+
+    await tokenA.write.approve([router.address, 10_000n * 10n ** 18n], {
+      account: makerClient.account.address,
+    });
+    await usdt.write.approve([router.address, 20_000n * 10n ** 6n], {
+      account: makerClient.account.address,
+    });
+    await router.write.addLiquidity(
+      [
+        tokenA.address,
+        usdt.address,
+        10_000n * 10n ** 18n,
+        20_000n * 10n ** 6n,
+        0n,
+        0n,
+        makerClient.account.address,
+        await getDeadline(),
+      ],
+      { account: makerClient.account.address },
+    );
+
+    const order = {
+      maker: makerClient.account.address,
+      inputToken: tokenA.address,
+      outputToken: usdt.address,
+      amountIn: 100n * 10n ** 18n,
+      minAmountOut: 190n * 10n ** 6n,
+      maxExecutorRewardBps: 0n,
+      triggerPriceX18: 19n * 10n ** 17n,
+      expiry: await getDeadline(),
+      nonce: 3n,
+      recipient: recipientClient.account.address,
+    } as const satisfies SettlementOrder;
+
+    const quote = await settlement.read.getOrderQuote([order]);
+    strictEqual(quote > 0n, true);
+    const [executable, reason] = await settlement.read.canExecuteOrder([order]);
+    strictEqual(executable, true);
+    strictEqual(reason, "OK");
   });
 
   it("should execute orders for supported no-return ERC20 tokens after safe approve compatibility handling", async function () {

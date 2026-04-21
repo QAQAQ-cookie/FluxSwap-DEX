@@ -76,6 +76,7 @@
   - 发起订单执行交易
   - 校验用户已提交的批量 nonce 作废交易
   - 查询交易回执
+- 如果合约 ABI 有变更，需按 `internal/chain/README.md` 里的步骤重新编译合约并更新 abigen 生成文件
 
 ### `internal/config`
 

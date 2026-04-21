@@ -664,6 +664,8 @@ export function SwapWidget({
       calculateTriggerPriceX18(
         parsedPayAmount,
         parsedLimitReceiveAmount,
+        payToken.decimals,
+        receiveToken.decimals,
       ) <= BigInt(0)
     ) {
       actionLabel = copy.invalidAmount;
@@ -1077,7 +1079,12 @@ export function SwapWidget({
           amountIn: parsedPayAmount,
           minAmountOut,
           maxExecutorRewardBps: LIMIT_ORDER_DEFAULT_MAX_EXECUTOR_REWARD_BPS,
-          triggerPriceX18: calculateTriggerPriceX18(parsedPayAmount, minAmountOut),
+          triggerPriceX18: calculateTriggerPriceX18(
+            parsedPayAmount,
+            minAmountOut,
+            payToken.decimals,
+            receiveToken.decimals,
+          ),
           expiry,
           nonce,
           recipient: address,

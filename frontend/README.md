@@ -100,6 +100,13 @@ POST /api/orders
 - `signature`
 - `source`
 
+其中限价单关键字段的数值口径约定如下：
+
+- `amountIn`：卖出代币按自身 `decimals` 转成的最小单位整数。
+- `minAmountOut`：最低买入数量按目标代币 `decimals` 转成的最小单位整数。
+- `triggerPriceX18`：按输入/输出代币精度归一后的价格整数，统一放大到 `1e18` 精度，不是直接用两个最小单位整数相除。
+- 前端会先把用户输入的展示值转换成上述整数口径，再提交给后端创建订单。
+
 ## 合约地址配置
 
 本地 Hardhat 地址会从上一层 `contracts/ignition/deployments` 自动同步：

@@ -928,6 +928,8 @@ func TestCheckPendingReceiptReopensSubmittingExecuteWithoutTxHash(t *testing.T) 
 		Status:            "submitting_execute",
 		StatusReason:      "claimed_for_submission",
 		SubmittedTxHash:   "",
+		ExecutedTxHash:    "0xabababababababababababababababababababababababababababababababab",
+		CancelledTxHash:   "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
@@ -948,6 +950,9 @@ func TestCheckPendingReceiptReopensSubmittingExecuteWithoutTxHash(t *testing.T) 
 	require.NoError(t, err)
 	require.Equal(t, "open", stored.Status)
 	require.Equal(t, "submission_interrupted_before_tx_hash", stored.StatusReason)
+	require.Equal(t, "", stored.SubmittedTxHash)
+	require.Equal(t, "", stored.ExecutedTxHash)
+	require.Equal(t, "", stored.CancelledTxHash)
 }
 
 func TestEvaluateOrderDoesNotOverwritePendingCancelAfterExecutionSubmitted(t *testing.T) {

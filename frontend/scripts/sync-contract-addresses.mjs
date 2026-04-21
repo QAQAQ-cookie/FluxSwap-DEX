@@ -59,6 +59,7 @@ async function readDeploymentDirectories(root) {
 async function buildContractsByChain() {
   const deploymentDirs = await readDeploymentDirectories(deploymentsRoot)
   const result = {}
+  const warnings = []
 
   for (const deploymentDir of deploymentDirs) {
     const chainId = Number(deploymentDir.slice(6))
@@ -71,13 +72,17 @@ async function buildContractsByChain() {
       const address = deployedAddresses[futureId]
       if (typeof address === 'string' && address.startsWith('0x')) {
         chainContracts[contractName] = address
+      } else {
+        warnings.push(
+          `chain ${chainId}: missing ${contractName} (${futureId}) in ${path.relative(frontendRoot, deployedAddressesPath)}`,
+        )
       }
     }
 
     result[chainId] = chainContracts
   }
 
-  return result
+  return { contractsByChain: result, warnings }
 }
 
 function renderGeneratedFile(contractsByChain) {
@@ -110,13 +115,21 @@ ${chainLines.join('\n')}
 }
 
 async function main() {
-  const contractsByChain = await buildContractsByChain()
+  const { contractsByChain, warnings } = await buildContractsByChain()
   const content = renderGeneratedFile(contractsByChain)
 
   await mkdir(path.dirname(outputPath), { recursive: true })
   await writeFile(outputPath, content, 'utf8')
 
   console.log(`Synced contract addresses to ${path.relative(frontendRoot, outputPath)}`)
+
+  if (warnings.length > 0) {
+    console.warn('Address sync completed with missing contracts:')
+    for (const warning of warnings) {
+      console.warn(`- ${warning}`)
+    }
+    console.warn('If these contracts were added or renamed in the deployment module, redeploy contracts and run sync again.')
+  }
 }
 
 await main()

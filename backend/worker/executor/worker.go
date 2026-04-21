@@ -674,6 +674,9 @@ func (w *Worker) checkPendingReceipt(ctx context.Context, order *domain.Order) e
 					"status":            "open",
 					"status_reason":     "submission_interrupted_before_tx_hash",
 					"last_block_reason": "submission_interrupted_before_tx_hash",
+					"submitted_tx_hash": "",
+					"executed_tx_hash":  "",
+					"cancelled_tx_hash": "",
 					"updated_at":        now,
 				},
 			)

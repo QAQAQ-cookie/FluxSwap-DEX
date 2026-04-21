@@ -51,12 +51,24 @@ export function buildSignedLimitOrderDomain(
   }
 }
 
-export function calculateTriggerPriceX18(amountIn: bigint, minAmountOut: bigint): bigint {
+export function calculateTriggerPriceX18(
+  amountIn: bigint,
+  minAmountOut: bigint,
+  inputDecimals: number,
+  outputDecimals: number,
+): bigint {
   if (amountIn <= BigInt(0) || minAmountOut <= BigInt(0)) {
     return BigInt(0)
   }
 
-  return (minAmountOut * LIMIT_ORDER_PRICE_SCALE) / amountIn
+  return (
+    minAmountOut *
+    (BigInt(10) ** BigInt(inputDecimals)) *
+    LIMIT_ORDER_PRICE_SCALE
+  ) / (
+    amountIn *
+    (BigInt(10) ** BigInt(outputDecimals))
+  )
 }
 
 export function buildSignedLimitOrderTypedData(

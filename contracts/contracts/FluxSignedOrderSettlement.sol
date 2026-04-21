@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {Math as OZMath} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 import "../interfaces/IERC20.sol";
@@ -143,7 +144,10 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
 
         amountOut = _getAmountOut(order.inputToken, order.outputToken, order.amountIn);
         require(amountOut >= order.minAmountOut, "FluxSignedOrderSettlement: INSUFFICIENT_OUTPUT");
-        require(_meetsTrigger(order.amountIn, amountOut, order.triggerPriceX18), "FluxSignedOrderSettlement: PRICE_NOT_REACHED");
+        require(
+            _meetsTrigger(order.inputToken, order.outputToken, order.amountIn, amountOut, order.triggerPriceX18),
+            "FluxSignedOrderSettlement: PRICE_NOT_REACHED"
+        );
 
         uint256 surplus = amountOut - order.minAmountOut;
         uint256 maxAllowedReward = (surplus * order.maxExecutorRewardBps) / 10_000;
@@ -273,7 +277,7 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
         if (amountOut < order.minAmountOut) {
             return (false, "INSUFFICIENT_OUTPUT");
         }
-        if (!_meetsTrigger(order.amountIn, amountOut, order.triggerPriceX18)) {
+        if (!_meetsTrigger(order.inputToken, order.outputToken, order.amountIn, amountOut, order.triggerPriceX18)) {
             return (false, "PRICE_NOT_REACHED");
         }
 
@@ -489,9 +493,46 @@ contract FluxSignedOrderSettlement is IFluxSignedOrderSettlement, Ownable, Reent
      * @param triggerPriceX18 触发价格，精度为 1e18。
      * @return 是否达到或超过目标价格。
      */
-    function _meetsTrigger(uint256 amountIn, uint256 amountOut, uint256 triggerPriceX18) private pure returns (bool) {
-        uint256 quotedPriceX18 = (amountOut * PRICE_SCALE) / amountIn;
+    function _meetsTrigger(
+        address inputToken,
+        address outputToken,
+        uint256 amountIn,
+        uint256 amountOut,
+        uint256 triggerPriceX18
+    ) private view returns (bool) {
+        uint256 quotedPriceX18 = _quotePriceX18(inputToken, outputToken, amountIn, amountOut);
         return quotedPriceX18 >= triggerPriceX18;
+    }
+
+    /**
+     * @notice 将当前报价归一化到 1e18 精度，便于和签名里的触发价比较。
+     * @param inputToken 订单输入代币。
+     * @param outputToken 订单输出代币，零地址表示原生币路径。
+     * @param amountIn 输入数量。
+     * @param amountOut 输出数量。
+     * @return quotedPriceX18 归一化后的价格，单位为 1e18。
+     */
+    function _quotePriceX18(
+        address inputToken,
+        address outputToken,
+        uint256 amountIn,
+        uint256 amountOut
+    ) private view returns (uint256 quotedPriceX18) {
+        uint256 inputScale = _decimalScale(inputToken);
+        uint256 outputScale = _decimalScale(outputToken == address(0) ? WETH : outputToken);
+        uint256 normalizedAmountOut = OZMath.mulDiv(amountOut, inputScale, outputScale);
+        quotedPriceX18 = OZMath.mulDiv(normalizedAmountOut, PRICE_SCALE, amountIn);
+    }
+
+    /**
+     * @notice 读取代币精度并转换成 10^decimals 的缩放因子。
+     * @param token 代币地址。
+     * @return scale 对应的 10^decimals 缩放值。
+     */
+    function _decimalScale(address token) private view returns (uint256 scale) {
+        uint256 decimals = IERC20(token).decimals();
+        require(decimals <= 77, "FluxSignedOrderSettlement: DECIMALS_TOO_LARGE");
+        scale = 10 ** decimals;
     }
 
     /**
