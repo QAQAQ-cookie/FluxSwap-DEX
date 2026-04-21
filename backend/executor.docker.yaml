@@ -15,8 +15,8 @@ Chains:
     ChainID: 31337
     HTTPRPCURL: http://host.docker.internal:8545
     WSRPCURL: ws://host.docker.internal:8545
-    SettlementAddress: ""
-    ExecutorPrivateKey: ""
+    SettlementAddress: "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0"
+    ExecutorPrivateKey: "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
   - Name: sepolia
     ChainID: 11155111
     HTTPRPCURL: ""
