@@ -45,6 +45,13 @@
     command: ["rpc", "-f", "/app/executor.docker.yaml"]
     ports:
       - "9001:9001"
+      - "9100:9100"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9100/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     restart: unless-stopped
 
   executor:
@@ -62,6 +69,12 @@
     command: ["executor", "-f", "/app/executor.docker.yaml"]
     ports:
       - "9101:9101"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9101/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     restart: unless-stopped
 
   indexer:
@@ -79,6 +92,12 @@
     command: ["indexer", "-f", "/app/executor.docker.yaml"]
     ports:
       - "9102:9102"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9102/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     restart: unless-stopped
 
 volumes:

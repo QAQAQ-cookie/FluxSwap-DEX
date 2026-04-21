@@ -1,9 +1,12 @@
 ﻿package main
 
 import (
+	"context"
 	"flag"
 	"log"
+	"time"
 
+	"fluxswap-backend/internal/app"
 	"fluxswap-backend/internal/config"
 	fluxrpc "fluxswap-backend/rpc"
 
@@ -23,6 +26,20 @@ func main() {
 	if err := conf.Load(*configFile, &c); err != nil {
 		// 配置加载失败时直接退出，避免进程带着空配置启动。
 		log.Fatal(err)
+	}
+
+	// 启动 RPC 自己的 HTTP 健康检查服务，便于与 worker 使用统一探针方式。
+	healthServer, err := app.StartHealthServer(c.Worker.RPCHealthListenOn, "rpc-server")
+	if err != nil {
+		log.Fatalf("start rpc health server failed: %v", err)
+	}
+	if healthServer != nil {
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			_ = healthServer.Close(shutdownCtx)
+		}()
+		healthServer.State().MarkHealthy("rpc process initialized")
 	}
 
 	// 启动真正的 gRPC 服务。

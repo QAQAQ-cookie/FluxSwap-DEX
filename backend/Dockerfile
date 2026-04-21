@@ -7,7 +7,7 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/rpc ./rpc
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/rpc ./cmd/rpc
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/executor ./cmd/executor
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/indexer ./cmd/indexer
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/migrate ./cmd/migrate

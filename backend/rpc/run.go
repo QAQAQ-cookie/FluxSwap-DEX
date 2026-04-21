@@ -11,8 +11,6 @@ import (
 	"github.com/zeromicro/go-zero/core/service"
 	"github.com/zeromicro/go-zero/zrpc"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/health"
-	healthgrpc "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 )
 
@@ -31,13 +29,6 @@ func Run(c config.Config) error {
 	s, err := zrpc.NewServer(c.RpcServerConf, func(grpcServer *grpc.Server) {
 		// 注册业务 RPC 服务，把 proto 方法映射到本地服务端实现。
 		executor.RegisterExecutorServer(grpcServer, server.NewExecutorServer(ctx))
-
-		// 创建标准 gRPC health 服务，供探针或客户端做连通性检查。
-		healthServer := health.NewServer()
-		// 把默认 service 的状态设置为 SERVING，表示当前 RPC 可对外提供服务。
-		healthServer.SetServingStatus("", healthgrpc.HealthCheckResponse_SERVING)
-		// 把 health 服务注册到同一个 gRPC Server 上。
-		healthgrpc.RegisterHealthServer(grpcServer, healthServer)
 
 		// 在开发和测试模式下开启 reflection，便于使用 grpcurl / Postman 等工具调试。
 		if c.Mode == service.DevMode || c.Mode == service.TestMode {

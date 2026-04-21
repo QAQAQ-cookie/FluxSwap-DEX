@@ -51,6 +51,7 @@ type WorkerConfig struct {
 	ReceiptPollIntervalMs    int64
 	IndexerHeartbeatMs       int64
 	IndexerBackfillBlocks    int64
+	RPCHealthListenOn        string
 	ExecutorHealthListenOn   string
 	IndexerHealthListenOn    string
 }
@@ -59,7 +60,20 @@ type WorkerConfig struct {
 // 若未配置 Chains，则回退到旧的单链 Chain 配置，兼容已有环境。
 func (c Config) ActiveChains() []ChainConfig {
 	if len(c.Chains) > 0 {
-		return c.Chains
+		active := make([]ChainConfig, 0, len(c.Chains))
+		for _, chainCfg := range c.Chains {
+			if chainCfg.ChainID <= 0 {
+				continue
+			}
+			if strings.TrimSpace(chainCfg.SettlementAddress) == "" {
+				continue
+			}
+			if strings.TrimSpace(chainCfg.HTTPRPCURL) == "" && strings.TrimSpace(chainCfg.WSRPCURL) == "" {
+				continue
+			}
+			active = append(active, chainCfg)
+		}
+		return active
 	}
 	if c.Chain.ChainID > 0 &&
 		strings.TrimSpace(c.Chain.SettlementAddress) != "" &&

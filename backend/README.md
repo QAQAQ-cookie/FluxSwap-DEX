@@ -249,7 +249,8 @@ Worker:
 ## 健康检查
 
 - RPC
-  - 使用 gRPC health service
+  - `GET /healthz`
+  - 默认监听 `0.0.0.0:9100`
 - Executor worker
   - `GET /healthz`
   - 默认监听 `0.0.0.0:9101`

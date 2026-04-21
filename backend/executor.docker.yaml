@@ -34,5 +34,6 @@ Worker:
   ReceiptPollIntervalMs: 5000
   IndexerHeartbeatMs: 15000
   IndexerBackfillBlocks: 500
+  RPCHealthListenOn: 0.0.0.0:9100
   ExecutorHealthListenOn: 0.0.0.0:9101
   IndexerHealthListenOn: 0.0.0.0:9102
