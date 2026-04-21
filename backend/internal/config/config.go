@@ -12,7 +12,7 @@ type Config struct {
 	zrpc.RpcServerConf
 	App      AppConfig
 	Database DatabaseConfig
-	Chain    ChainConfig
+	Chain    ChainConfig `json:",optional"`
 	Chains   []ChainConfig
 	Worker   WorkerConfig
 }
