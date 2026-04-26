@@ -58,5 +58,6 @@ Thumbs.db
 # Local temporary files
 # ========================
 .codex-temp/
+backend/.gocache/
 
 executor/*.exe

@@ -8,6 +8,7 @@ service Executor {
   rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse);
   rpc CancelOrders(CancelOrdersRequest) returns (CancelOrdersResponse);
   rpc GetOrder(GetOrderRequest) returns (GetOrderResponse);
+  rpc GetBestRoute(GetBestRouteRequest) returns (GetBestRouteResponse);
 }
 
 message ResponseNotice {
@@ -115,4 +116,69 @@ message GetOrderResponse {
   string lastBlockReason = 32;
   string settledAmountOut = 33;
   string settledExecutorReward = 34;
+}
+
+message GetBestRouteRequest {
+  int64 chainId = 1;
+  string tokenIn = 2;
+  string tokenOut = 3;
+  string amount = 4;
+  uint32 maxHops = 5;
+  RouteQuoteType quoteType = 6;
+}
+
+enum RouteQuoteType {
+  ROUTE_QUOTE_TYPE_UNSPECIFIED = 0;
+  ROUTE_QUOTE_TYPE_EXACT_INPUT = 1;
+  ROUTE_QUOTE_TYPE_EXACT_OUTPUT = 2;
+}
+
+message RoutePath {
+  repeated string tokens = 1;
+  uint32 hops = 2;
+  string amountIn = 3;
+  string amountOut = 4;
+  uint64 gasEstimate = 5;
+  string gasCostInInputToken = 6;
+  string gasCostInOutputToken = 7;
+  string gasAdjustedAmountIn = 8;
+  string gasAdjustedAmountOut = 9;
+}
+
+message RouteQuote {
+  RouteQuoteType quoteType = 1;
+  string amountIn = 2;
+  string amountOut = 3;
+}
+
+message RouteView {
+  repeated string pathTokens = 1;
+  repeated string executionPath = 2;
+  uint32 hops = 3;
+  bool isDirect = 4;
+  bool isMultiHop = 5;
+  string amountIn = 6;
+  string amountOut = 7;
+  uint64 gasEstimate = 8;
+  string gasCostInInputToken = 9;
+  string gasCostInOutputToken = 10;
+  string gasAdjustedAmountIn = 11;
+  string gasAdjustedAmountOut = 12;
+  string rankingMetric = 13;
+}
+
+message RouteExecution {
+  repeated string routerPath = 1;
+  bool isMultiHop = 2;
+  string strategy = 3;
+}
+
+message GetBestRouteResponse {
+  ResponseNotice notice = 1;
+  RouteView selectedRoute = 2;
+  repeated RouteView alternativeRoutes = 3;
+  RouteExecution execution = 4;
+  string selectionReason = 5;
+  bool usedGasAdjustedRanking = 6;
+  RouteQuote quote = 7;
 }

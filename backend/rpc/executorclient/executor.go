@@ -20,13 +20,18 @@ type (
 	CancelOrdersResult   = executor.CancelOrdersResult
 	CreateOrderRequest   = executor.CreateOrderRequest
 	CreateOrderResponse  = executor.CreateOrderResponse
+	GetBestRouteRequest  = executor.GetBestRouteRequest
+	GetBestRouteResponse = executor.GetBestRouteResponse
 	GetOrderRequest      = executor.GetOrderRequest
 	GetOrderResponse     = executor.GetOrderResponse
+	RouteExecution       = executor.RouteExecution
+	RouteView            = executor.RouteView
 	ResponseNotice       = executor.ResponseNotice
 
 	Executor interface {
 		CreateOrder(ctx context.Context, in *CreateOrderRequest, opts ...grpc.CallOption) (*CreateOrderResponse, error)
 		CancelOrders(ctx context.Context, in *CancelOrdersRequest, opts ...grpc.CallOption) (*CancelOrdersResponse, error)
+		GetBestRoute(ctx context.Context, in *GetBestRouteRequest, opts ...grpc.CallOption) (*GetBestRouteResponse, error)
 		GetOrder(ctx context.Context, in *GetOrderRequest, opts ...grpc.CallOption) (*GetOrderResponse, error)
 	}
 
@@ -49,6 +54,11 @@ func (m *defaultExecutor) CreateOrder(ctx context.Context, in *CreateOrderReques
 func (m *defaultExecutor) CancelOrders(ctx context.Context, in *CancelOrdersRequest, opts ...grpc.CallOption) (*CancelOrdersResponse, error) {
 	client := executor.NewExecutorClient(m.cli.Conn())
 	return client.CancelOrders(ctx, in, opts...)
+}
+
+func (m *defaultExecutor) GetBestRoute(ctx context.Context, in *GetBestRouteRequest, opts ...grpc.CallOption) (*GetBestRouteResponse, error) {
+	client := executor.NewExecutorClient(m.cli.Conn())
+	return client.GetBestRoute(ctx, in, opts...)
 }
 
 func (m *defaultExecutor) GetOrder(ctx context.Context, in *GetOrderRequest, opts ...grpc.CallOption) (*GetOrderResponse, error) {

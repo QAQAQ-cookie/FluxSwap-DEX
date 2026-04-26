@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.1
 // - protoc             v3.19.4
-// source: proto/executor.proto
+// source: rpc/proto/executor.proto
 
 package executor
 
@@ -22,6 +22,7 @@ const (
 	Executor_CreateOrder_FullMethodName  = "/executor.Executor/CreateOrder"
 	Executor_CancelOrders_FullMethodName = "/executor.Executor/CancelOrders"
 	Executor_GetOrder_FullMethodName     = "/executor.Executor/GetOrder"
+	Executor_GetBestRoute_FullMethodName = "/executor.Executor/GetBestRoute"
 )
 
 // ExecutorClient is the client API for Executor service.
@@ -31,6 +32,7 @@ type ExecutorClient interface {
 	CreateOrder(ctx context.Context, in *CreateOrderRequest, opts ...grpc.CallOption) (*CreateOrderResponse, error)
 	CancelOrders(ctx context.Context, in *CancelOrdersRequest, opts ...grpc.CallOption) (*CancelOrdersResponse, error)
 	GetOrder(ctx context.Context, in *GetOrderRequest, opts ...grpc.CallOption) (*GetOrderResponse, error)
+	GetBestRoute(ctx context.Context, in *GetBestRouteRequest, opts ...grpc.CallOption) (*GetBestRouteResponse, error)
 }
 
 type executorClient struct {
@@ -71,6 +73,16 @@ func (c *executorClient) GetOrder(ctx context.Context, in *GetOrderRequest, opts
 	return out, nil
 }
 
+func (c *executorClient) GetBestRoute(ctx context.Context, in *GetBestRouteRequest, opts ...grpc.CallOption) (*GetBestRouteResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetBestRouteResponse)
+	err := c.cc.Invoke(ctx, Executor_GetBestRoute_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ExecutorServer is the server API for Executor service.
 // All implementations must embed UnimplementedExecutorServer
 // for forward compatibility.
@@ -78,6 +90,7 @@ type ExecutorServer interface {
 	CreateOrder(context.Context, *CreateOrderRequest) (*CreateOrderResponse, error)
 	CancelOrders(context.Context, *CancelOrdersRequest) (*CancelOrdersResponse, error)
 	GetOrder(context.Context, *GetOrderRequest) (*GetOrderResponse, error)
+	GetBestRoute(context.Context, *GetBestRouteRequest) (*GetBestRouteResponse, error)
 	mustEmbedUnimplementedExecutorServer()
 }
 
@@ -96,6 +109,9 @@ func (UnimplementedExecutorServer) CancelOrders(context.Context, *CancelOrdersRe
 }
 func (UnimplementedExecutorServer) GetOrder(context.Context, *GetOrderRequest) (*GetOrderResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetOrder not implemented")
+}
+func (UnimplementedExecutorServer) GetBestRoute(context.Context, *GetBestRouteRequest) (*GetBestRouteResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetBestRoute not implemented")
 }
 func (UnimplementedExecutorServer) mustEmbedUnimplementedExecutorServer() {}
 func (UnimplementedExecutorServer) testEmbeddedByValue()                  {}
@@ -172,6 +188,24 @@ func _Executor_GetOrder_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Executor_GetBestRoute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetBestRouteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ExecutorServer).GetBestRoute(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Executor_GetBestRoute_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ExecutorServer).GetBestRoute(ctx, req.(*GetBestRouteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Executor_ServiceDesc is the grpc.ServiceDesc for Executor service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -191,7 +225,11 @@ var Executor_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "GetOrder",
 			Handler:    _Executor_GetOrder_Handler,
 		},
+		{
+			MethodName: "GetBestRoute",
+			Handler:    _Executor_GetBestRoute_Handler,
+		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "proto/executor.proto",
+	Metadata: "rpc/proto/executor.proto",
 }

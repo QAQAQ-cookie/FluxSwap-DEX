@@ -10,6 +10,17 @@ Database:
   DSN: postgres://fluxswap:fluxswap_dev_password@postgres:5432/fluxswap_backend?sslmode=disable
   AutoMigrate: true
 
+RedisClient:
+  Enabled: true
+  Addr: redis:6379
+  DB: 0
+  KeyPrefix: fluxswap
+  DialTimeout: 3s
+  ReadTimeout: 1s
+  WriteTimeout: 1s
+  PoolTimeout: 4s
+  PoolSize: 10
+
 Chains:
   - Name: localhost
     ChainID: 31337
@@ -34,6 +45,8 @@ Worker:
   ReceiptPollIntervalMs: 5000
   IndexerHeartbeatMs: 15000
   IndexerBackfillBlocks: 500
+  RouterGraphSyncIntervalMs: 60000
+  RouterGraphBackfillBlocks: 500
   RPCHealthListenOn: 0.0.0.0:9100
   ExecutorHealthListenOn: 0.0.0.0:9101
   IndexerHealthListenOn: 0.0.0.0:9102

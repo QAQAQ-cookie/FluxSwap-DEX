@@ -11,6 +11,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/rpc ./cmd/rpc
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/executor ./cmd/executor
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/indexer ./cmd/indexer
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/migrate ./cmd/migrate
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/routergraph ./cmd/routergraph
 
 FROM debian:bookworm-slim
 
@@ -24,6 +25,7 @@ COPY --from=builder /out/rpc /usr/local/bin/rpc
 COPY --from=builder /out/executor /usr/local/bin/executor
 COPY --from=builder /out/indexer /usr/local/bin/indexer
 COPY --from=builder /out/migrate /usr/local/bin/migrate
+COPY --from=builder /out/routergraph /usr/local/bin/routergraph
 COPY executor.yaml /app/executor.yaml
 
 CMD ["rpc", "-f", "/app/executor.yaml"]

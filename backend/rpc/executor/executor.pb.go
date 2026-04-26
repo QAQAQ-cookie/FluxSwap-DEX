@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v3.19.4
-// source: proto/executor.proto
+// source: rpc/proto/executor.proto
 
 package executor
 
@@ -21,6 +21,55 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type RouteQuoteType int32
+
+const (
+	RouteQuoteType_ROUTE_QUOTE_TYPE_UNSPECIFIED  RouteQuoteType = 0
+	RouteQuoteType_ROUTE_QUOTE_TYPE_EXACT_INPUT  RouteQuoteType = 1
+	RouteQuoteType_ROUTE_QUOTE_TYPE_EXACT_OUTPUT RouteQuoteType = 2
+)
+
+// Enum value maps for RouteQuoteType.
+var (
+	RouteQuoteType_name = map[int32]string{
+		0: "ROUTE_QUOTE_TYPE_UNSPECIFIED",
+		1: "ROUTE_QUOTE_TYPE_EXACT_INPUT",
+		2: "ROUTE_QUOTE_TYPE_EXACT_OUTPUT",
+	}
+	RouteQuoteType_value = map[string]int32{
+		"ROUTE_QUOTE_TYPE_UNSPECIFIED":  0,
+		"ROUTE_QUOTE_TYPE_EXACT_INPUT":  1,
+		"ROUTE_QUOTE_TYPE_EXACT_OUTPUT": 2,
+	}
+)
+
+func (x RouteQuoteType) Enum() *RouteQuoteType {
+	p := new(RouteQuoteType)
+	*p = x
+	return p
+}
+
+func (x RouteQuoteType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (RouteQuoteType) Descriptor() protoreflect.EnumDescriptor {
+	return file_rpc_proto_executor_proto_enumTypes[0].Descriptor()
+}
+
+func (RouteQuoteType) Type() protoreflect.EnumType {
+	return &file_rpc_proto_executor_proto_enumTypes[0]
+}
+
+func (x RouteQuoteType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use RouteQuoteType.Descriptor instead.
+func (RouteQuoteType) EnumDescriptor() ([]byte, []int) {
+	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{0}
+}
+
 type ResponseNotice struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
@@ -34,7 +83,7 @@ type ResponseNotice struct {
 
 func (x *ResponseNotice) Reset() {
 	*x = ResponseNotice{}
-	mi := &file_proto_executor_proto_msgTypes[0]
+	mi := &file_rpc_proto_executor_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -46,7 +95,7 @@ func (x *ResponseNotice) String() string {
 func (*ResponseNotice) ProtoMessage() {}
 
 func (x *ResponseNotice) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_executor_proto_msgTypes[0]
+	mi := &file_rpc_proto_executor_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -59,7 +108,7 @@ func (x *ResponseNotice) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResponseNotice.ProtoReflect.Descriptor instead.
 func (*ResponseNotice) Descriptor() ([]byte, []int) {
-	return file_proto_executor_proto_rawDescGZIP(), []int{0}
+	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *ResponseNotice) GetSuccess() bool {
@@ -120,7 +169,7 @@ type CreateOrderRequest struct {
 
 func (x *CreateOrderRequest) Reset() {
 	*x = CreateOrderRequest{}
-	mi := &file_proto_executor_proto_msgTypes[1]
+	mi := &file_rpc_proto_executor_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -132,7 +181,7 @@ func (x *CreateOrderRequest) String() string {
 func (*CreateOrderRequest) ProtoMessage() {}
 
 func (x *CreateOrderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_executor_proto_msgTypes[1]
+	mi := &file_rpc_proto_executor_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -145,7 +194,7 @@ func (x *CreateOrderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateOrderRequest.ProtoReflect.Descriptor instead.
 func (*CreateOrderRequest) Descriptor() ([]byte, []int) {
-	return file_proto_executor_proto_rawDescGZIP(), []int{1}
+	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *CreateOrderRequest) GetChainId() int64 {
@@ -263,7 +312,7 @@ type CreateOrderResponse struct {
 
 func (x *CreateOrderResponse) Reset() {
 	*x = CreateOrderResponse{}
-	mi := &file_proto_executor_proto_msgTypes[2]
+	mi := &file_rpc_proto_executor_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -275,7 +324,7 @@ func (x *CreateOrderResponse) String() string {
 func (*CreateOrderResponse) ProtoMessage() {}
 
 func (x *CreateOrderResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_executor_proto_msgTypes[2]
+	mi := &file_rpc_proto_executor_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -288,7 +337,7 @@ func (x *CreateOrderResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateOrderResponse.ProtoReflect.Descriptor instead.
 func (*CreateOrderResponse) Descriptor() ([]byte, []int) {
-	return file_proto_executor_proto_rawDescGZIP(), []int{2}
+	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *CreateOrderResponse) GetOrder() *GetOrderResponse {
@@ -318,7 +367,7 @@ type CancelOrderItem struct {
 
 func (x *CancelOrderItem) Reset() {
 	*x = CancelOrderItem{}
-	mi := &file_proto_executor_proto_msgTypes[3]
+	mi := &file_rpc_proto_executor_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -330,7 +379,7 @@ func (x *CancelOrderItem) String() string {
 func (*CancelOrderItem) ProtoMessage() {}
 
 func (x *CancelOrderItem) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_executor_proto_msgTypes[3]
+	mi := &file_rpc_proto_executor_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -343,7 +392,7 @@ func (x *CancelOrderItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelOrderItem.ProtoReflect.Descriptor instead.
 func (*CancelOrderItem) Descriptor() ([]byte, []int) {
-	return file_proto_executor_proto_rawDescGZIP(), []int{3}
+	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *CancelOrderItem) GetChainId() int64 {
@@ -391,7 +440,7 @@ type CancelOrdersRequest struct {
 
 func (x *CancelOrdersRequest) Reset() {
 	*x = CancelOrdersRequest{}
-	mi := &file_proto_executor_proto_msgTypes[4]
+	mi := &file_rpc_proto_executor_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -403,7 +452,7 @@ func (x *CancelOrdersRequest) String() string {
 func (*CancelOrdersRequest) ProtoMessage() {}
 
 func (x *CancelOrdersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_executor_proto_msgTypes[4]
+	mi := &file_rpc_proto_executor_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -416,7 +465,7 @@ func (x *CancelOrdersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelOrdersRequest.ProtoReflect.Descriptor instead.
 func (*CancelOrdersRequest) Descriptor() ([]byte, []int) {
-	return file_proto_executor_proto_rawDescGZIP(), []int{4}
+	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *CancelOrdersRequest) GetOrders() []*CancelOrderItem {
@@ -451,7 +500,7 @@ type CancelOrdersResult struct {
 
 func (x *CancelOrdersResult) Reset() {
 	*x = CancelOrdersResult{}
-	mi := &file_proto_executor_proto_msgTypes[5]
+	mi := &file_rpc_proto_executor_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -463,7 +512,7 @@ func (x *CancelOrdersResult) String() string {
 func (*CancelOrdersResult) ProtoMessage() {}
 
 func (x *CancelOrdersResult) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_executor_proto_msgTypes[5]
+	mi := &file_rpc_proto_executor_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -476,7 +525,7 @@ func (x *CancelOrdersResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelOrdersResult.ProtoReflect.Descriptor instead.
 func (*CancelOrdersResult) Descriptor() ([]byte, []int) {
-	return file_proto_executor_proto_rawDescGZIP(), []int{5}
+	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *CancelOrdersResult) GetChainId() int64 {
@@ -561,7 +610,7 @@ type CancelOrdersResponse struct {
 
 func (x *CancelOrdersResponse) Reset() {
 	*x = CancelOrdersResponse{}
-	mi := &file_proto_executor_proto_msgTypes[6]
+	mi := &file_rpc_proto_executor_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -573,7 +622,7 @@ func (x *CancelOrdersResponse) String() string {
 func (*CancelOrdersResponse) ProtoMessage() {}
 
 func (x *CancelOrdersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_executor_proto_msgTypes[6]
+	mi := &file_rpc_proto_executor_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -586,7 +635,7 @@ func (x *CancelOrdersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelOrdersResponse.ProtoReflect.Descriptor instead.
 func (*CancelOrdersResponse) Descriptor() ([]byte, []int) {
-	return file_proto_executor_proto_rawDescGZIP(), []int{6}
+	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CancelOrdersResponse) GetTotal() uint32 {
@@ -628,7 +677,7 @@ type GetOrderRequest struct {
 
 func (x *GetOrderRequest) Reset() {
 	*x = GetOrderRequest{}
-	mi := &file_proto_executor_proto_msgTypes[7]
+	mi := &file_rpc_proto_executor_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -640,7 +689,7 @@ func (x *GetOrderRequest) String() string {
 func (*GetOrderRequest) ProtoMessage() {}
 
 func (x *GetOrderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_executor_proto_msgTypes[7]
+	mi := &file_rpc_proto_executor_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -653,7 +702,7 @@ func (x *GetOrderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetOrderRequest.ProtoReflect.Descriptor instead.
 func (*GetOrderRequest) Descriptor() ([]byte, []int) {
-	return file_proto_executor_proto_rawDescGZIP(), []int{7}
+	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GetOrderRequest) GetChainId() int64 {
@@ -719,7 +768,7 @@ type GetOrderResponse struct {
 
 func (x *GetOrderResponse) Reset() {
 	*x = GetOrderResponse{}
-	mi := &file_proto_executor_proto_msgTypes[8]
+	mi := &file_rpc_proto_executor_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -731,7 +780,7 @@ func (x *GetOrderResponse) String() string {
 func (*GetOrderResponse) ProtoMessage() {}
 
 func (x *GetOrderResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_executor_proto_msgTypes[8]
+	mi := &file_rpc_proto_executor_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -744,7 +793,7 @@ func (x *GetOrderResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetOrderResponse.ProtoReflect.Descriptor instead.
 func (*GetOrderResponse) Descriptor() ([]byte, []int) {
-	return file_proto_executor_proto_rawDescGZIP(), []int{8}
+	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetOrderResponse) GetId() uint64 {
@@ -985,11 +1034,555 @@ func (x *GetOrderResponse) GetSettledExecutorReward() string {
 	return ""
 }
 
-var File_proto_executor_proto protoreflect.FileDescriptor
+type GetBestRouteRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ChainId       int64                  `protobuf:"varint,1,opt,name=chainId,proto3" json:"chainId,omitempty"`
+	TokenIn       string                 `protobuf:"bytes,2,opt,name=tokenIn,proto3" json:"tokenIn,omitempty"`
+	TokenOut      string                 `protobuf:"bytes,3,opt,name=tokenOut,proto3" json:"tokenOut,omitempty"`
+	Amount        string                 `protobuf:"bytes,4,opt,name=amount,proto3" json:"amount,omitempty"`
+	MaxHops       uint32                 `protobuf:"varint,5,opt,name=maxHops,proto3" json:"maxHops,omitempty"`
+	QuoteType     RouteQuoteType         `protobuf:"varint,6,opt,name=quoteType,proto3,enum=executor.RouteQuoteType" json:"quoteType,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
 
-const file_proto_executor_proto_rawDesc = "" +
+func (x *GetBestRouteRequest) Reset() {
+	*x = GetBestRouteRequest{}
+	mi := &file_rpc_proto_executor_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetBestRouteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetBestRouteRequest) ProtoMessage() {}
+
+func (x *GetBestRouteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_rpc_proto_executor_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetBestRouteRequest.ProtoReflect.Descriptor instead.
+func (*GetBestRouteRequest) Descriptor() ([]byte, []int) {
+	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *GetBestRouteRequest) GetChainId() int64 {
+	if x != nil {
+		return x.ChainId
+	}
+	return 0
+}
+
+func (x *GetBestRouteRequest) GetTokenIn() string {
+	if x != nil {
+		return x.TokenIn
+	}
+	return ""
+}
+
+func (x *GetBestRouteRequest) GetTokenOut() string {
+	if x != nil {
+		return x.TokenOut
+	}
+	return ""
+}
+
+func (x *GetBestRouteRequest) GetAmount() string {
+	if x != nil {
+		return x.Amount
+	}
+	return ""
+}
+
+func (x *GetBestRouteRequest) GetMaxHops() uint32 {
+	if x != nil {
+		return x.MaxHops
+	}
+	return 0
+}
+
+func (x *GetBestRouteRequest) GetQuoteType() RouteQuoteType {
+	if x != nil {
+		return x.QuoteType
+	}
+	return RouteQuoteType_ROUTE_QUOTE_TYPE_UNSPECIFIED
+}
+
+type RoutePath struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	Tokens               []string               `protobuf:"bytes,1,rep,name=tokens,proto3" json:"tokens,omitempty"`
+	Hops                 uint32                 `protobuf:"varint,2,opt,name=hops,proto3" json:"hops,omitempty"`
+	AmountIn             string                 `protobuf:"bytes,3,opt,name=amountIn,proto3" json:"amountIn,omitempty"`
+	AmountOut            string                 `protobuf:"bytes,4,opt,name=amountOut,proto3" json:"amountOut,omitempty"`
+	GasEstimate          uint64                 `protobuf:"varint,5,opt,name=gasEstimate,proto3" json:"gasEstimate,omitempty"`
+	GasCostInInputToken  string                 `protobuf:"bytes,6,opt,name=gasCostInInputToken,proto3" json:"gasCostInInputToken,omitempty"`
+	GasCostInOutputToken string                 `protobuf:"bytes,7,opt,name=gasCostInOutputToken,proto3" json:"gasCostInOutputToken,omitempty"`
+	GasAdjustedAmountIn  string                 `protobuf:"bytes,8,opt,name=gasAdjustedAmountIn,proto3" json:"gasAdjustedAmountIn,omitempty"`
+	GasAdjustedAmountOut string                 `protobuf:"bytes,9,opt,name=gasAdjustedAmountOut,proto3" json:"gasAdjustedAmountOut,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *RoutePath) Reset() {
+	*x = RoutePath{}
+	mi := &file_rpc_proto_executor_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RoutePath) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RoutePath) ProtoMessage() {}
+
+func (x *RoutePath) ProtoReflect() protoreflect.Message {
+	mi := &file_rpc_proto_executor_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RoutePath.ProtoReflect.Descriptor instead.
+func (*RoutePath) Descriptor() ([]byte, []int) {
+	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *RoutePath) GetTokens() []string {
+	if x != nil {
+		return x.Tokens
+	}
+	return nil
+}
+
+func (x *RoutePath) GetHops() uint32 {
+	if x != nil {
+		return x.Hops
+	}
+	return 0
+}
+
+func (x *RoutePath) GetAmountIn() string {
+	if x != nil {
+		return x.AmountIn
+	}
+	return ""
+}
+
+func (x *RoutePath) GetAmountOut() string {
+	if x != nil {
+		return x.AmountOut
+	}
+	return ""
+}
+
+func (x *RoutePath) GetGasEstimate() uint64 {
+	if x != nil {
+		return x.GasEstimate
+	}
+	return 0
+}
+
+func (x *RoutePath) GetGasCostInInputToken() string {
+	if x != nil {
+		return x.GasCostInInputToken
+	}
+	return ""
+}
+
+func (x *RoutePath) GetGasCostInOutputToken() string {
+	if x != nil {
+		return x.GasCostInOutputToken
+	}
+	return ""
+}
+
+func (x *RoutePath) GetGasAdjustedAmountIn() string {
+	if x != nil {
+		return x.GasAdjustedAmountIn
+	}
+	return ""
+}
+
+func (x *RoutePath) GetGasAdjustedAmountOut() string {
+	if x != nil {
+		return x.GasAdjustedAmountOut
+	}
+	return ""
+}
+
+type RouteQuote struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	QuoteType     RouteQuoteType         `protobuf:"varint,1,opt,name=quoteType,proto3,enum=executor.RouteQuoteType" json:"quoteType,omitempty"`
+	AmountIn      string                 `protobuf:"bytes,2,opt,name=amountIn,proto3" json:"amountIn,omitempty"`
+	AmountOut     string                 `protobuf:"bytes,3,opt,name=amountOut,proto3" json:"amountOut,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RouteQuote) Reset() {
+	*x = RouteQuote{}
+	mi := &file_rpc_proto_executor_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RouteQuote) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RouteQuote) ProtoMessage() {}
+
+func (x *RouteQuote) ProtoReflect() protoreflect.Message {
+	mi := &file_rpc_proto_executor_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RouteQuote.ProtoReflect.Descriptor instead.
+func (*RouteQuote) Descriptor() ([]byte, []int) {
+	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *RouteQuote) GetQuoteType() RouteQuoteType {
+	if x != nil {
+		return x.QuoteType
+	}
+	return RouteQuoteType_ROUTE_QUOTE_TYPE_UNSPECIFIED
+}
+
+func (x *RouteQuote) GetAmountIn() string {
+	if x != nil {
+		return x.AmountIn
+	}
+	return ""
+}
+
+func (x *RouteQuote) GetAmountOut() string {
+	if x != nil {
+		return x.AmountOut
+	}
+	return ""
+}
+
+type RouteView struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	PathTokens           []string               `protobuf:"bytes,1,rep,name=pathTokens,proto3" json:"pathTokens,omitempty"`
+	ExecutionPath        []string               `protobuf:"bytes,2,rep,name=executionPath,proto3" json:"executionPath,omitempty"`
+	Hops                 uint32                 `protobuf:"varint,3,opt,name=hops,proto3" json:"hops,omitempty"`
+	IsDirect             bool                   `protobuf:"varint,4,opt,name=isDirect,proto3" json:"isDirect,omitempty"`
+	IsMultiHop           bool                   `protobuf:"varint,5,opt,name=isMultiHop,proto3" json:"isMultiHop,omitempty"`
+	AmountIn             string                 `protobuf:"bytes,6,opt,name=amountIn,proto3" json:"amountIn,omitempty"`
+	AmountOut            string                 `protobuf:"bytes,7,opt,name=amountOut,proto3" json:"amountOut,omitempty"`
+	GasEstimate          uint64                 `protobuf:"varint,8,opt,name=gasEstimate,proto3" json:"gasEstimate,omitempty"`
+	GasCostInInputToken  string                 `protobuf:"bytes,9,opt,name=gasCostInInputToken,proto3" json:"gasCostInInputToken,omitempty"`
+	GasCostInOutputToken string                 `protobuf:"bytes,10,opt,name=gasCostInOutputToken,proto3" json:"gasCostInOutputToken,omitempty"`
+	GasAdjustedAmountIn  string                 `protobuf:"bytes,11,opt,name=gasAdjustedAmountIn,proto3" json:"gasAdjustedAmountIn,omitempty"`
+	GasAdjustedAmountOut string                 `protobuf:"bytes,12,opt,name=gasAdjustedAmountOut,proto3" json:"gasAdjustedAmountOut,omitempty"`
+	RankingMetric        string                 `protobuf:"bytes,13,opt,name=rankingMetric,proto3" json:"rankingMetric,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *RouteView) Reset() {
+	*x = RouteView{}
+	mi := &file_rpc_proto_executor_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RouteView) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RouteView) ProtoMessage() {}
+
+func (x *RouteView) ProtoReflect() protoreflect.Message {
+	mi := &file_rpc_proto_executor_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RouteView.ProtoReflect.Descriptor instead.
+func (*RouteView) Descriptor() ([]byte, []int) {
+	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *RouteView) GetPathTokens() []string {
+	if x != nil {
+		return x.PathTokens
+	}
+	return nil
+}
+
+func (x *RouteView) GetExecutionPath() []string {
+	if x != nil {
+		return x.ExecutionPath
+	}
+	return nil
+}
+
+func (x *RouteView) GetHops() uint32 {
+	if x != nil {
+		return x.Hops
+	}
+	return 0
+}
+
+func (x *RouteView) GetIsDirect() bool {
+	if x != nil {
+		return x.IsDirect
+	}
+	return false
+}
+
+func (x *RouteView) GetIsMultiHop() bool {
+	if x != nil {
+		return x.IsMultiHop
+	}
+	return false
+}
+
+func (x *RouteView) GetAmountIn() string {
+	if x != nil {
+		return x.AmountIn
+	}
+	return ""
+}
+
+func (x *RouteView) GetAmountOut() string {
+	if x != nil {
+		return x.AmountOut
+	}
+	return ""
+}
+
+func (x *RouteView) GetGasEstimate() uint64 {
+	if x != nil {
+		return x.GasEstimate
+	}
+	return 0
+}
+
+func (x *RouteView) GetGasCostInInputToken() string {
+	if x != nil {
+		return x.GasCostInInputToken
+	}
+	return ""
+}
+
+func (x *RouteView) GetGasCostInOutputToken() string {
+	if x != nil {
+		return x.GasCostInOutputToken
+	}
+	return ""
+}
+
+func (x *RouteView) GetGasAdjustedAmountIn() string {
+	if x != nil {
+		return x.GasAdjustedAmountIn
+	}
+	return ""
+}
+
+func (x *RouteView) GetGasAdjustedAmountOut() string {
+	if x != nil {
+		return x.GasAdjustedAmountOut
+	}
+	return ""
+}
+
+func (x *RouteView) GetRankingMetric() string {
+	if x != nil {
+		return x.RankingMetric
+	}
+	return ""
+}
+
+type RouteExecution struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RouterPath    []string               `protobuf:"bytes,1,rep,name=routerPath,proto3" json:"routerPath,omitempty"`
+	IsMultiHop    bool                   `protobuf:"varint,2,opt,name=isMultiHop,proto3" json:"isMultiHop,omitempty"`
+	Strategy      string                 `protobuf:"bytes,3,opt,name=strategy,proto3" json:"strategy,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RouteExecution) Reset() {
+	*x = RouteExecution{}
+	mi := &file_rpc_proto_executor_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RouteExecution) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RouteExecution) ProtoMessage() {}
+
+func (x *RouteExecution) ProtoReflect() protoreflect.Message {
+	mi := &file_rpc_proto_executor_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RouteExecution.ProtoReflect.Descriptor instead.
+func (*RouteExecution) Descriptor() ([]byte, []int) {
+	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *RouteExecution) GetRouterPath() []string {
+	if x != nil {
+		return x.RouterPath
+	}
+	return nil
+}
+
+func (x *RouteExecution) GetIsMultiHop() bool {
+	if x != nil {
+		return x.IsMultiHop
+	}
+	return false
+}
+
+func (x *RouteExecution) GetStrategy() string {
+	if x != nil {
+		return x.Strategy
+	}
+	return ""
+}
+
+type GetBestRouteResponse struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	Notice                 *ResponseNotice        `protobuf:"bytes,1,opt,name=notice,proto3" json:"notice,omitempty"`
+	SelectedRoute          *RouteView             `protobuf:"bytes,2,opt,name=selectedRoute,proto3" json:"selectedRoute,omitempty"`
+	AlternativeRoutes      []*RouteView           `protobuf:"bytes,3,rep,name=alternativeRoutes,proto3" json:"alternativeRoutes,omitempty"`
+	Execution              *RouteExecution        `protobuf:"bytes,4,opt,name=execution,proto3" json:"execution,omitempty"`
+	SelectionReason        string                 `protobuf:"bytes,5,opt,name=selectionReason,proto3" json:"selectionReason,omitempty"`
+	UsedGasAdjustedRanking bool                   `protobuf:"varint,6,opt,name=usedGasAdjustedRanking,proto3" json:"usedGasAdjustedRanking,omitempty"`
+	Quote                  *RouteQuote            `protobuf:"bytes,7,opt,name=quote,proto3" json:"quote,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *GetBestRouteResponse) Reset() {
+	*x = GetBestRouteResponse{}
+	mi := &file_rpc_proto_executor_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetBestRouteResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetBestRouteResponse) ProtoMessage() {}
+
+func (x *GetBestRouteResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_rpc_proto_executor_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetBestRouteResponse.ProtoReflect.Descriptor instead.
+func (*GetBestRouteResponse) Descriptor() ([]byte, []int) {
+	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *GetBestRouteResponse) GetNotice() *ResponseNotice {
+	if x != nil {
+		return x.Notice
+	}
+	return nil
+}
+
+func (x *GetBestRouteResponse) GetSelectedRoute() *RouteView {
+	if x != nil {
+		return x.SelectedRoute
+	}
+	return nil
+}
+
+func (x *GetBestRouteResponse) GetAlternativeRoutes() []*RouteView {
+	if x != nil {
+		return x.AlternativeRoutes
+	}
+	return nil
+}
+
+func (x *GetBestRouteResponse) GetExecution() *RouteExecution {
+	if x != nil {
+		return x.Execution
+	}
+	return nil
+}
+
+func (x *GetBestRouteResponse) GetSelectionReason() string {
+	if x != nil {
+		return x.SelectionReason
+	}
+	return ""
+}
+
+func (x *GetBestRouteResponse) GetUsedGasAdjustedRanking() bool {
+	if x != nil {
+		return x.UsedGasAdjustedRanking
+	}
+	return false
+}
+
+func (x *GetBestRouteResponse) GetQuote() *RouteQuote {
+	if x != nil {
+		return x.Quote
+	}
+	return nil
+}
+
+var File_rpc_proto_executor_proto protoreflect.FileDescriptor
+
+const file_rpc_proto_executor_proto_rawDesc = "" +
 	"\n" +
-	"\x14proto/executor.proto\x12\bexecutor\"\x82\x01\n" +
+	"\x18rpc/proto/executor.proto\x12\bexecutor\"\x82\x01\n" +
 	"\x0eResponseNotice\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x12\n" +
 	"\x04code\x18\x02 \x01(\tR\x04code\x12\x18\n" +
@@ -1086,78 +1679,158 @@ const file_proto_executor_proto_rawDesc = "" +
 	"\x14lastExecutionCheckAt\x18\x1f \x01(\tR\x14lastExecutionCheckAt\x12(\n" +
 	"\x0flastBlockReason\x18  \x01(\tR\x0flastBlockReason\x12*\n" +
 	"\x10settledAmountOut\x18! \x01(\tR\x10settledAmountOut\x124\n" +
-	"\x15settledExecutorReward\x18\" \x01(\tR\x15settledExecutorReward2\xe8\x01\n" +
+	"\x15settledExecutorReward\x18\" \x01(\tR\x15settledExecutorReward\"\xcf\x01\n" +
+	"\x13GetBestRouteRequest\x12\x18\n" +
+	"\achainId\x18\x01 \x01(\x03R\achainId\x12\x18\n" +
+	"\atokenIn\x18\x02 \x01(\tR\atokenIn\x12\x1a\n" +
+	"\btokenOut\x18\x03 \x01(\tR\btokenOut\x12\x16\n" +
+	"\x06amount\x18\x04 \x01(\tR\x06amount\x12\x18\n" +
+	"\amaxHops\x18\x05 \x01(\rR\amaxHops\x126\n" +
+	"\tquoteType\x18\x06 \x01(\x0e2\x18.executor.RouteQuoteTypeR\tquoteType\"\xdf\x02\n" +
+	"\tRoutePath\x12\x16\n" +
+	"\x06tokens\x18\x01 \x03(\tR\x06tokens\x12\x12\n" +
+	"\x04hops\x18\x02 \x01(\rR\x04hops\x12\x1a\n" +
+	"\bamountIn\x18\x03 \x01(\tR\bamountIn\x12\x1c\n" +
+	"\tamountOut\x18\x04 \x01(\tR\tamountOut\x12 \n" +
+	"\vgasEstimate\x18\x05 \x01(\x04R\vgasEstimate\x120\n" +
+	"\x13gasCostInInputToken\x18\x06 \x01(\tR\x13gasCostInInputToken\x122\n" +
+	"\x14gasCostInOutputToken\x18\a \x01(\tR\x14gasCostInOutputToken\x120\n" +
+	"\x13gasAdjustedAmountIn\x18\b \x01(\tR\x13gasAdjustedAmountIn\x122\n" +
+	"\x14gasAdjustedAmountOut\x18\t \x01(\tR\x14gasAdjustedAmountOut\"~\n" +
+	"\n" +
+	"RouteQuote\x126\n" +
+	"\tquoteType\x18\x01 \x01(\x0e2\x18.executor.RouteQuoteTypeR\tquoteType\x12\x1a\n" +
+	"\bamountIn\x18\x02 \x01(\tR\bamountIn\x12\x1c\n" +
+	"\tamountOut\x18\x03 \x01(\tR\tamountOut\"\xef\x03\n" +
+	"\tRouteView\x12\x1e\n" +
+	"\n" +
+	"pathTokens\x18\x01 \x03(\tR\n" +
+	"pathTokens\x12$\n" +
+	"\rexecutionPath\x18\x02 \x03(\tR\rexecutionPath\x12\x12\n" +
+	"\x04hops\x18\x03 \x01(\rR\x04hops\x12\x1a\n" +
+	"\bisDirect\x18\x04 \x01(\bR\bisDirect\x12\x1e\n" +
+	"\n" +
+	"isMultiHop\x18\x05 \x01(\bR\n" +
+	"isMultiHop\x12\x1a\n" +
+	"\bamountIn\x18\x06 \x01(\tR\bamountIn\x12\x1c\n" +
+	"\tamountOut\x18\a \x01(\tR\tamountOut\x12 \n" +
+	"\vgasEstimate\x18\b \x01(\x04R\vgasEstimate\x120\n" +
+	"\x13gasCostInInputToken\x18\t \x01(\tR\x13gasCostInInputToken\x122\n" +
+	"\x14gasCostInOutputToken\x18\n" +
+	" \x01(\tR\x14gasCostInOutputToken\x120\n" +
+	"\x13gasAdjustedAmountIn\x18\v \x01(\tR\x13gasAdjustedAmountIn\x122\n" +
+	"\x14gasAdjustedAmountOut\x18\f \x01(\tR\x14gasAdjustedAmountOut\x12$\n" +
+	"\rrankingMetric\x18\r \x01(\tR\rrankingMetric\"l\n" +
+	"\x0eRouteExecution\x12\x1e\n" +
+	"\n" +
+	"routerPath\x18\x01 \x03(\tR\n" +
+	"routerPath\x12\x1e\n" +
+	"\n" +
+	"isMultiHop\x18\x02 \x01(\bR\n" +
+	"isMultiHop\x12\x1a\n" +
+	"\bstrategy\x18\x03 \x01(\tR\bstrategy\"\x8c\x03\n" +
+	"\x14GetBestRouteResponse\x120\n" +
+	"\x06notice\x18\x01 \x01(\v2\x18.executor.ResponseNoticeR\x06notice\x129\n" +
+	"\rselectedRoute\x18\x02 \x01(\v2\x13.executor.RouteViewR\rselectedRoute\x12A\n" +
+	"\x11alternativeRoutes\x18\x03 \x03(\v2\x13.executor.RouteViewR\x11alternativeRoutes\x126\n" +
+	"\texecution\x18\x04 \x01(\v2\x18.executor.RouteExecutionR\texecution\x12(\n" +
+	"\x0fselectionReason\x18\x05 \x01(\tR\x0fselectionReason\x126\n" +
+	"\x16usedGasAdjustedRanking\x18\x06 \x01(\bR\x16usedGasAdjustedRanking\x12*\n" +
+	"\x05quote\x18\a \x01(\v2\x14.executor.RouteQuoteR\x05quote*w\n" +
+	"\x0eRouteQuoteType\x12 \n" +
+	"\x1cROUTE_QUOTE_TYPE_UNSPECIFIED\x10\x00\x12 \n" +
+	"\x1cROUTE_QUOTE_TYPE_EXACT_INPUT\x10\x01\x12!\n" +
+	"\x1dROUTE_QUOTE_TYPE_EXACT_OUTPUT\x10\x022\xb7\x02\n" +
 	"\bExecutor\x12J\n" +
 	"\vCreateOrder\x12\x1c.executor.CreateOrderRequest\x1a\x1d.executor.CreateOrderResponse\x12M\n" +
 	"\fCancelOrders\x12\x1d.executor.CancelOrdersRequest\x1a\x1e.executor.CancelOrdersResponse\x12A\n" +
-	"\bGetOrder\x12\x19.executor.GetOrderRequest\x1a\x1a.executor.GetOrderResponseB\fZ\n" +
+	"\bGetOrder\x12\x19.executor.GetOrderRequest\x1a\x1a.executor.GetOrderResponse\x12M\n" +
+	"\fGetBestRoute\x12\x1d.executor.GetBestRouteRequest\x1a\x1e.executor.GetBestRouteResponseB\fZ\n" +
 	"./executorb\x06proto3"
 
 var (
-	file_proto_executor_proto_rawDescOnce sync.Once
-	file_proto_executor_proto_rawDescData []byte
+	file_rpc_proto_executor_proto_rawDescOnce sync.Once
+	file_rpc_proto_executor_proto_rawDescData []byte
 )
 
-func file_proto_executor_proto_rawDescGZIP() []byte {
-	file_proto_executor_proto_rawDescOnce.Do(func() {
-		file_proto_executor_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_executor_proto_rawDesc), len(file_proto_executor_proto_rawDesc)))
+func file_rpc_proto_executor_proto_rawDescGZIP() []byte {
+	file_rpc_proto_executor_proto_rawDescOnce.Do(func() {
+		file_rpc_proto_executor_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_rpc_proto_executor_proto_rawDesc), len(file_rpc_proto_executor_proto_rawDesc)))
 	})
-	return file_proto_executor_proto_rawDescData
+	return file_rpc_proto_executor_proto_rawDescData
 }
 
-var file_proto_executor_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
-var file_proto_executor_proto_goTypes = []any{
-	(*ResponseNotice)(nil),       // 0: executor.ResponseNotice
-	(*CreateOrderRequest)(nil),   // 1: executor.CreateOrderRequest
-	(*CreateOrderResponse)(nil),  // 2: executor.CreateOrderResponse
-	(*CancelOrderItem)(nil),      // 3: executor.CancelOrderItem
-	(*CancelOrdersRequest)(nil),  // 4: executor.CancelOrdersRequest
-	(*CancelOrdersResult)(nil),   // 5: executor.CancelOrdersResult
-	(*CancelOrdersResponse)(nil), // 6: executor.CancelOrdersResponse
-	(*GetOrderRequest)(nil),      // 7: executor.GetOrderRequest
-	(*GetOrderResponse)(nil),     // 8: executor.GetOrderResponse
+var file_rpc_proto_executor_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_rpc_proto_executor_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_rpc_proto_executor_proto_goTypes = []any{
+	(RouteQuoteType)(0),          // 0: executor.RouteQuoteType
+	(*ResponseNotice)(nil),       // 1: executor.ResponseNotice
+	(*CreateOrderRequest)(nil),   // 2: executor.CreateOrderRequest
+	(*CreateOrderResponse)(nil),  // 3: executor.CreateOrderResponse
+	(*CancelOrderItem)(nil),      // 4: executor.CancelOrderItem
+	(*CancelOrdersRequest)(nil),  // 5: executor.CancelOrdersRequest
+	(*CancelOrdersResult)(nil),   // 6: executor.CancelOrdersResult
+	(*CancelOrdersResponse)(nil), // 7: executor.CancelOrdersResponse
+	(*GetOrderRequest)(nil),      // 8: executor.GetOrderRequest
+	(*GetOrderResponse)(nil),     // 9: executor.GetOrderResponse
+	(*GetBestRouteRequest)(nil),  // 10: executor.GetBestRouteRequest
+	(*RoutePath)(nil),            // 11: executor.RoutePath
+	(*RouteQuote)(nil),           // 12: executor.RouteQuote
+	(*RouteView)(nil),            // 13: executor.RouteView
+	(*RouteExecution)(nil),       // 14: executor.RouteExecution
+	(*GetBestRouteResponse)(nil), // 15: executor.GetBestRouteResponse
 }
-var file_proto_executor_proto_depIdxs = []int32{
-	8,  // 0: executor.CreateOrderResponse.order:type_name -> executor.GetOrderResponse
-	0,  // 1: executor.CreateOrderResponse.notice:type_name -> executor.ResponseNotice
-	3,  // 2: executor.CancelOrdersRequest.orders:type_name -> executor.CancelOrderItem
-	8,  // 3: executor.CancelOrdersResult.order:type_name -> executor.GetOrderResponse
-	5,  // 4: executor.CancelOrdersResponse.results:type_name -> executor.CancelOrdersResult
-	0,  // 5: executor.CancelOrdersResponse.notice:type_name -> executor.ResponseNotice
-	0,  // 6: executor.GetOrderResponse.notice:type_name -> executor.ResponseNotice
-	1,  // 7: executor.Executor.CreateOrder:input_type -> executor.CreateOrderRequest
-	4,  // 8: executor.Executor.CancelOrders:input_type -> executor.CancelOrdersRequest
-	7,  // 9: executor.Executor.GetOrder:input_type -> executor.GetOrderRequest
-	2,  // 10: executor.Executor.CreateOrder:output_type -> executor.CreateOrderResponse
-	6,  // 11: executor.Executor.CancelOrders:output_type -> executor.CancelOrdersResponse
-	8,  // 12: executor.Executor.GetOrder:output_type -> executor.GetOrderResponse
-	10, // [10:13] is the sub-list for method output_type
-	7,  // [7:10] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+var file_rpc_proto_executor_proto_depIdxs = []int32{
+	9,  // 0: executor.CreateOrderResponse.order:type_name -> executor.GetOrderResponse
+	1,  // 1: executor.CreateOrderResponse.notice:type_name -> executor.ResponseNotice
+	4,  // 2: executor.CancelOrdersRequest.orders:type_name -> executor.CancelOrderItem
+	9,  // 3: executor.CancelOrdersResult.order:type_name -> executor.GetOrderResponse
+	6,  // 4: executor.CancelOrdersResponse.results:type_name -> executor.CancelOrdersResult
+	1,  // 5: executor.CancelOrdersResponse.notice:type_name -> executor.ResponseNotice
+	1,  // 6: executor.GetOrderResponse.notice:type_name -> executor.ResponseNotice
+	0,  // 7: executor.GetBestRouteRequest.quoteType:type_name -> executor.RouteQuoteType
+	0,  // 8: executor.RouteQuote.quoteType:type_name -> executor.RouteQuoteType
+	1,  // 9: executor.GetBestRouteResponse.notice:type_name -> executor.ResponseNotice
+	13, // 10: executor.GetBestRouteResponse.selectedRoute:type_name -> executor.RouteView
+	13, // 11: executor.GetBestRouteResponse.alternativeRoutes:type_name -> executor.RouteView
+	14, // 12: executor.GetBestRouteResponse.execution:type_name -> executor.RouteExecution
+	12, // 13: executor.GetBestRouteResponse.quote:type_name -> executor.RouteQuote
+	2,  // 14: executor.Executor.CreateOrder:input_type -> executor.CreateOrderRequest
+	5,  // 15: executor.Executor.CancelOrders:input_type -> executor.CancelOrdersRequest
+	8,  // 16: executor.Executor.GetOrder:input_type -> executor.GetOrderRequest
+	10, // 17: executor.Executor.GetBestRoute:input_type -> executor.GetBestRouteRequest
+	3,  // 18: executor.Executor.CreateOrder:output_type -> executor.CreateOrderResponse
+	7,  // 19: executor.Executor.CancelOrders:output_type -> executor.CancelOrdersResponse
+	9,  // 20: executor.Executor.GetOrder:output_type -> executor.GetOrderResponse
+	15, // 21: executor.Executor.GetBestRoute:output_type -> executor.GetBestRouteResponse
+	18, // [18:22] is the sub-list for method output_type
+	14, // [14:18] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
-func init() { file_proto_executor_proto_init() }
-func file_proto_executor_proto_init() {
-	if File_proto_executor_proto != nil {
+func init() { file_rpc_proto_executor_proto_init() }
+func file_rpc_proto_executor_proto_init() {
+	if File_rpc_proto_executor_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_executor_proto_rawDesc), len(file_proto_executor_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   9,
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_rpc_proto_executor_proto_rawDesc), len(file_rpc_proto_executor_proto_rawDesc)),
+			NumEnums:      1,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_proto_executor_proto_goTypes,
-		DependencyIndexes: file_proto_executor_proto_depIdxs,
-		MessageInfos:      file_proto_executor_proto_msgTypes,
+		GoTypes:           file_rpc_proto_executor_proto_goTypes,
+		DependencyIndexes: file_rpc_proto_executor_proto_depIdxs,
+		EnumInfos:         file_rpc_proto_executor_proto_enumTypes,
+		MessageInfos:      file_rpc_proto_executor_proto_msgTypes,
 	}.Build()
-	File_proto_executor_proto = out.File
-	file_proto_executor_proto_goTypes = nil
-	file_proto_executor_proto_depIdxs = nil
+	File_rpc_proto_executor_proto = out.File
+	file_rpc_proto_executor_proto_goTypes = nil
+	file_rpc_proto_executor_proto_depIdxs = nil
 }

@@ -23,6 +23,7 @@ import (
 type SettlementConfig struct {
 	ChainID            int64
 	RPCURL             string
+	WSRPCURL           string
 	SettlementAddress  string
 	ExecutorPrivateKey string
 }

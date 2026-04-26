@@ -1,4 +1,4 @@
-﻿services:
+services:
   postgres:
     image: postgres:17
     container_name: fluxswap-backend-postgres
@@ -17,6 +17,18 @@
       timeout: 5s
       retries: 20
 
+  redis:
+    image: redis:7-alpine
+    container_name: fluxswap-backend-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   migrate:
     build:
       context: .
@@ -24,6 +36,8 @@
     container_name: fluxswap-backend-migrate
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     volumes:
       - ./executor.docker.yaml:/app/executor.docker.yaml:ro
@@ -37,6 +51,8 @@
     container_name: fluxswap-backend-rpc
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
@@ -62,6 +78,8 @@
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
     volumes:
@@ -85,6 +103,8 @@
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
     volumes:
@@ -100,7 +120,22 @@
       start_period: 10s
     restart: unless-stopped
 
+  routergraph:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fluxswap-backend-routergraph
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ./executor.docker.yaml:/app/executor.docker.yaml:ro
+    command: ["routergraph", "-f", "/app/executor.docker.yaml"]
+    restart: unless-stopped
+
 volumes:
   postgres_data:
-
-

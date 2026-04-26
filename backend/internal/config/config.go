@@ -4,17 +4,20 @@ import (
 	"fmt"
 	"strings"
 
+	backendredis "fluxswap-backend/redis"
+
 	"github.com/zeromicro/go-zero/zrpc"
 )
 
-// Config 是执行器后端的总配置，会被 RPC、executor、indexer 等进程共同加载。
+// Config 是后端统一配置，会被 RPC、executor、indexer 等进程共同加载。
 type Config struct {
 	zrpc.RpcServerConf
-	App      AppConfig
-	Database DatabaseConfig
-	Chain    ChainConfig `json:",optional"`
-	Chains   []ChainConfig
-	Worker   WorkerConfig
+	App         AppConfig
+	Database    DatabaseConfig
+	RedisClient backendredis.Options `json:",optional"`
+	Chain       ChainConfig          `json:",optional"`
+	Chains      []ChainConfig
+	Worker      WorkerConfig
 }
 
 // AppConfig 描述应用名称和运行环境等基础信息。
@@ -42,18 +45,20 @@ type ChainConfig struct {
 
 // WorkerConfig 控制后台 worker 的轮询节奏、批量大小和健康检查监听地址。
 type WorkerConfig struct {
-	ExecutorScanIntervalMs   int64
-	ExecutorBatchSize        int
-	ExecutorTxDeadlineSec    int64
-	ExecutorEstimatedGasUsed uint64
-	ExecutorFeeSafetyBps     int64
-	ProtocolBlockedRetryMs   int64
-	ReceiptPollIntervalMs    int64
-	IndexerHeartbeatMs       int64
-	IndexerBackfillBlocks    int64
-	RPCHealthListenOn        string
-	ExecutorHealthListenOn   string
-	IndexerHealthListenOn    string
+	ExecutorScanIntervalMs    int64
+	ExecutorBatchSize         int
+	ExecutorTxDeadlineSec     int64
+	ExecutorEstimatedGasUsed  uint64
+	ExecutorFeeSafetyBps      int64
+	ProtocolBlockedRetryMs    int64
+	ReceiptPollIntervalMs     int64
+	IndexerHeartbeatMs        int64
+	IndexerBackfillBlocks     int64
+	RouterGraphSyncIntervalMs int64
+	RouterGraphBackfillBlocks int64
+	RPCHealthListenOn         string
+	ExecutorHealthListenOn    string
+	IndexerHealthListenOn     string
 }
 
 // ActiveChains 返回当前配置中启用的链列表。

@@ -943,6 +943,15 @@ func (s *stubCancelChainClientReject) Close() {}
 func (s *stubCancelChainClientReject) SettlementAddress() string {
 	return "0x1111111111111111111111111111111111111111"
 }
+func (s *stubCancelChainClientReject) RouterAddress() common.Address {
+	return common.Address{}
+}
+func (s *stubCancelChainClientReject) WETHAddress() common.Address {
+	return common.Address{}
+}
+func (s *stubCancelChainClientReject) GetAmountsOut(context.Context, *big.Int, []common.Address) ([]*big.Int, error) {
+	return nil, fmt.Errorf("unexpected call")
+}
 func (s *stubCancelChainClientReject) SuggestExecutorFee(context.Context, common.Address, uint64, int64) (*big.Int, *big.Int, error) {
 	return nil, nil, fmt.Errorf("unexpected call")
 }
@@ -958,6 +967,15 @@ type stubCancelChainClientNotIndexed struct{}
 func (s *stubCancelChainClientNotIndexed) Close() {}
 func (s *stubCancelChainClientNotIndexed) SettlementAddress() string {
 	return "0x1111111111111111111111111111111111111111"
+}
+func (s *stubCancelChainClientNotIndexed) RouterAddress() common.Address {
+	return common.Address{}
+}
+func (s *stubCancelChainClientNotIndexed) WETHAddress() common.Address {
+	return common.Address{}
+}
+func (s *stubCancelChainClientNotIndexed) GetAmountsOut(context.Context, *big.Int, []common.Address) ([]*big.Int, error) {
+	return nil, fmt.Errorf("unexpected call")
 }
 func (s *stubCancelChainClientNotIndexed) SuggestExecutorFee(context.Context, common.Address, uint64, int64) (*big.Int, *big.Int, error) {
 	return nil, nil, fmt.Errorf("unexpected call")
@@ -980,6 +998,18 @@ func (s *stubCancelChainClient) Close() {}
 
 func (s *stubCancelChainClient) SettlementAddress() string {
 	return "0x1111111111111111111111111111111111111111"
+}
+
+func (s *stubCancelChainClient) RouterAddress() common.Address {
+	return common.Address{}
+}
+
+func (s *stubCancelChainClient) WETHAddress() common.Address {
+	return common.Address{}
+}
+
+func (s *stubCancelChainClient) GetAmountsOut(context.Context, *big.Int, []common.Address) ([]*big.Int, error) {
+	return nil, fmt.Errorf("unexpected call")
 }
 
 func (s *stubCancelChainClient) SuggestExecutorFee(context.Context, common.Address, uint64, int64) (*big.Int, *big.Int, error) {

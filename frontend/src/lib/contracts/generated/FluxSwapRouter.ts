@@ -241,18 +241,6 @@ export const fluxSwapRouterAbi = [
   {
     type: 'function',
     inputs: [
-      { name: 'amountOutMin', internalType: 'uint256', type: 'uint256' },
-      { name: 'path', internalType: 'address[]', type: 'address[]' },
-      { name: 'to', internalType: 'address', type: 'address' },
-      { name: 'deadline', internalType: 'uint256', type: 'uint256' },
-    ],
-    name: 'swapExactETHForTokensSupportingFeeOnTransferTokens',
-    outputs: [],
-    stateMutability: 'payable',
-  },
-  {
-    type: 'function',
-    inputs: [
       { name: 'amountIn', internalType: 'uint256', type: 'uint256' },
       { name: 'amountOutMin', internalType: 'uint256', type: 'uint256' },
       { name: 'path', internalType: 'address[]', type: 'address[]' },
@@ -274,36 +262,10 @@ export const fluxSwapRouterAbi = [
       { name: 'to', internalType: 'address', type: 'address' },
       { name: 'deadline', internalType: 'uint256', type: 'uint256' },
     ],
-    name: 'swapExactTokensForETHSupportingFeeOnTransferTokens',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'amountIn', internalType: 'uint256', type: 'uint256' },
-      { name: 'amountOutMin', internalType: 'uint256', type: 'uint256' },
-      { name: 'path', internalType: 'address[]', type: 'address[]' },
-      { name: 'to', internalType: 'address', type: 'address' },
-      { name: 'deadline', internalType: 'uint256', type: 'uint256' },
-    ],
     name: 'swapExactTokensForTokens',
     outputs: [
       { name: 'amounts', internalType: 'uint256[]', type: 'uint256[]' },
     ],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'amountIn', internalType: 'uint256', type: 'uint256' },
-      { name: 'amountOutMin', internalType: 'uint256', type: 'uint256' },
-      { name: 'path', internalType: 'address[]', type: 'address[]' },
-      { name: 'to', internalType: 'address', type: 'address' },
-      { name: 'deadline', internalType: 'uint256', type: 'uint256' },
-    ],
-    name: 'swapExactTokensForTokensSupportingFeeOnTransferTokens',
-    outputs: [],
     stateMutability: 'nonpayable',
   },
   {
@@ -485,15 +447,6 @@ export const writeFluxSwapRouterSwapExactEthForTokens =
   })
 
 /**
- * Wraps __{@link writeContract}__ with `abi` set to __{@link fluxSwapRouterAbi}__ and `functionName` set to `"swapExactETHForTokensSupportingFeeOnTransferTokens"`
- */
-export const writeFluxSwapRouterSwapExactEthForTokensSupportingFeeOnTransferTokens =
-  /*#__PURE__*/ createWriteContract({
-    abi: fluxSwapRouterAbi,
-    functionName: 'swapExactETHForTokensSupportingFeeOnTransferTokens',
-  })
-
-/**
  * Wraps __{@link writeContract}__ with `abi` set to __{@link fluxSwapRouterAbi}__ and `functionName` set to `"swapExactTokensForETH"`
  */
 export const writeFluxSwapRouterSwapExactTokensForEth =
@@ -503,30 +456,12 @@ export const writeFluxSwapRouterSwapExactTokensForEth =
   })
 
 /**
- * Wraps __{@link writeContract}__ with `abi` set to __{@link fluxSwapRouterAbi}__ and `functionName` set to `"swapExactTokensForETHSupportingFeeOnTransferTokens"`
- */
-export const writeFluxSwapRouterSwapExactTokensForEthSupportingFeeOnTransferTokens =
-  /*#__PURE__*/ createWriteContract({
-    abi: fluxSwapRouterAbi,
-    functionName: 'swapExactTokensForETHSupportingFeeOnTransferTokens',
-  })
-
-/**
  * Wraps __{@link writeContract}__ with `abi` set to __{@link fluxSwapRouterAbi}__ and `functionName` set to `"swapExactTokensForTokens"`
  */
 export const writeFluxSwapRouterSwapExactTokensForTokens =
   /*#__PURE__*/ createWriteContract({
     abi: fluxSwapRouterAbi,
     functionName: 'swapExactTokensForTokens',
-  })
-
-/**
- * Wraps __{@link writeContract}__ with `abi` set to __{@link fluxSwapRouterAbi}__ and `functionName` set to `"swapExactTokensForTokensSupportingFeeOnTransferTokens"`
- */
-export const writeFluxSwapRouterSwapExactTokensForTokensSupportingFeeOnTransferTokens =
-  /*#__PURE__*/ createWriteContract({
-    abi: fluxSwapRouterAbi,
-    functionName: 'swapExactTokensForTokensSupportingFeeOnTransferTokens',
   })
 
 /**
@@ -627,15 +562,6 @@ export const simulateFluxSwapRouterSwapExactEthForTokens =
   })
 
 /**
- * Wraps __{@link simulateContract}__ with `abi` set to __{@link fluxSwapRouterAbi}__ and `functionName` set to `"swapExactETHForTokensSupportingFeeOnTransferTokens"`
- */
-export const simulateFluxSwapRouterSwapExactEthForTokensSupportingFeeOnTransferTokens =
-  /*#__PURE__*/ createSimulateContract({
-    abi: fluxSwapRouterAbi,
-    functionName: 'swapExactETHForTokensSupportingFeeOnTransferTokens',
-  })
-
-/**
  * Wraps __{@link simulateContract}__ with `abi` set to __{@link fluxSwapRouterAbi}__ and `functionName` set to `"swapExactTokensForETH"`
  */
 export const simulateFluxSwapRouterSwapExactTokensForEth =
@@ -645,30 +571,12 @@ export const simulateFluxSwapRouterSwapExactTokensForEth =
   })
 
 /**
- * Wraps __{@link simulateContract}__ with `abi` set to __{@link fluxSwapRouterAbi}__ and `functionName` set to `"swapExactTokensForETHSupportingFeeOnTransferTokens"`
- */
-export const simulateFluxSwapRouterSwapExactTokensForEthSupportingFeeOnTransferTokens =
-  /*#__PURE__*/ createSimulateContract({
-    abi: fluxSwapRouterAbi,
-    functionName: 'swapExactTokensForETHSupportingFeeOnTransferTokens',
-  })
-
-/**
  * Wraps __{@link simulateContract}__ with `abi` set to __{@link fluxSwapRouterAbi}__ and `functionName` set to `"swapExactTokensForTokens"`
  */
 export const simulateFluxSwapRouterSwapExactTokensForTokens =
   /*#__PURE__*/ createSimulateContract({
     abi: fluxSwapRouterAbi,
     functionName: 'swapExactTokensForTokens',
-  })
-
-/**
- * Wraps __{@link simulateContract}__ with `abi` set to __{@link fluxSwapRouterAbi}__ and `functionName` set to `"swapExactTokensForTokensSupportingFeeOnTransferTokens"`
- */
-export const simulateFluxSwapRouterSwapExactTokensForTokensSupportingFeeOnTransferTokens =
-  /*#__PURE__*/ createSimulateContract({
-    abi: fluxSwapRouterAbi,
-    functionName: 'swapExactTokensForTokensSupportingFeeOnTransferTokens',
   })
 
 /**
@@ -839,15 +747,6 @@ export const useWriteFluxSwapRouterSwapExactEthForTokens =
   })
 
 /**
- * Wraps __{@link useWriteContract}__ with `abi` set to __{@link fluxSwapRouterAbi}__ and `functionName` set to `"swapExactETHForTokensSupportingFeeOnTransferTokens"`
- */
-export const useWriteFluxSwapRouterSwapExactEthForTokensSupportingFeeOnTransferTokens =
-  /*#__PURE__*/ createUseWriteContract({
-    abi: fluxSwapRouterAbi,
-    functionName: 'swapExactETHForTokensSupportingFeeOnTransferTokens',
-  })
-
-/**
  * Wraps __{@link useWriteContract}__ with `abi` set to __{@link fluxSwapRouterAbi}__ and `functionName` set to `"swapExactTokensForETH"`
  */
 export const useWriteFluxSwapRouterSwapExactTokensForEth =
@@ -857,30 +756,12 @@ export const useWriteFluxSwapRouterSwapExactTokensForEth =
   })
 
 /**
- * Wraps __{@link useWriteContract}__ with `abi` set to __{@link fluxSwapRouterAbi}__ and `functionName` set to `"swapExactTokensForETHSupportingFeeOnTransferTokens"`
- */
-export const useWriteFluxSwapRouterSwapExactTokensForEthSupportingFeeOnTransferTokens =
-  /*#__PURE__*/ createUseWriteContract({
-    abi: fluxSwapRouterAbi,
-    functionName: 'swapExactTokensForETHSupportingFeeOnTransferTokens',
-  })
-
-/**
  * Wraps __{@link useWriteContract}__ with `abi` set to __{@link fluxSwapRouterAbi}__ and `functionName` set to `"swapExactTokensForTokens"`
  */
 export const useWriteFluxSwapRouterSwapExactTokensForTokens =
   /*#__PURE__*/ createUseWriteContract({
     abi: fluxSwapRouterAbi,
     functionName: 'swapExactTokensForTokens',
-  })
-
-/**
- * Wraps __{@link useWriteContract}__ with `abi` set to __{@link fluxSwapRouterAbi}__ and `functionName` set to `"swapExactTokensForTokensSupportingFeeOnTransferTokens"`
- */
-export const useWriteFluxSwapRouterSwapExactTokensForTokensSupportingFeeOnTransferTokens =
-  /*#__PURE__*/ createUseWriteContract({
-    abi: fluxSwapRouterAbi,
-    functionName: 'swapExactTokensForTokensSupportingFeeOnTransferTokens',
   })
 
 /**
@@ -980,15 +861,6 @@ export const useSimulateFluxSwapRouterSwapExactEthForTokens =
   })
 
 /**
- * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link fluxSwapRouterAbi}__ and `functionName` set to `"swapExactETHForTokensSupportingFeeOnTransferTokens"`
- */
-export const useSimulateFluxSwapRouterSwapExactEthForTokensSupportingFeeOnTransferTokens =
-  /*#__PURE__*/ createUseSimulateContract({
-    abi: fluxSwapRouterAbi,
-    functionName: 'swapExactETHForTokensSupportingFeeOnTransferTokens',
-  })
-
-/**
  * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link fluxSwapRouterAbi}__ and `functionName` set to `"swapExactTokensForETH"`
  */
 export const useSimulateFluxSwapRouterSwapExactTokensForEth =
@@ -998,30 +870,12 @@ export const useSimulateFluxSwapRouterSwapExactTokensForEth =
   })
 
 /**
- * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link fluxSwapRouterAbi}__ and `functionName` set to `"swapExactTokensForETHSupportingFeeOnTransferTokens"`
- */
-export const useSimulateFluxSwapRouterSwapExactTokensForEthSupportingFeeOnTransferTokens =
-  /*#__PURE__*/ createUseSimulateContract({
-    abi: fluxSwapRouterAbi,
-    functionName: 'swapExactTokensForETHSupportingFeeOnTransferTokens',
-  })
-
-/**
  * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link fluxSwapRouterAbi}__ and `functionName` set to `"swapExactTokensForTokens"`
  */
 export const useSimulateFluxSwapRouterSwapExactTokensForTokens =
   /*#__PURE__*/ createUseSimulateContract({
     abi: fluxSwapRouterAbi,
     functionName: 'swapExactTokensForTokens',
-  })
-
-/**
- * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link fluxSwapRouterAbi}__ and `functionName` set to `"swapExactTokensForTokensSupportingFeeOnTransferTokens"`
- */
-export const useSimulateFluxSwapRouterSwapExactTokensForTokensSupportingFeeOnTransferTokens =
-  /*#__PURE__*/ createUseSimulateContract({
-    abi: fluxSwapRouterAbi,
-    functionName: 'swapExactTokensForTokensSupportingFeeOnTransferTokens',
   })
 
 /**

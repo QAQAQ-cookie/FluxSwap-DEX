@@ -36,6 +36,18 @@ func (s *stubRPCChainClient) SettlementAddress() string {
 	return ""
 }
 
+func (s *stubRPCChainClient) RouterAddress() common.Address {
+	return common.Address{}
+}
+
+func (s *stubRPCChainClient) WETHAddress() common.Address {
+	return common.Address{}
+}
+
+func (s *stubRPCChainClient) GetAmountsOut(context.Context, *big.Int, []common.Address) ([]*big.Int, error) {
+	return nil, fmt.Errorf("unexpected call")
+}
+
 func (s *stubRPCChainClient) SuggestExecutorFee(context.Context, common.Address, uint64, int64) (*big.Int, *big.Int, error) {
 	if s.suggestFeeErr != nil {
 		return nil, nil, s.suggestFeeErr
