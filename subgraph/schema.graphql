@@ -1,0 +1,80 @@
+type Token @entity(immutable: false) {
+  id: Bytes!
+  symbol: String!
+  name: String!
+  decimals: Int!
+  createdAtTimestamp: BigInt!
+
+  pairs0: [Pair!]! @derivedFrom(field: "token0")
+  pairs1: [Pair!]! @derivedFrom(field: "token1")
+}
+
+type Pair @entity(immutable: false) {
+  id: Bytes!
+  token0: Token!
+  token1: Token!
+
+  reserve0: BigInt!
+  reserve1: BigInt!
+  totalSupply: BigInt!
+
+  txCount: BigInt!
+  swapCount: BigInt!
+  mintCount: BigInt!
+  burnCount: BigInt!
+
+  createdAtBlock: BigInt!
+  createdAtTimestamp: BigInt!
+  createdAtTxHash: Bytes!
+
+  swaps: [SwapEvent!]! @derivedFrom(field: "pair")
+  mints: [MintEvent!]! @derivedFrom(field: "pair")
+  burns: [BurnEvent!]! @derivedFrom(field: "pair")
+}
+
+type SwapEvent @entity(immutable: true) {
+  id: Bytes!
+  pair: Pair!
+
+  sender: Bytes!
+  to: Bytes!
+
+  amount0In: BigInt!
+  amount1In: BigInt!
+  amount0Out: BigInt!
+  amount1Out: BigInt!
+
+  timestamp: BigInt!
+  blockNumber: BigInt!
+  txHash: Bytes!
+  logIndex: BigInt!
+}
+
+type MintEvent @entity(immutable: true) {
+  id: Bytes!
+  pair: Pair!
+
+  sender: Bytes!
+  amount0: BigInt!
+  amount1: BigInt!
+
+  timestamp: BigInt!
+  blockNumber: BigInt!
+  txHash: Bytes!
+  logIndex: BigInt!
+}
+
+type BurnEvent @entity(immutable: true) {
+  id: Bytes!
+  pair: Pair!
+
+  sender: Bytes!
+  to: Bytes!
+  amount0: BigInt!
+  amount1: BigInt!
+
+  timestamp: BigInt!
+  blockNumber: BigInt!
+  txHash: Bytes!
+  logIndex: BigInt!
+}
