@@ -246,7 +246,7 @@ export default function PortfolioPage() {
       detail: isZh ? '买入或卖出 FLUX，测试滑点与授权。' : 'Buy or sell FLUX and test approvals.',
     },
     {
-      href: '/pool',
+      href: '/pool/eth-flux',
       title: isZh ? '去池子' : 'Manage Pool',
       detail: isZh ? '添加或移除流动性，查看池子最近交易。' : 'Add or remove liquidity and inspect recent pool activity.',
     },

@@ -1,160 +1,72 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useConnectModal } from '@rainbow-me/rainbowkit';
+import { useAccount, useChainId } from 'wagmi';
 import {
-  useAccount,
-  useBalance,
-  useChainId,
-  usePublicClient,
-  useWaitForTransactionReceipt,
-  useWriteContract,
-} from 'wagmi';
-import {
+  ArrowRight,
+  ChevronRight,
   Droplets,
-  History,
-  Info,
-  Plus,
+  Layers3,
   ShieldCheck,
-  ShieldOff,
-  Wallet,
+  Sparkles,
+  Waves,
 } from 'lucide-react';
-import {
-  formatUnits,
-  maxUint256,
-  parseEventLogs,
-  type Address,
-  zeroAddress,
-} from 'viem';
+import { zeroAddress } from 'viem';
 
+import { getContractAddress, isFluxSupportedChain } from '@/config/contracts';
+import { formatBigIntAmount } from '@/lib/amounts';
 import {
-  getContractAddress,
-  getLocalGasOverride,
-  isFluxSupportedChain,
-} from '@/config/contracts';
-import { ActionButton } from '@/components/ActionButton';
-import { TokenAmountCard } from '@/components/TokenAmountCard';
-import { useIsClient } from '@/hooks/useIsClient';
-import {
-  formatBigIntAmount,
-  formatDisplayAmount,
-  parseAmount,
-  parsePercentToBps,
-} from '@/lib/amounts';
-import { formatErrorMessage } from '@/lib/errors';
-import {
-  formatTimestamp,
-  truncateAddress,
-  watchWalletAsset,
-} from '@/lib/wallet';
-import {
-  fluxSwapPairAbi,
-  fluxSwapRouterAbi,
-  fluxTokenAbi,
   useReadFluxSwapFactoryGetPair,
-  useReadFluxSwapPairAllowance,
   useReadFluxSwapPairBalanceOf,
   useReadFluxSwapPairGetReserves,
   useReadFluxSwapPairToken0,
   useReadFluxSwapPairTotalSupply,
-  useReadFluxTokenAllowance,
 } from '@/lib/contracts';
+import { truncateAddress } from '@/lib/wallet';
 
-type FlowAction =
-  | 'approve-token'
-  | 'revoke-token'
-  | 'add-liquidity'
-  | 'approve-lp'
-  | 'revoke-lp'
-  | 'remove-liquidity'
-  | null;
+function OverviewMetric({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+}) {
+  return (
+    <div className="rounded-[1.75rem] border border-white/60 bg-white/75 p-5 shadow-lg shadow-sky-500/5 backdrop-blur-sm dark:border-white/10 dark:bg-white/[0.05]">
+      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+        {label}
+      </div>
+      <div className="mt-3 text-2xl font-black tracking-tight text-gray-900 dark:text-white">
+        {value}
+      </div>
+      <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">{hint}</div>
+    </div>
+  );
+}
 
-type PoolActivityItem = {
-  id: string;
-  title: string;
-  detail: string;
-  actor: Address;
-  txHash: `0x${string}`;
-  timestamp?: number;
-  isMine: boolean;
-};
+function TokenPairBadge() {
+  return (
+    <div className="flex items-center">
+      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-cyan-400 text-sm font-black text-white shadow-lg shadow-sky-500/20">
+        ETH
+      </div>
+      <div className="-ml-3 flex h-11 w-11 items-center justify-center rounded-2xl border-4 border-white bg-gradient-to-br from-emerald-500 to-lime-400 text-sm font-black text-white shadow-lg shadow-emerald-500/20 dark:border-[#09101c]">
+        FX
+      </div>
+    </div>
+  );
+}
 
-export default function PoolPage() {
-  const { t, i18n } = useTranslation();
+export default function PoolMarketsPage() {
+  const { i18n } = useTranslation();
   const isZh = i18n.language.startsWith('zh');
-  const copy = {
-    unsupportedChain: isZh
-      ? '当前网络未同步池子相关合约地址'
-      : 'Contracts are not configured for this network',
-    poolMissing: isZh ? '当前还没有 ETH / FLUX 池' : 'ETH / FLUX pool has not been created yet',
-    poolReady: isZh ? '池子已存在' : 'Pool is active',
-    poolEmpty: isZh ? '池子已创建但暂无流动性' : 'Pool exists but currently has no liquidity',
-    walletNeeded: isZh ? '连接钱包后查看头寸' : 'Connect wallet to view positions',
-    addTitle: isZh ? '添加流动性' : 'Add Liquidity',
-    removeTitle: isZh ? '移除流动性' : 'Remove Liquidity',
-    enterAmount: isZh ? '请输入有效数量' : 'Enter a valid amount',
-    insufficientBalance: isZh ? '余额不足' : 'Insufficient balance',
-    insufficientLp: isZh ? 'LP 余额不足' : 'Insufficient LP balance',
-    approveFlux: isZh ? '授权 FLUX' : 'Approve FLUX',
-    approveLp: isZh ? '授权 LP' : 'Approve LP',
-    approvalSubmitted: isZh ? '授权已提交' : 'Approval submitted',
-    approvalConfirmed: isZh ? '授权已确认' : 'Approval confirmed',
-    revokeFluxApproval: isZh ? '撤销 FLUX 授权' : 'Revoke FLUX approval',
-    revokeLpApproval: isZh ? '撤销 LP 授权' : 'Revoke LP approval',
-    addFluxToWallet: isZh ? '添加 FLUX 到钱包' : 'Add FLUX to wallet',
-    addLpToWallet: isZh ? '添加 LP 到钱包' : 'Add LP to wallet',
-    walletPromptOpened: isZh ? '已向钱包发起添加请求' : 'Wallet prompt opened',
-    walletPromptUnavailable: isZh ? '当前钱包不支持添加资产' : 'This wallet does not support adding assets',
-    activityTitle: isZh ? '池子最近交易' : 'Recent Pool Activity',
-    activityLoading: isZh ? '正在读取链上交易...' : 'Loading on-chain activity...',
-    activityEmpty: isZh ? '当前池子还没有可展示的链上交易记录' : 'No recent on-chain pool activity yet',
-    mine: isZh ? '我的操作' : 'Mine',
-    addNow: isZh ? '添加流动性' : 'Add Liquidity',
-    removeNow: isZh ? '移除流动性' : 'Remove Liquidity',
-    approving: isZh ? '授权中...' : 'Approving...',
-    adding: isZh ? '加池中...' : 'Adding liquidity...',
-    removing: isZh ? '撤池中...' : 'Removing liquidity...',
-    txSubmitted: isZh ? '交易已提交' : 'Transaction submitted',
-    txConfirmed: isZh ? '交易已确认' : 'Transaction confirmed',
-    expectedOutput: isZh ? '预计取回' : 'Expected withdrawal',
-    lpBalance: isZh ? '我的 LP 余额' : 'My LP Balance',
-    totalLiquidity: isZh ? '总 LP 供应' : 'Total LP Supply',
-    pairAddress: isZh ? '交易对地址' : 'Pair Address',
-    reserves: isZh ? '池子储备' : 'Pool Reserves',
-    tokenAllowance: isZh ? 'FLUX 授权额度' : 'FLUX Allowance',
-    lpAllowance: isZh ? 'LP 授权额度' : 'LP Allowance',
-    noPosition: isZh ? '当前没有流动性头寸' : 'No active liquidity position yet',
-    bootstrapHint: isZh
-      ? '如果池子不存在，首次加池会一并创建交易对'
-      : 'If the pool does not exist yet, the first add will bootstrap it',
-    slippage: isZh ? '滑点保护' : 'Slippage Protection',
-  };
-
-  const mounted = useIsClient();
   const chainId = useChainId();
-  const publicClient = usePublicClient({ chainId });
   const { address, isConnected } = useAccount();
-  const { openConnectModal } = useConnectModal();
-  const { writeContractAsync, data: hash, isPending: isWritePending } =
-    useWriteContract();
-  const { isLoading: isConfirming, isSuccess: isConfirmed } =
-    useWaitForTransactionReceipt({ hash });
-
-  const [addEthAmount, setAddEthAmount] = useState('');
-  const [addFluxAmount, setAddFluxAmount] = useState('');
-  const [removeLpAmount, setRemoveLpAmount] = useState('');
-  const [slippage, setSlippage] = useState('0.5');
-  const [txError, setTxError] = useState<string | null>(null);
-  const [lastAction, setLastAction] = useState<FlowAction>(null);
-  const [walletNotice, setWalletNotice] = useState<string | null>(null);
-  const [activity, setActivity] = useState<PoolActivityItem[]>([]);
-  const [isActivityLoading, setIsActivityLoading] = useState(false);
-  const handledReceiptHashRef = useRef<string | undefined>(undefined);
 
   const supportedChain = isFluxSupportedChain(chainId);
-  const routerAddress = getContractAddress('FluxSwapRouter', chainId);
   const factoryAddress = getContractAddress('FluxSwapFactory', chainId);
   const fluxTokenAddress = getContractAddress('FluxToken', chainId);
   const wrappedNativeAddress = getContractAddress('MockWETH', chainId);
@@ -182,7 +94,7 @@ export default function PoolPage() {
   const normalizedPairAddress =
     pairAddress && pairAddress !== zeroAddress ? pairAddress : undefined;
 
-  const { data: reservesData } = useReadFluxSwapPairGetReserves({
+  const { data: reserves } = useReadFluxSwapPairGetReserves({
     address: normalizedPairAddress ?? zeroAddress,
     chainId,
     query: {
@@ -223,1055 +135,478 @@ export default function PoolPage() {
     },
   });
 
-  const { data: tokenAllowance } = useReadFluxTokenAllowance({
-    address: fluxTokenAddress ?? zeroAddress,
-    chainId,
-    args: [address ?? zeroAddress, routerAddress ?? zeroAddress],
-    query: {
-      enabled:
-        !!address &&
-        !!routerAddress &&
-        !!fluxTokenAddress &&
-        isConnected,
-      refetchInterval: 8000,
-    },
-  });
-
-  const { data: lpAllowance } = useReadFluxSwapPairAllowance({
-    address: normalizedPairAddress ?? zeroAddress,
-    chainId,
-    args: [address ?? zeroAddress, routerAddress ?? zeroAddress],
-    query: {
-      enabled:
-        !!address &&
-        !!routerAddress &&
-        !!normalizedPairAddress &&
-        isConnected,
-      refetchInterval: 8000,
-    },
-  });
-
-  const { data: ethBalance } = useBalance({
-    address,
-    chainId,
-    query: {
-      enabled: !!address && isConnected,
-      refetchInterval: 8000,
-    },
-  });
-
-  const { data: fluxBalance } = useBalance({
-    address,
-    chainId,
-    token: fluxTokenAddress,
-    query: {
-      enabled: !!address && !!fluxTokenAddress && isConnected,
-      refetchInterval: 8000,
-    },
-  });
-
-  const hasLiquidity = Boolean(
-    reservesData &&
-      reservesData[0] > BigInt(0) &&
-      reservesData[1] > BigInt(0),
-  );
-  const fluxIsToken0 =
-    Boolean(token0 && fluxTokenAddress) &&
-    token0?.toLowerCase() === fluxTokenAddress?.toLowerCase();
-
-  const unlimitedApprovalLabel = isZh ? '无限授权' : 'Unlimited';
-  const tokenAllowanceDisplay =
-    tokenAllowance === undefined
-      ? '0.00'
-      : tokenAllowance === maxUint256
-        ? unlimitedApprovalLabel
-        : formatBigIntAmount(tokenAllowance, 18, 4);
-  const lpAllowanceDisplay =
-    lpAllowance === undefined
-      ? '0.00'
-      : lpAllowance === maxUint256
-        ? unlimitedApprovalLabel
-        : formatBigIntAmount(lpAllowance, 18, 4);
-  const canRevokeTokenAllowance = Boolean(
-    tokenAllowance !== undefined && tokenAllowance > BigInt(0),
-  );
-  const canRevokeLpAllowance = Boolean(
-    lpAllowance !== undefined && lpAllowance > BigInt(0),
-  );
-
   const reserveFlux =
-    reservesData && token0 && fluxTokenAddress
+    reserves && token0 && fluxTokenAddress
       ? token0.toLowerCase() === fluxTokenAddress.toLowerCase()
-        ? reservesData[0]
-        : reservesData[1]
+        ? reserves[0]
+        : reserves[1]
       : undefined;
   const reserveEth =
-    reservesData && token0 && fluxTokenAddress
+    reserves && token0 && fluxTokenAddress
       ? token0.toLowerCase() === fluxTokenAddress.toLowerCase()
-        ? reservesData[1]
-        : reservesData[0]
+        ? reserves[1]
+        : reserves[0]
       : undefined;
 
-  useEffect(() => {
-    if (!hash || !isConfirmed || handledReceiptHashRef.current === hash) {
-      return;
-    }
-
-    handledReceiptHashRef.current = hash;
-
-    if (lastAction === 'add-liquidity') {
-      setAddEthAmount('');
-      setAddFluxAmount('');
-    }
-
-    if (lastAction === 'remove-liquidity') {
-      setRemoveLpAmount('');
-    }
-  }, [hash, isConfirmed, lastAction]);
-
-  useEffect(() => {
-    if (!publicClient || !normalizedPairAddress || !fluxTokenAddress || !token0) {
-      setActivity([]);
-      return;
-    }
-
-    let cancelled = false;
-
-    const loadActivity = async () => {
-      setIsActivityLoading(true);
-
-      try {
-        const latestBlock = await publicClient.getBlockNumber();
-        const fromBlock = latestBlock > BigInt(5000) ? latestBlock - BigInt(5000) : BigInt(0);
-        const rawLogs = await publicClient.getLogs({
-          address: normalizedPairAddress,
-          fromBlock,
-          toBlock: latestBlock,
-        });
-        const parsedLogs = parseEventLogs({
-          abi: fluxSwapPairAbi,
-          logs: rawLogs,
-          eventName: ['Mint', 'Burn', 'Swap'],
-          strict: false,
-        });
-        const recentLogs = parsedLogs
-          .filter((log) => Boolean(log.eventName && log.transactionHash && log.blockNumber !== null))
-          .sort((left, right) => {
-            const blockDiff = Number((right.blockNumber ?? BigInt(0)) - (left.blockNumber ?? BigInt(0)));
-            if (blockDiff !== 0) {
-              return blockDiff;
-            }
-
-            return Number(right.logIndex ?? 0) - Number(left.logIndex ?? 0);
-          })
-          .slice(0, 8);
-
-        const items = await Promise.all(
-          recentLogs.map(async (log) => {
-            const [transaction, block] = await Promise.all([
-              publicClient
-                .getTransaction({ hash: log.transactionHash as `0x${string}` })
-                .catch(() => undefined),
-              publicClient
-                .getBlock({ blockNumber: log.blockNumber ?? undefined })
-                .catch(() => undefined),
-            ]);
-
-            const actor = (transaction?.from ?? zeroAddress) as Address;
-            const args =
-              ((log as unknown as { args?: Record<string, bigint | Address> }).args ?? {});
-            const amount0 =
-              typeof args.amount0 === 'bigint' ? args.amount0 : BigInt(0);
-            const amount1 =
-              typeof args.amount1 === 'bigint' ? args.amount1 : BigInt(0);
-            const tokenAmount = fluxIsToken0 ? amount0 : amount1;
-            const ethAmount = fluxIsToken0 ? amount1 : amount0;
-            let title: string = log.eventName;
-            let detail = '--';
-
-            if (log.eventName === 'Mint') {
-              title = isZh ? '添加流动性' : 'Added liquidity';
-              detail = `${formatBigIntAmount(ethAmount, 18, 4)} ETH + ${formatBigIntAmount(tokenAmount, 18, 4)} FLUX`;
-            }
-
-            if (log.eventName === 'Burn') {
-              title = isZh ? '移除流动性' : 'Removed liquidity';
-              detail = `${formatBigIntAmount(ethAmount, 18, 4)} ETH + ${formatBigIntAmount(tokenAmount, 18, 4)} FLUX`;
-            }
-
-            if (log.eventName === 'Swap') {
-              const amount0In =
-                typeof args.amount0In === 'bigint' ? args.amount0In : BigInt(0);
-              const amount1In =
-                typeof args.amount1In === 'bigint' ? args.amount1In : BigInt(0);
-              const amount0Out =
-                typeof args.amount0Out === 'bigint' ? args.amount0Out : BigInt(0);
-              const amount1Out =
-                typeof args.amount1Out === 'bigint' ? args.amount1Out : BigInt(0);
-              const fluxIn = fluxIsToken0 ? amount0In : amount1In;
-              const ethIn = fluxIsToken0 ? amount1In : amount0In;
-              const fluxOut = fluxIsToken0 ? amount0Out : amount1Out;
-              const ethOut = fluxIsToken0 ? amount1Out : amount0Out;
-
-              if (ethIn > BigInt(0) && fluxOut > BigInt(0)) {
-                title = isZh ? '买入 FLUX' : 'Bought FLUX';
-                detail = `${formatBigIntAmount(ethIn, 18, 4)} ETH -> ${formatBigIntAmount(fluxOut, 18, 4)} FLUX`;
-              } else if (fluxIn > BigInt(0) && ethOut > BigInt(0)) {
-                title = isZh ? '卖出 FLUX' : 'Sold FLUX';
-                detail = `${formatBigIntAmount(fluxIn, 18, 4)} FLUX -> ${formatBigIntAmount(ethOut, 18, 4)} ETH`;
-              } else {
-                title = 'Swap';
-                detail = `${formatBigIntAmount(ethIn + ethOut, 18, 4)} ETH / ${formatBigIntAmount(fluxIn + fluxOut, 18, 4)} FLUX`;
-              }
-            }
-
-            return {
-              id: `${log.transactionHash}-${log.logIndex ?? 0}`,
-              title,
-              detail,
-              actor,
-              txHash: log.transactionHash as `0x${string}`,
-              timestamp: block ? Number(block.timestamp) : undefined,
-              isMine: Boolean(address && actor.toLowerCase() === address.toLowerCase()),
-            } satisfies PoolActivityItem;
-          }),
-        );
-
-        if (!cancelled) {
-          setActivity(items);
-        }
-      } catch {
-        if (!cancelled) {
-          setActivity([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setIsActivityLoading(false);
-        }
-      }
-    };
-
-    void loadActivity();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [address, fluxIsToken0, fluxTokenAddress, isZh, normalizedPairAddress, publicClient, token0]);
-
-  const addEthParsed = parseAmount(addEthAmount);
-  const addFluxParsed = parseAmount(addFluxAmount);
-  const removeLpParsed = parseAmount(removeLpAmount);
-
-  const addNeedsApproval = Boolean(
-    addFluxParsed &&
-      addFluxParsed > BigInt(0) &&
-      tokenAllowance !== undefined &&
-      addFluxParsed > tokenAllowance,
-  );
-  const removeNeedsApproval = Boolean(
-    removeLpParsed &&
-      removeLpParsed > BigInt(0) &&
-      lpAllowance !== undefined &&
-      removeLpParsed > lpAllowance,
+  const hasLiquidity = Boolean(
+    reserveEth &&
+      reserveFlux &&
+      reserveEth > BigInt(0) &&
+      reserveFlux > BigInt(0),
   );
 
-  const slippageBps = parsePercentToBps(slippage);
-  const addFluxMin =
-    addFluxParsed !== undefined
-      ? (addFluxParsed * (BigInt(10000) - slippageBps)) / BigInt(10000)
-      : undefined;
-  const addEthMin =
-    addEthParsed !== undefined
-      ? (addEthParsed * (BigInt(10000) - slippageBps)) / BigInt(10000)
-      : undefined;
-
-  const expectedFluxOut =
-    removeLpParsed && totalSupply && reserveFlux && totalSupply > BigInt(0)
-      ? (removeLpParsed * reserveFlux) / totalSupply
-      : undefined;
-  const expectedEthOut =
-    removeLpParsed && totalSupply && reserveEth && totalSupply > BigInt(0)
-      ? (removeLpParsed * reserveEth) / totalSupply
-      : undefined;
-
-  const removeFluxMin =
-    expectedFluxOut !== undefined
-      ? (expectedFluxOut * (BigInt(10000) - slippageBps)) / BigInt(10000)
-      : undefined;
-  const removeEthMin =
-    expectedEthOut !== undefined
-      ? (expectedEthOut * (BigInt(10000) - slippageBps)) / BigInt(10000)
-      : undefined;
-
-  const localGasOverride = getLocalGasOverride(chainId);
-
-  const insufficientEth = Boolean(
-    addEthParsed &&
-      ethBalance?.value !== undefined &&
-      addEthParsed > ethBalance.value,
-  );
-  const insufficientFlux = Boolean(
-    addFluxParsed &&
-      fluxBalance?.value !== undefined &&
-      addFluxParsed > fluxBalance.value,
-  );
-  const insufficientLp = Boolean(
-    removeLpParsed &&
-      lpBalance !== undefined &&
-      removeLpParsed > lpBalance,
-  );
-
-  const isSubmitting = isWritePending || isConfirming;
-  const statusLabel =
-    lastAction === 'approve-token' ||
-    lastAction === 'approve-lp' ||
-    lastAction === 'revoke-token' ||
-    lastAction === 'revoke-lp'
-      ? isConfirmed
-        ? copy.approvalConfirmed
-        : copy.approvalSubmitted
-      : isConfirmed
-        ? copy.txConfirmed
-        : copy.txSubmitted;
-
-  let addButtonLabel = copy.addNow;
-  let addDisabled = false;
-  let addAction: FlowAction = 'add-liquidity';
-
-  if (!mounted || !isConnected) {
-    addButtonLabel = t('swap.connectWallet');
-    addAction = null;
-  } else if (!supportedChain || !routerAddress || !fluxTokenAddress) {
-    addButtonLabel = copy.unsupportedChain;
-    addDisabled = true;
-    addAction = null;
-  } else if (!addEthParsed || !addFluxParsed) {
-    addButtonLabel = copy.enterAmount;
-    addDisabled = true;
-    addAction = null;
-  } else if (insufficientEth || insufficientFlux) {
-    addButtonLabel = copy.insufficientBalance;
-    addDisabled = true;
-    addAction = null;
-  } else if (isSubmitting) {
-    addButtonLabel =
-      lastAction === 'approve-token' ? copy.approving : copy.adding;
-    addDisabled = true;
-    addAction = null;
-  } else if (addNeedsApproval) {
-    addButtonLabel = copy.approveFlux;
-    addAction = 'approve-token';
-  }
-
-  let removeButtonLabel = copy.removeNow;
-  let removeDisabled = false;
-  let removeAction: FlowAction = 'remove-liquidity';
-
-  if (!mounted || !isConnected) {
-    removeButtonLabel = t('swap.connectWallet');
-    removeAction = null;
-  } else if (!supportedChain || !routerAddress || !normalizedPairAddress) {
-    removeButtonLabel = copy.poolMissing;
-    removeDisabled = true;
-    removeAction = null;
-  } else if (!removeLpParsed) {
-    removeButtonLabel = copy.enterAmount;
-    removeDisabled = true;
-    removeAction = null;
-  } else if (insufficientLp) {
-    removeButtonLabel = copy.insufficientLp;
-    removeDisabled = true;
-    removeAction = null;
-  } else if (isSubmitting) {
-    removeButtonLabel =
-      lastAction === 'approve-lp' ? copy.approving : copy.removing;
-    removeDisabled = true;
-    removeAction = null;
-  } else if (removeNeedsApproval) {
-    removeButtonLabel = copy.approveLp;
-    removeAction = 'approve-lp';
-  }
-
-  const pairState = !supportedChain
-    ? copy.unsupportedChain
+  const poolStatus = !supportedChain
+    ? isZh
+      ? '当前网络未配置'
+      : 'Unsupported network'
     : !normalizedPairAddress
-      ? copy.poolMissing
+      ? isZh
+        ? '未创建'
+        : 'Not created'
       : hasLiquidity
-        ? copy.poolReady
-        : copy.poolEmpty;
+        ? isZh
+          ? '活跃'
+          : 'Active'
+        : isZh
+          ? '待注入流动性'
+          : 'Awaiting liquidity';
 
-  const handleMaxEth = () => {
-    if (ethBalance?.formatted) {
-      handleAddEthChange(ethBalance.formatted);
-    }
-  };
+  const poolStatusTone = hasLiquidity
+    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
+    : normalizedPairAddress
+      ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'
+      : 'bg-gray-200 text-gray-700 dark:bg-white/10 dark:text-gray-300';
 
-  const handleMaxFlux = () => {
-    if (fluxBalance?.formatted) {
-      handleAddFluxChange(fluxBalance.formatted);
-    }
-  };
-
-  const handleMaxLp = () => {
-    if (lpBalance !== undefined) {
-      setRemoveLpAmount(formatUnits(lpBalance, 18));
-    }
-  };
-
-  const handleWatchFlux = async () => {
-    if (!fluxTokenAddress) {
-      return;
-    }
-
-    setWalletNotice(null);
-
-    try {
-      const watched = await watchWalletAsset({
-        address: fluxTokenAddress,
-        symbol: 'FLUX',
-        decimals: 18,
-      });
-      setWalletNotice(watched ? copy.walletPromptOpened : copy.walletPromptUnavailable);
-    } catch (error) {
-      setWalletNotice(
-        formatErrorMessage(error, {
-          rejectedMessage: isZh ? '你已取消本次钱包添加请求' : 'You cancelled the wallet asset request',
-        }),
-      );
-    }
-  };
-
-  const handleWatchLp = async () => {
-    if (!normalizedPairAddress) {
-      return;
-    }
-
-    setWalletNotice(null);
-
-    try {
-      const watched = await watchWalletAsset({
-        address: normalizedPairAddress,
-        symbol: 'FLUX-LP',
-        decimals: 18,
-      });
-      setWalletNotice(watched ? copy.walletPromptOpened : copy.walletPromptUnavailable);
-    } catch (error) {
-      setWalletNotice(
-        formatErrorMessage(error, {
-          rejectedMessage: isZh ? '你已取消本次钱包添加请求' : 'You cancelled the wallet asset request',
-        }),
-      );
-    }
-  };
-
-  const handleRevokeTokenApproval = async () => {
-    if (!fluxTokenAddress || !routerAddress) {
-      return;
-    }
-
-    setTxError(null);
-    setLastAction('revoke-token');
-
-    try {
-      await writeContractAsync({
-        address: fluxTokenAddress,
-        abi: fluxTokenAbi,
-        functionName: 'approve',
-        args: [routerAddress, BigInt(0)],
-        chainId,
-        ...localGasOverride,
-      });
-    } catch (error) {
-      setTxError(
-        formatErrorMessage(error, {
-          rejectedMessage: isZh ? '你已取消本次授权' : 'You cancelled the approval request',
-        }),
-      );
-    }
-  };
-
-  const handleRevokeLpApproval = async () => {
-    if (!normalizedPairAddress || !routerAddress) {
-      return;
-    }
-
-    setTxError(null);
-    setLastAction('revoke-lp');
-
-    try {
-      await writeContractAsync({
-        address: normalizedPairAddress,
-        abi: fluxSwapPairAbi,
-        functionName: 'approve',
-        args: [routerAddress, BigInt(0)],
-        chainId,
-        ...localGasOverride,
-      });
-    } catch (error) {
-      setTxError(
-        formatErrorMessage(error, {
-          rejectedMessage: isZh ? '你已取消本次授权' : 'You cancelled the approval request',
-        }),
-      );
-    }
-  };
-
-  const handleAddEthChange = (value: string) => {
-    setAddEthAmount(value);
-
-    if (!value) {
-      setAddFluxAmount('');
-      return;
-    }
-
-    if (
-      !reserveEth ||
-      !reserveFlux ||
-      reserveEth <= BigInt(0) ||
-      reserveFlux <= BigInt(0)
-    ) {
-      return;
-    }
-
-    const parsed = parseAmount(value);
-    if (!parsed) {
-      setAddFluxAmount('');
-      return;
-    }
-
-    const proportionalFlux = (parsed * reserveFlux) / reserveEth;
-    setAddFluxAmount(formatUnits(proportionalFlux, 18));
-  };
-
-  const handleAddFluxChange = (value: string) => {
-    setAddFluxAmount(value);
-
-    if (!value) {
-      setAddEthAmount('');
-      return;
-    }
-
-    if (
-      !reserveEth ||
-      !reserveFlux ||
-      reserveEth <= BigInt(0) ||
-      reserveFlux <= BigInt(0)
-    ) {
-      return;
-    }
-
-    const parsed = parseAmount(value);
-    if (!parsed) {
-      setAddEthAmount('');
-      return;
-    }
-
-    const proportionalEth = (parsed * reserveEth) / reserveFlux;
-    setAddEthAmount(formatUnits(proportionalEth, 18));
-  };
-
-  const handleAddLiquidity = async () => {
-    if (!mounted || !isConnected) {
-      openConnectModal?.();
-      return;
-    }
-
-    if (!addAction || !routerAddress || !fluxTokenAddress || !address) {
-      return;
-    }
-
-    setTxError(null);
-    setLastAction(addAction);
-
-    try {
-      if (addAction === 'approve-token') {
-        await writeContractAsync({
-          address: fluxTokenAddress,
-          abi: fluxTokenAbi,
-          functionName: 'approve',
-          args: [routerAddress, maxUint256],
-          chainId,
-          ...localGasOverride,
-        });
-        return;
-      }
-
-      if (!addEthParsed || !addFluxParsed || !addEthMin || !addFluxMin) {
-        return;
-      }
-
-      if (!publicClient) {
-        throw new Error('Unable to read the latest block timestamp.');
-      }
-
-      const deadline = (await publicClient.getBlock()).timestamp + BigInt(20 * 60);
-
-      await writeContractAsync({
-        address: routerAddress,
-        abi: fluxSwapRouterAbi,
-        functionName: 'addLiquidityETH',
-        args: [
-          fluxTokenAddress,
-          addFluxParsed,
-          addFluxMin,
-          addEthMin,
-          address,
-          deadline,
-        ],
-        value: addEthParsed,
-        chainId,
-        ...localGasOverride,
-      });
-    } catch (error) {
-      setTxError(
-        formatErrorMessage(error, {
-          rejectedMessage:
-            addAction === 'approve-token'
-              ? '你已取消本次授权'
-              : '你已取消本次交易',
-        }),
-      );
-    }
-  };
-
-  const handleRemoveLiquidity = async () => {
-    if (!mounted || !isConnected) {
-      openConnectModal?.();
-      return;
-    }
-
-    if (
-      !removeAction ||
-      !routerAddress ||
-      !normalizedPairAddress ||
-      !fluxTokenAddress ||
-      !address
-    ) {
-      return;
-    }
-
-    setTxError(null);
-    setLastAction(removeAction);
-
-    try {
-      if (removeAction === 'approve-lp') {
-        await writeContractAsync({
-          address: normalizedPairAddress,
-          abi: fluxSwapPairAbi,
-          functionName: 'approve',
-          args: [routerAddress, maxUint256],
-          chainId,
-          ...localGasOverride,
-        });
-        return;
-      }
-
-      if (!removeLpParsed || !removeFluxMin || !removeEthMin) {
-        return;
-      }
-
-      if (!publicClient) {
-        throw new Error('Unable to read the latest block timestamp.');
-      }
-
-      const deadline = (await publicClient.getBlock()).timestamp + BigInt(20 * 60);
-
-      await writeContractAsync({
-        address: routerAddress,
-        abi: fluxSwapRouterAbi,
-        functionName: 'removeLiquidityETH',
-        args: [
-          fluxTokenAddress,
-          removeLpParsed,
-          removeFluxMin,
-          removeEthMin,
-          address,
-          deadline,
-        ],
-        chainId,
-        ...localGasOverride,
-      });
-    } catch (error) {
-      setTxError(
-        formatErrorMessage(error, {
-          rejectedMessage:
-            removeAction === 'approve-lp'
-              ? '你已取消本次授权'
-              : '你已取消本次交易',
-        }),
-      );
-    }
-  };
+  const reserveEthDisplay = formatBigIntAmount(reserveEth, 18, 4);
+  const reserveFluxDisplay = formatBigIntAmount(reserveFlux, 18, 4);
+  const tvlDisplay = normalizedPairAddress
+    ? `${formatBigIntAmount(reserveEth, 18, 3)} ETH / ${formatBigIntAmount(reserveFlux, 18, 3)} FLUX`
+    : '--';
+  const myPositionDisplay = isConnected
+    ? formatBigIntAmount(lpBalance, 18, 4)
+    : '--';
+  const totalPoolsDisplay = normalizedPairAddress ? '1' : '0';
+  const pairAddressDisplay = normalizedPairAddress
+    ? truncateAddress(normalizedPairAddress, 10, 8)
+    : '--';
 
   return (
-    <div className="min-h-[calc(100vh-80px)] bg-gray-50 px-4 py-20 transition-colors duration-300 dark:bg-gray-900">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
-        <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="rounded-[2rem] border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-800">
-            <div className="mb-4 flex items-center justify-between">
+    <div className="px-4 py-8 lg:px-6 lg:py-10">
+      <div className="space-y-6">
+        <section className="relative overflow-hidden rounded-[2.75rem] border border-black/5 bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.18),_transparent_34%),radial-gradient(circle_at_top_right,_rgba(16,185,129,0.14),_transparent_30%),linear-gradient(180deg,_rgba(255,255,255,0.96),_rgba(244,247,251,0.92))] p-6 shadow-2xl shadow-sky-500/10 dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.22),_transparent_34%),radial-gradient(circle_at_top_right,_rgba(16,185,129,0.16),_transparent_30%),linear-gradient(180deg,_rgba(9,16,28,0.96),_rgba(7,13,23,0.92))] lg:p-8">
+          <div className="pointer-events-none absolute -left-12 top-12 h-36 w-36 rounded-full bg-sky-400/20 blur-3xl" />
+          <div className="pointer-events-none absolute -right-8 bottom-10 h-40 w-40 rounded-full bg-emerald-400/20 blur-3xl" />
+
+          <div className="relative grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-white/70 px-4 py-2 text-sm font-semibold text-sky-700 backdrop-blur-sm dark:border-sky-900/40 dark:bg-sky-500/10 dark:text-sky-300">
+                <Waves size={16} />
+                <span>{isZh ? '市场页' : 'Markets'}</span>
+              </div>
+
+              <h1 className="mt-5 max-w-3xl text-4xl font-black tracking-tight text-gray-900 dark:text-white md:text-5xl xl:text-[3.5rem]">
+                {isZh ? '流动性市场总览' : 'Liquidity market board'}
+              </h1>
+
+              <p className="mt-4 max-w-2xl text-base leading-7 text-gray-600 dark:text-gray-300">
+                {isZh
+                  ? '先在这里看可用市场，再进入具体池子做添加流动性、移除流动性和头寸管理。当前先接入 ETH / FLUX，后续可以继续扩展更多交易对。'
+                  : 'Scan available liquidity markets here first, then jump into a pool to add liquidity, remove liquidity, and manage positions. ETH / FLUX is wired in first, with room to expand later.'}
+              </p>
+
+              <div className="mt-6 grid gap-4 md:grid-cols-3">
+                <OverviewMetric
+                  label={isZh ? '市场数量' : 'Markets'}
+                  value={totalPoolsDisplay}
+                  hint={
+                    isZh
+                      ? '当前前端已接入的池子数量'
+                      : 'Pools currently surfaced in the frontend'
+                  }
+                />
+                <OverviewMetric
+                  label={isZh ? '总 LP 供应' : 'Total LP Supply'}
+                  value={formatBigIntAmount(totalSupply, 18, 4)}
+                  hint={
+                    isZh
+                      ? '来自当前链上池子状态'
+                      : 'Pulled from the live on-chain pool state'
+                  }
+                />
+                <OverviewMetric
+                  label={isZh ? '我的 LP' : 'My LP'}
+                  value={myPositionDisplay}
+                  hint={
+                    isZh
+                      ? '未连接钱包时不显示'
+                      : 'Hidden until the wallet is connected'
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="relative overflow-hidden rounded-[2.4rem] border border-white/60 bg-white/78 p-6 shadow-xl shadow-sky-500/10 backdrop-blur-sm dark:border-white/10 dark:bg-white/[0.05]">
+              <div className="pointer-events-none absolute right-0 top-0 h-24 w-24 rounded-full bg-sky-400/15 blur-3xl" />
+
+              <div className="relative">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">
+                      {isZh ? '焦点市场' : 'Spotlight'}
+                    </div>
+                    <div className="mt-4 flex items-center gap-4">
+                      <TokenPairBadge />
+                      <div>
+                        <div className="text-2xl font-black tracking-tight text-gray-900 dark:text-white">
+                          ETH / FLUX
+                        </div>
+                        <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                          FluxSwap v2
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <span
+                    className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${poolStatusTone}`}
+                  >
+                    {poolStatus}
+                  </span>
+                </div>
+
+                <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-[1.4rem] bg-gray-100/80 p-4 dark:bg-white/[0.05]">
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                      {isZh ? '池子地址' : 'Pair'}
+                    </div>
+                    <div className="mt-2 text-sm font-semibold text-gray-900 dark:text-white">
+                      {pairAddressDisplay}
+                    </div>
+                  </div>
+                  <div className="rounded-[1.4rem] bg-gray-100/80 p-4 dark:bg-white/[0.05]">
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                      {isZh ? '我的头寸' : 'Position'}
+                    </div>
+                    <div className="mt-2 text-sm font-semibold text-gray-900 dark:text-white">
+                      {myPositionDisplay} LP
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-[1.5rem] bg-gradient-to-r from-sky-500 to-emerald-500 p-[1px]">
+                  <div className="rounded-[1.45rem] bg-white/95 px-4 py-4 dark:bg-[#0a1320]">
+                    <div className="flex items-center justify-between gap-4 text-sm">
+                      <div>
+                        <div className="text-gray-500 dark:text-gray-400">
+                          {isZh ? '当前储备' : 'Current reserves'}
+                        </div>
+                        <div className="mt-1 font-semibold text-gray-900 dark:text-white">
+                          {tvlDisplay}
+                        </div>
+                      </div>
+                      <Link
+                        href="/pool/eth-flux"
+                        className="inline-flex items-center gap-2 rounded-full bg-gray-900 px-4 py-2 font-semibold text-white transition-colors hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
+                      >
+                        <span>{isZh ? '进入详情' : 'Open detail'}</span>
+                        <ArrowRight size={16} />
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-[2.5rem] border border-black/5 bg-white/80 p-4 shadow-2xl shadow-sky-500/5 backdrop-blur-md dark:border-white/10 dark:bg-white/[0.04] lg:p-5">
+          <div className="flex flex-col gap-4 rounded-[2rem] border border-black/5 bg-white/70 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">
-                  {t('pool.title')}
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                  {isZh ? '市场列表' : 'Market list'}
+                </div>
+                <h2 className="mt-2 text-2xl font-black tracking-tight text-gray-900 dark:text-white">
+                  {isZh ? '当前可管理的流动性池' : 'Pools currently available to manage'}
                 </h2>
-                <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                  {t('pool.subtitle')}
-                </p>
               </div>
-              <div className="rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 dark:border-blue-900/60 dark:bg-blue-500/10 dark:text-blue-300">
-                ETH / FLUX
+
+              <div className="flex flex-wrap gap-2">
+                <span className="inline-flex items-center rounded-full border border-black/5 bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-700 dark:border-white/10 dark:bg-white/[0.06] dark:text-gray-200">
+                  FluxSwap v2
+                </span>
+                <span className="inline-flex items-center rounded-full border border-black/5 bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-700 dark:border-white/10 dark:bg-white/[0.06] dark:text-gray-200">
+                  0.3% fee tier
+                </span>
+                <span className={`inline-flex items-center rounded-full px-3 py-1.5 text-xs font-semibold ${poolStatusTone}`}>
+                  {poolStatus}
+                </span>
               </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-3xl bg-gray-100 p-4 dark:bg-gray-900">
-                <div className="mb-2 flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-                  <Droplets size={16} />
-                  <span>{copy.reserves}</span>
-                </div>
-                <div className="space-y-1 text-sm text-gray-700 dark:text-gray-300">
-                  <div>ETH: {formatBigIntAmount(reserveEth, 18, 4)}</div>
-                  <div>FLUX: {formatBigIntAmount(reserveFlux, 18, 4)}</div>
-                </div>
+            <div className="hidden lg:block">
+              <div className="grid grid-cols-[0.55fr_1.7fr_0.8fr_0.9fr_0.9fr_0.85fr_0.8fr] gap-4 rounded-[1.5rem] bg-gray-100/80 px-5 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:bg-white/[0.04] dark:text-gray-400">
+                <div>#</div>
+                <div>{isZh ? '资金池' : 'Pool'}</div>
+                <div>{isZh ? '协议' : 'Protocol'}</div>
+                <div>{isZh ? '费率' : 'Fee tier'}</div>
+                <div>{isZh ? '储备' : 'Reserves'}</div>
+                <div>{isZh ? '我的头寸' : 'My position'}</div>
+                <div className="text-right">{isZh ? '操作' : 'Action'}</div>
               </div>
 
-              <div className="rounded-3xl bg-gray-100 p-4 dark:bg-gray-900">
-                <div className="mb-2 flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-                  <ShieldCheck size={16} />
-                  <span>{copy.totalLiquidity}</span>
-                </div>
-                <div className="text-lg font-semibold text-gray-900 dark:text-white">
-                  {formatBigIntAmount(totalSupply, 18, 4)}
-                </div>
-              </div>
+              <div className="mt-3 grid grid-cols-[0.55fr_1.7fr_0.8fr_0.9fr_0.9fr_0.85fr_0.8fr] items-center gap-4 rounded-[1.8rem] border border-black/5 bg-white px-5 py-5 transition-colors hover:bg-sky-50/50 dark:border-white/10 dark:bg-transparent dark:hover:bg-white/[0.03]">
+                <div className="text-lg font-black text-gray-400 dark:text-gray-500">1</div>
 
-              <div className="rounded-3xl bg-gray-100 p-4 dark:bg-gray-900">
-                <div className="mb-2 text-sm text-gray-500 dark:text-gray-400">
-                  {copy.lpBalance}
+                <div className="min-w-0">
+                  <div className="flex items-center gap-4">
+                    <TokenPairBadge />
+                    <div className="min-w-0">
+                      <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                        ETH / FLUX
+                      </div>
+                      <div className="truncate text-sm text-gray-500 dark:text-gray-400">
+                        {normalizedPairAddress
+                          ? isZh
+                            ? '当前接入的核心流动性池'
+                            : 'Core liquidity market currently wired into the app'
+                          : isZh
+                            ? '等待首次创建交易对'
+                            : 'Waiting for the first pool creation'}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="text-lg font-semibold text-gray-900 dark:text-white">
-                  {isConnected ? formatBigIntAmount(lpBalance, 18, 4) : '--'}
-                </div>
-              </div>
 
-              <div className="rounded-3xl bg-gray-100 p-4 dark:bg-gray-900">
-                <div className="mb-2 text-sm text-gray-500 dark:text-gray-400">
-                  {copy.pairAddress}
+                <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                  FluxSwap
                 </div>
-                <div className="break-all text-sm font-medium text-gray-900 dark:text-white">
-                  {normalizedPairAddress ?? '--'}
+
+                <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                  0.3%
+                </div>
+
+                <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                  {tvlDisplay}
+                </div>
+
+                <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                  {myPositionDisplay} LP
+                </div>
+
+                <div className="flex justify-end">
+                  <Link
+                    href="/pool/eth-flux"
+                    className="inline-flex items-center gap-2 rounded-full border border-black/5 bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-200 dark:border-white/10 dark:bg-white/[0.06] dark:text-gray-100 dark:hover:bg-white/[0.1]"
+                  >
+                    <span>{isZh ? '管理' : 'Manage'}</span>
+                    <ChevronRight size={16} />
+                  </Link>
                 </div>
               </div>
             </div>
 
-            <div className="mt-4 rounded-3xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/60">
-              <div className="flex items-start justify-between gap-4">
+            <div className="space-y-4 lg:hidden">
+              <div className="rounded-[1.9rem] border border-black/5 bg-white p-5 dark:border-white/10 dark:bg-white/[0.03]">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <TokenPairBadge />
+                    <div>
+                      <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                        ETH / FLUX
+                      </div>
+                      <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                        FluxSwap v2
+                      </div>
+                    </div>
+                  </div>
+
+                  <span
+                    className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${poolStatusTone}`}
+                  >
+                    {poolStatus}
+                  </span>
+                </div>
+
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-[1.35rem] bg-gray-100 p-4 dark:bg-white/[0.05]">
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                      {isZh ? '费率' : 'Fee tier'}
+                    </div>
+                    <div className="mt-2 text-sm font-semibold text-gray-900 dark:text-white">
+                      0.3%
+                    </div>
+                  </div>
+                  <div className="rounded-[1.35rem] bg-gray-100 p-4 dark:bg-white/[0.05]">
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                      {isZh ? '我的头寸' : 'My position'}
+                    </div>
+                    <div className="mt-2 text-sm font-semibold text-gray-900 dark:text-white">
+                      {myPositionDisplay} LP
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-[1.35rem] bg-gray-100 p-4 dark:bg-white/[0.05]">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                    {isZh ? '当前储备' : 'Reserves'}
+                  </div>
+                  <div className="mt-2 text-sm font-semibold text-gray-900 dark:text-white">
+                    {tvlDisplay}
+                  </div>
+                </div>
+
+                <Link
+                  href="/pool/eth-flux"
+                  className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-[1.2rem] bg-gray-900 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
+                >
+                  <span>{isZh ? '进入池子详情' : 'Open pool detail'}</span>
+                  <ArrowRight size={16} />
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="grid gap-4 xl:grid-cols-[1fr_1fr_0.9fr]">
+          <div className="rounded-[2rem] border border-black/5 bg-white/75 p-5 shadow-xl shadow-sky-500/5 backdrop-blur-sm dark:border-white/10 dark:bg-white/[0.04]">
+            <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
+              <Droplets size={16} />
+              <span>{isZh ? '池子储备快照' : 'Reserve snapshot'}</span>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              <div className="rounded-[1.4rem] bg-gray-100/90 p-4 dark:bg-white/[0.05]">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-sm text-gray-500 dark:text-gray-400">ETH</span>
+                  <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                    {reserveEthDisplay}
+                  </span>
+                </div>
+              </div>
+
+              <div className="rounded-[1.4rem] bg-gray-100/90 p-4 dark:bg-white/[0.05]">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-sm text-gray-500 dark:text-gray-400">FLUX</span>
+                  <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                    {reserveFluxDisplay}
+                  </span>
+                </div>
+              </div>
+
+              <div className="rounded-[1.4rem] border border-dashed border-black/10 px-4 py-4 text-sm text-gray-500 dark:border-white/10 dark:text-gray-400">
+                {isZh
+                  ? '这里先直接展示链上储备，不额外伪造 USD 估值。'
+                  : 'For now this shows raw on-chain reserves instead of a fabricated USD valuation.'}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-[2rem] border border-black/5 bg-white/75 p-5 shadow-xl shadow-sky-500/5 backdrop-blur-sm dark:border-white/10 dark:bg-white/[0.04]">
+            <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
+              <Layers3 size={16} />
+              <span>{isZh ? '当前支持范围' : 'Current scope'}</span>
+            </div>
+
+            <div className="mt-5 space-y-3 text-sm text-gray-600 dark:text-gray-300">
+              <div className="rounded-[1.4rem] bg-gray-100/90 p-4 dark:bg-white/[0.05]">
+                <div className="font-semibold text-gray-900 dark:text-white">
+                  {isZh ? '普通交换' : 'Swap'}
+                </div>
+                <div className="mt-1">
+                  {isZh
+                    ? '可与该市场形成直连池，支持前端继续从市场页跳详情。'
+                    : 'This market can be managed directly and linked into the broader swap flow.'}
+                </div>
+              </div>
+
+              <div className="rounded-[1.4rem] bg-gray-100/90 p-4 dark:bg-white/[0.05]">
+                <div className="font-semibold text-gray-900 dark:text-white">
+                  {isZh ? '流动性管理' : 'Liquidity management'}
+                </div>
+                <div className="mt-1">
+                  {isZh
+                    ? '详情页保留现有添加流动性、移除流动性和最近活动。'
+                    : 'The detail page keeps the existing add, remove, and recent activity flows.'}
+                </div>
+              </div>
+
+              <div className="rounded-[1.4rem] bg-gray-100/90 p-4 dark:bg-white/[0.05]">
+                <div className="font-semibold text-gray-900 dark:text-white">
+                  {isZh ? '后续扩展' : 'Later expansion'}
+                </div>
+                <div className="mt-1">
+                  {isZh
+                    ? '后面可以继续加更多池子、成交量、APR 和更多市场筛选。'
+                    : 'More pools, volume, APR, and richer market filters can be layered in later.'}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-[2rem] border border-black/5 bg-white/75 p-5 shadow-xl shadow-sky-500/5 backdrop-blur-sm dark:border-white/10 dark:bg-white/[0.04]">
+            <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
+              <Sparkles size={16} />
+              <span>{isZh ? '快速入口' : 'Quick actions'}</span>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              <Link
+                href="/pool/eth-flux"
+                className="flex items-center justify-between rounded-[1.45rem] border border-black/5 bg-gray-100/90 px-4 py-4 transition-colors hover:bg-gray-200/80 dark:border-white/10 dark:bg-white/[0.05] dark:hover:bg-white/[0.08]"
+              >
                 <div>
-                  <div className="text-sm font-medium text-gray-900 dark:text-white">
-                    {pairState}
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                    {isZh ? '进入 ETH / FLUX 详情' : 'Open ETH / FLUX detail'}
                   </div>
                   <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                    {normalizedPairAddress ? copy.walletNeeded : copy.bootstrapHint}
+                    {isZh ? '添加或移除流动性' : 'Add or remove liquidity'}
                   </div>
                 </div>
-                <div className="text-right text-xs text-gray-500 dark:text-gray-400">
-                  <div>{copy.tokenAllowance}: {tokenAllowanceDisplay}</div>
-                  <div>{copy.lpAllowance}: {lpAllowanceDisplay}</div>
-                </div>
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button
-                  onClick={handleWatchFlux}
-                  disabled={!fluxTokenAddress}
-                  className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
-                >
-                  <Wallet size={14} />
-                  <span>{copy.addFluxToWallet}</span>
-                </button>
-
-                <button
-                  onClick={handleWatchLp}
-                  disabled={!normalizedPairAddress}
-                  className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
-                >
-                  <Wallet size={14} />
-                  <span>{copy.addLpToWallet}</span>
-                </button>
-
-                {canRevokeTokenAllowance && (
-                  <button
-                    onClick={handleRevokeTokenApproval}
-                    disabled={isSubmitting}
-                    className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-900/60 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/20"
-                  >
-                    <ShieldOff size={14} />
-                    <span>{copy.revokeFluxApproval}</span>
-                  </button>
-                )}
-
-                {canRevokeLpAllowance && (
-                  <button
-                    onClick={handleRevokeLpApproval}
-                    disabled={isSubmitting}
-                    className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-900/60 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/20"
-                  >
-                    <ShieldOff size={14} />
-                    <span>{copy.revokeLpApproval}</span>
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {walletNotice && (
-              <div className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
-                {walletNotice}
-              </div>
-            )}
-
-            {txError && (
-              <div className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-500/10 dark:text-red-300">
-                {txError}
-              </div>
-            )}
-
-            {hash && (
-              <div className="mt-4 rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">
-                {statusLabel}: {hash.slice(0, 10)}...
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-[2rem] border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-800">
-            <div className="mb-3 text-lg font-semibold text-gray-900 dark:text-white">
-              {copy.removeTitle}
-            </div>
-            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
-              {copy.expectedOutput}
-            </p>
-
-            <TokenAmountCard
-              label="LP Token"
-              value={removeLpAmount}
-              onChange={setRemoveLpAmount}
-              symbol="LP"
-              balance={isConnected ? formatBigIntAmount(lpBalance, 18, 4) : '0.00'}
-              onMax={handleMaxLp}
-            />
-
-            <div className="mt-4 rounded-3xl bg-gray-100 p-4 text-sm dark:bg-gray-900">
-              <div className="flex items-center justify-between text-gray-600 dark:text-gray-300">
-                <span>ETH</span>
-                <span>{formatBigIntAmount(expectedEthOut, 18, 4)}</span>
-              </div>
-              <div className="mt-2 flex items-center justify-between text-gray-600 dark:text-gray-300">
-                <span>FLUX</span>
-                <span>{formatBigIntAmount(expectedFluxOut, 18, 4)}</span>
-              </div>
-            </div>
-
-            {!mounted || !isConnected ? (
-              <ActionButton
-                label={t('swap.connectWallet')}
-                disabled={false}
-                onClick={() => openConnectModal?.()}
-                className="mt-4"
-              />
-            ) : (
-              <ActionButton
-                label={removeButtonLabel}
-                disabled={removeDisabled}
-                loading={isSubmitting && (lastAction === 'approve-lp' || lastAction === 'remove-liquidity')}
-                onClick={handleRemoveLiquidity}
-                variant="danger"
-                className="mt-4"
-              />
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-[2rem] border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-800">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <div className="text-lg font-semibold text-gray-900 dark:text-white">
-                {copy.addTitle}
-              </div>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                ETH + FLUX
-              </p>
-            </div>
-            <div className="rounded-full bg-gray-100 px-4 py-2 text-sm text-gray-600 dark:bg-gray-900 dark:text-gray-300">
-              {copy.slippage}: {slippage}%
-            </div>
-          </div>
-
-          <div className="grid gap-4 lg:grid-cols-[1fr_auto_1fr]">
-            <TokenAmountCard
-              label="ETH"
-              value={addEthAmount}
-              onChange={handleAddEthChange}
-              symbol="ETH"
-              balance={ethBalance?.formatted ? formatDisplayAmount(ethBalance.formatted) : '0.00'}
-              onMax={handleMaxEth}
-            />
-
-            <div className="flex items-center justify-center">
-              <div className="rounded-2xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
-                <Plus size={18} className="text-gray-500 dark:text-gray-400" />
-              </div>
-            </div>
-
-            <TokenAmountCard
-              label="FLUX"
-              value={addFluxAmount}
-              onChange={handleAddFluxChange}
-              symbol="FLUX"
-              balance={fluxBalance?.formatted ? formatDisplayAmount(fluxBalance.formatted) : '0.00'}
-              onMax={handleMaxFlux}
-            />
-          </div>
-
-          <div className="mt-4 grid gap-4 md:grid-cols-3">
-            <button
-              onClick={() => setSlippage('0.1')}
-              className={`rounded-2xl px-4 py-3 text-sm font-medium transition-colors ${
-                slippage === '0.1'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'
-              }`}
-            >
-              0.1%
-            </button>
-            <button
-              onClick={() => setSlippage('0.5')}
-              className={`rounded-2xl px-4 py-3 text-sm font-medium transition-colors ${
-                slippage === '0.5'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'
-              }`}
-            >
-              0.5%
-            </button>
-            <button
-              onClick={() => setSlippage('1.0')}
-              className={`rounded-2xl px-4 py-3 text-sm font-medium transition-colors ${
-                slippage === '1.0'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'
-              }`}
-            >
-              1.0%
-            </button>
-          </div>
-
-          <div className="mt-4 rounded-3xl border border-gray-200 bg-gray-50 p-4 text-sm dark:border-gray-700 dark:bg-gray-900/50">
-            <div className="flex items-start gap-2 text-gray-600 dark:text-gray-300">
-              <Info size={16} className="mt-0.5 shrink-0" />
-              <div>
-                <div>{copy.bootstrapHint}</div>
-                <div className="mt-1">
-                  {copy.tokenAllowance}: {tokenAllowanceDisplay}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {!mounted || !isConnected ? (
-            <ActionButton
-              label={t('swap.connectWallet')}
-              disabled={false}
-              onClick={() => openConnectModal?.()}
-              className="mt-4"
-            />
-          ) : (
-            <ActionButton
-              label={addButtonLabel}
-              disabled={addDisabled}
-              loading={isSubmitting && (lastAction === 'approve-token' || lastAction === 'add-liquidity')}
-              onClick={handleAddLiquidity}
-              className="mt-4"
-            />
-          )}
-
-          {!lpBalance || lpBalance === BigInt(0) ? (
-            <div className="mt-4 rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-500 dark:bg-gray-900 dark:text-gray-400">
-              {copy.noPosition}
-            </div>
-          ) : (
-            <div className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
-              <div>{copy.lpBalance}: {formatBigIntAmount(lpBalance, 18, 4)}</div>
-              <Link
-                href="/earn"
-                className="mt-2 inline-block font-semibold text-emerald-700 transition-colors hover:text-emerald-800 dark:text-emerald-300 dark:hover:text-emerald-200"
-              >
-                {isZh ? '前往 Earn 质押 LP' : 'Go to Earn'}
+                <ChevronRight size={18} className="text-gray-400" />
               </Link>
-            </div>
-          )}
-        </div>
 
-        <div className="rounded-[2rem] border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-800">
-          <div className="mb-4 flex items-center gap-2">
-            <History size={18} className="text-gray-500 dark:text-gray-400" />
-            <div>
-              <div className="text-lg font-semibold text-gray-900 dark:text-white">
-                {copy.activityTitle}
-              </div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">
-                {normalizedPairAddress
-                  ? truncateAddress(normalizedPairAddress, 10, 8)
-                  : copy.poolMissing}
+              <Link
+                href="/swap"
+                className="flex items-center justify-between rounded-[1.45rem] border border-black/5 bg-gray-100/90 px-4 py-4 transition-colors hover:bg-gray-200/80 dark:border-white/10 dark:bg-white/[0.05] dark:hover:bg-white/[0.08]"
+              >
+                <div>
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                    {isZh ? '去交换页' : 'Open swap'}
+                  </div>
+                  <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    {isZh ? '回到普通交换流程' : 'Jump back to the swap flow'}
+                  </div>
+                </div>
+                <ChevronRight size={18} className="text-gray-400" />
+              </Link>
+
+              <div className="rounded-[1.45rem] bg-gradient-to-br from-sky-500 to-emerald-500 p-[1px]">
+                <div className="rounded-[1.4rem] bg-white/95 px-4 py-4 dark:bg-[#0a1320]">
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                    {isZh ? '当前网络状态' : 'Network status'}
+                  </div>
+                  <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                    {supportedChain
+                      ? isZh
+                        ? '当前网络已接入 FluxSwap 合约。'
+                        : 'FluxSwap contracts are configured on this network.'
+                      : isZh
+                        ? '当前网络还没有接入 FluxSwap 合约。'
+                        : 'FluxSwap contracts are not configured on this network.'}
+                  </div>
+                  <div className="mt-3">
+                    <span
+                      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${poolStatusTone}`}
+                    >
+                      {poolStatus}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-
-          {!normalizedPairAddress ? (
-            <div className="rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-500 dark:bg-gray-900 dark:text-gray-400">
-              {copy.poolMissing}
-            </div>
-          ) : isActivityLoading ? (
-            <div className="rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-500 dark:bg-gray-900 dark:text-gray-400">
-              {copy.activityLoading}
-            </div>
-          ) : activity.length === 0 ? (
-            <div className="rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-500 dark:bg-gray-900 dark:text-gray-400">
-              {copy.activityEmpty}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {activity.map((item) => (
-                <div
-                  key={item.id}
-                  className="rounded-3xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/60"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">
-                          {item.title}
-                        </span>
-                        {item.isMine && (
-                          <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
-                            {copy.mine}
-                          </span>
-                        )}
-                      </div>
-                      <div className="mt-2 text-sm font-medium text-gray-900 dark:text-white">
-                        {item.detail}
-                      </div>
-                      <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                        {truncateAddress(item.actor)} · {truncateAddress(item.txHash, 10, 8)}
-                      </div>
-                    </div>
-
-                    <div className="text-right text-xs text-gray-500 dark:text-gray-400">
-                      {formatTimestamp(item.timestamp, isZh ? 'zh-CN' : 'en-US')}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        </section>
       </div>
     </div>
   );
