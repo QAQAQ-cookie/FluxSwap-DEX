@@ -12,6 +12,12 @@ yarn-error.log
 out/
 build/
 
+# The Graph / Subgraph
+subgraph/node_modules/
+subgraph/build/
+subgraph/generated/
+subgraph/data/
+
 # ========================
 # Hardhat / Solidity
 # ========================
