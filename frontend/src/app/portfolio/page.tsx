@@ -1,53 +1,114 @@
 'use client';
 
 import Link from 'next/link';
+import { ArrowRight, Coins, Layers3, ListOrdered, ShieldCheck, WalletCards } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useAccount, useBalance, useChainId } from 'wagmi';
-import { ArrowRight, Coins, Droplets, Gift, Layers3, ShieldCheck, Wallet } from 'lucide-react';
 import { zeroAddress } from 'viem';
+import { useAccount, useBalance, useChainId } from 'wagmi';
 
+import { getContractAddress, isFluxSupportedChain } from '@/config/contracts';
+import { formatBigIntAmount, formatDisplayAmount } from '@/lib/amounts';
 import {
-  getContractAddress,
-  isFluxSupportedChain,
-} from '@/config/contracts';
-import {
-  formatBigIntAmount,
-  formatDisplayAmount,
-} from '@/lib/amounts';
-import { truncateAddress } from '@/lib/wallet';
-import {
-  useReadFluxPoolFactoryLpTokenPools,
   useReadFluxSwapFactoryGetPair,
-  useReadFluxSwapLpStakingPoolBalanceOf,
-  useReadFluxSwapLpStakingPoolEarned,
-  useReadFluxSwapLpStakingPoolPendingUserRewards,
-  useReadFluxSwapLpStakingPoolRewardReserve,
   useReadFluxSwapPairBalanceOf,
-  useReadFluxSwapPairGetReserves,
-  useReadFluxSwapPairToken0,
-  useReadFluxSwapPairTotalSupply,
 } from '@/lib/contracts';
 
-function MetricCard({
+function SummaryBlock({
   title,
   value,
-  detail,
+  suffix,
   icon: Icon,
 }: {
   title: string;
   value: string;
-  detail: string;
-  icon: typeof Wallet;
+  suffix: string;
+  icon: typeof Coins;
 }) {
   return (
-    <div className="rounded-[1.75rem] border border-black/5 bg-white/75 p-5 shadow-xl shadow-sky-500/5 backdrop-blur-sm dark:border-white/10 dark:bg-white/[0.04]">
-      <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+    <div className="px-2 py-2">
+      <div className="flex items-center gap-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
         <Icon size={16} />
         <span>{title}</span>
       </div>
-      <div className="mt-3 text-2xl font-bold text-gray-900 dark:text-white">{value}</div>
-      <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">{detail}</div>
+
+      <div className="mt-4 flex items-end gap-2">
+        <div className="text-4xl font-black tracking-tight text-gray-900 dark:text-white">
+          {value}
+        </div>
+        <div className="pb-1 text-sm font-semibold text-gray-500 dark:text-gray-400">
+          {suffix}
+        </div>
+      </div>
     </div>
+  );
+}
+
+function FluxSwapLogo() {
+  return (
+    <div className="relative flex h-20 w-20 items-center justify-center rounded-[1.75rem] border border-sky-100/90 bg-white/80 shadow-[0_16px_36px_rgba(56,189,248,0.10)] backdrop-blur-sm dark:border-white/10 dark:bg-white/[0.05]">
+      <span className="absolute h-12 w-12 rounded-full border border-sky-200/90 dark:border-sky-400/20" />
+      <span className="absolute h-8 w-14 rounded-[999px] border border-emerald-200/90 dark:border-emerald-400/20" />
+      <span className="absolute h-px w-12 bg-gradient-to-r from-transparent via-sky-300/80 to-transparent dark:via-sky-400/30" />
+      <span className="absolute w-px h-12 bg-gradient-to-b from-transparent via-sky-300/80 to-transparent dark:via-sky-400/30" />
+      <span className="absolute left-[22px] top-[24px] h-2.5 w-2.5 rounded-full bg-sky-300/80 dark:bg-sky-300/60" />
+      <span className="absolute right-[20px] bottom-[22px] h-2.5 w-2.5 rounded-full bg-emerald-300/80 dark:bg-emerald-300/60" />
+      <span className="absolute h-6 w-6 rounded-full bg-gradient-to-br from-sky-400 via-cyan-400 to-emerald-300 shadow-[0_0_22px_rgba(34,211,238,0.30)]" />
+      <span className="relative text-[10px] font-black tracking-[0.24em] text-slate-500 dark:text-slate-300">
+        FS
+      </span>
+    </div>
+  );
+}
+
+function DividerPattern() {
+  return (
+    <div className="flex h-full min-h-[120px] items-center justify-center px-2">
+      <div className="relative h-28 w-32">
+        <span className="absolute left-1/2 top-1/2 h-28 w-px -translate-x-1/2 -translate-y-1/2 bg-gradient-to-b from-transparent via-sky-200/70 to-transparent dark:via-sky-400/30" />
+        <span className="absolute left-1/2 top-1/2 h-20 w-20 -translate-x-1/2 -translate-y-1/2 rounded-full border border-sky-100/90 dark:border-sky-400/10" />
+        <span className="absolute left-1/2 top-1/2 h-12 w-28 -translate-x-1/2 -translate-y-1/2 rounded-[999px] border border-emerald-100/90 dark:border-emerald-400/10" />
+        <span className="absolute left-1/2 top-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-sky-100/70 blur-md dark:bg-sky-400/10" />
+        <span className="absolute left-1/2 top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-gradient-to-br from-sky-400 via-cyan-400 to-emerald-300 shadow-[0_0_22px_rgba(34,211,238,0.28)]" />
+        <span className="absolute left-[26px] top-[36px] h-2.5 w-2.5 rounded-full bg-sky-300/75 shadow-[0_0_12px_rgba(125,211,252,0.28)] dark:bg-sky-300/55" />
+        <span className="absolute right-[24px] bottom-[34px] h-2.5 w-2.5 rounded-full bg-emerald-300/75 shadow-[0_0_12px_rgba(110,231,183,0.28)] dark:bg-emerald-300/55" />
+      </div>
+    </div>
+  );
+}
+
+function PortfolioSection({
+  title,
+  description,
+  icon: Icon,
+  emptyContent,
+}: {
+  title: string;
+  description: string;
+  icon: typeof ListOrdered;
+  emptyContent?: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-[2rem] border border-black/5 bg-white/72 p-6 shadow-xl shadow-sky-500/5 backdrop-blur-sm dark:border-white/10 dark:bg-white/[0.04] min-h-[360px]">
+      <div className="flex items-center gap-3">
+        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gray-100 text-gray-700 dark:bg-white/[0.05] dark:text-gray-200">
+          <Icon size={18} />
+        </div>
+        <div>
+          <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+            {title}
+          </div>
+          <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            {description}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6 rounded-[1.5rem] border border-dashed border-black/10 bg-gray-50/80 px-5 py-20 text-center dark:border-white/10 dark:bg-white/[0.03] min-h-[240px] flex items-center justify-center">
+        {emptyContent ?? (
+          <div className="text-sm text-gray-400 dark:text-gray-500">--</div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -59,7 +120,6 @@ export default function PortfolioPage() {
 
   const supportedChain = isFluxSupportedChain(chainId);
   const factoryAddress = getContractAddress('FluxSwapFactory', chainId);
-  const poolFactoryAddress = getContractAddress('FluxPoolFactory', chainId);
   const fluxTokenAddress = getContractAddress('FluxToken', chainId);
   const wrappedNativeAddress = getContractAddress('MockWETH', chainId);
 
@@ -67,6 +127,16 @@ export default function PortfolioPage() {
     fluxTokenAddress ?? zeroAddress,
     wrappedNativeAddress ?? zeroAddress,
   ] as const;
+
+  const { data: fluxBalance } = useBalance({
+    address,
+    chainId,
+    token: fluxTokenAddress,
+    query: {
+      enabled: !!address && !!fluxTokenAddress && isConnected,
+      refetchInterval: 8000,
+    },
+  });
 
   const { data: pairAddress } = useReadFluxSwapFactoryGetPair({
     address: factoryAddress ?? zeroAddress,
@@ -86,42 +156,7 @@ export default function PortfolioPage() {
   const normalizedPairAddress =
     pairAddress && pairAddress !== zeroAddress ? pairAddress : undefined;
 
-  const { data: stakingPoolAddress } = useReadFluxPoolFactoryLpTokenPools({
-    address: poolFactoryAddress ?? zeroAddress,
-    chainId,
-    args: [normalizedPairAddress ?? zeroAddress],
-    query: {
-      enabled: !!poolFactoryAddress && !!normalizedPairAddress,
-      retry: false,
-      refetchInterval: 10000,
-    },
-  });
-
-  const normalizedStakingPoolAddress =
-    stakingPoolAddress && stakingPoolAddress !== zeroAddress
-      ? stakingPoolAddress
-      : undefined;
-
-  const { data: walletEth } = useBalance({
-    address,
-    chainId,
-    query: {
-      enabled: !!address && isConnected,
-      refetchInterval: 8000,
-    },
-  });
-
-  const { data: walletFlux } = useBalance({
-    address,
-    chainId,
-    token: fluxTokenAddress,
-    query: {
-      enabled: !!address && !!fluxTokenAddress && isConnected,
-      refetchInterval: 8000,
-    },
-  });
-
-  const { data: walletLp } = useReadFluxSwapPairBalanceOf({
+  const { data: lpBalance } = useReadFluxSwapPairBalanceOf({
     address: normalizedPairAddress ?? zeroAddress,
     chainId,
     args: [address ?? zeroAddress],
@@ -131,282 +166,143 @@ export default function PortfolioPage() {
     },
   });
 
-  const { data: reserves } = useReadFluxSwapPairGetReserves({
-    address: normalizedPairAddress ?? zeroAddress,
-    chainId,
-    query: {
-      enabled: !!normalizedPairAddress,
-      retry: false,
-      refetchInterval: 10000,
-    },
-  });
+  const fluxDisplay = isConnected
+    ? formatDisplayAmount(fluxBalance?.formatted)
+    : '--';
 
-  const { data: token0 } = useReadFluxSwapPairToken0({
-    address: normalizedPairAddress ?? zeroAddress,
-    chainId,
-    query: {
-      enabled: !!normalizedPairAddress,
-      retry: false,
-      refetchInterval: 10000,
-    },
-  });
-
-  const { data: totalSupply } = useReadFluxSwapPairTotalSupply({
-    address: normalizedPairAddress ?? zeroAddress,
-    chainId,
-    query: {
-      enabled: !!normalizedPairAddress,
-      retry: false,
-      refetchInterval: 10000,
-    },
-  });
-
-  const { data: stakedLp } = useReadFluxSwapLpStakingPoolBalanceOf({
-    address: normalizedStakingPoolAddress ?? zeroAddress,
-    chainId,
-    args: [address ?? zeroAddress],
-    query: {
-      enabled: !!normalizedStakingPoolAddress && !!address && isConnected,
-      refetchInterval: 8000,
-    },
-  });
-
-  const { data: earnedRewards } = useReadFluxSwapLpStakingPoolEarned({
-    address: normalizedStakingPoolAddress ?? zeroAddress,
-    chainId,
-    args: [address ?? zeroAddress],
-    query: {
-      enabled: !!normalizedStakingPoolAddress && !!address && isConnected,
-      refetchInterval: 8000,
-    },
-  });
-
-  const { data: pendingRewards } = useReadFluxSwapLpStakingPoolPendingUserRewards({
-    address: normalizedStakingPoolAddress ?? zeroAddress,
-    chainId,
-    query: {
-      enabled: !!normalizedStakingPoolAddress,
-      refetchInterval: 8000,
-    },
-  });
-
-  const { data: rewardReserve } = useReadFluxSwapLpStakingPoolRewardReserve({
-    address: normalizedStakingPoolAddress ?? zeroAddress,
-    chainId,
-    query: {
-      enabled: !!normalizedStakingPoolAddress,
-      refetchInterval: 10000,
-    },
-  });
-
-  const reserveFlux =
-    reserves && token0 && fluxTokenAddress
-      ? token0.toLowerCase() === fluxTokenAddress.toLowerCase()
-        ? reserves[0]
-        : reserves[1]
-      : undefined;
-  const reserveEth =
-    reserves && token0 && fluxTokenAddress
-      ? token0.toLowerCase() === fluxTokenAddress.toLowerCase()
-        ? reserves[1]
-        : reserves[0]
-      : undefined;
-
-  const portfolioCards = [
-    {
-      title: 'ETH',
-      value: isConnected ? formatDisplayAmount(walletEth?.formatted) : '--',
-      detail: isZh ? '钱包原生币余额' : 'Native balance in wallet',
-      icon: Wallet,
-    },
-    {
-      title: 'FLUX',
-      value: isConnected ? formatDisplayAmount(walletFlux?.formatted) : '--',
-      detail: isZh ? '钱包中的 FLUX' : 'FLUX held in wallet',
-      icon: Coins,
-    },
-    {
-      title: 'LP',
-      value: isConnected ? formatBigIntAmount(walletLp, 18, 4) : '--',
-      detail: isZh ? '未质押的 LP 份额' : 'Unstaked LP balance',
-      icon: Layers3,
-    },
-    {
-      title: isZh ? '已质押 LP' : 'Staked LP',
-      value: isConnected ? formatBigIntAmount(stakedLp, 18, 4) : '--',
-      detail: isZh ? '已投入 Earn 的 LP' : 'LP already deposited into Earn',
-      icon: ShieldCheck,
-    },
-  ];
-
-  const quickActions = [
-    {
-      href: '/swap',
-      title: isZh ? '去兑换' : 'Open Swap',
-      detail: isZh ? '买入或卖出 FLUX，测试滑点与授权。' : 'Buy or sell FLUX and test approvals.',
-    },
-    {
-      href: '/pool/eth-flux',
-      title: isZh ? '去池子' : 'Manage Pool',
-      detail: isZh ? '添加或移除流动性，查看池子最近交易。' : 'Add or remove liquidity and inspect recent pool activity.',
-    },
-    {
-      href: '/earn',
-      title: isZh ? '去 Earn' : 'Open Earn',
-      detail: isZh ? '质押 LP、提取仓位、领取奖励。' : 'Stake LP, withdraw positions, and claim rewards.',
-    },
-  ];
-
-  const poolShare =
-    walletLp !== undefined && totalSupply && totalSupply > BigInt(0)
-      ? Number((walletLp * BigInt(1000000)) / totalSupply) / 10000
-      : 0;
+  const lpDisplay = isConnected
+    ? formatBigIntAmount(lpBalance, 18, 4)
+    : '--';
 
   return (
     <div className="px-4 py-10 lg:px-6">
-      <div className="space-y-6">
-        <section className="rounded-[2.5rem] border border-black/5 bg-white/75 p-6 shadow-2xl shadow-sky-500/5 backdrop-blur-md dark:border-white/10 dark:bg-white/[0.04]">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <div className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-500/10 dark:text-emerald-300">
-                {supportedChain
-                  ? isZh
-                    ? '用户资产中心'
-                    : 'User Portfolio'
-                  : isZh
-                    ? '当前网络未配置'
-                    : 'Unsupported network'}
-              </div>
-              <h1 className="mt-4 text-4xl font-black tracking-tight text-gray-900 dark:text-white md:text-5xl">
-                {isZh ? '我的资产、LP 与收益位置' : 'Your assets, LP, and reward positions'}
-              </h1>
-              <p className="mt-3 max-w-3xl text-base text-gray-600 dark:text-gray-300">
-                {isZh
-                  ? '这个页面把钱包余额、流动性份额、Earn 仓位和协议连接状态集中到一起，方便你连续测试整条用户路径。'
-                  : 'This page brings together wallet balances, LP exposure, Earn positions, and protocol state so you can test the full user workflow from one place.'}
-              </p>
-            </div>
-
-            <div className="rounded-[1.75rem] border border-black/5 bg-black/[0.03] px-5 py-4 text-sm dark:border-white/10 dark:bg-white/[0.04]">
-              <div className="text-gray-500 dark:text-gray-400">
-                {isZh ? '当前钱包' : 'Connected wallet'}
-              </div>
-              <div className="mt-1 font-medium text-gray-900 dark:text-white">
-                {address ? truncateAddress(address, 10, 8) : '--'}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="grid gap-4 lg:grid-cols-4">
-          {portfolioCards.map((card) => (
-            <MetricCard
-              key={card.title}
-              title={card.title}
-              value={card.value}
-              detail={card.detail}
-              icon={card.icon}
-            />
-          ))}
-        </section>
-
-        <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="rounded-[2.25rem] border border-black/5 bg-white/75 p-6 shadow-2xl shadow-sky-500/5 backdrop-blur-md dark:border-white/10 dark:bg-white/[0.04]">
-            <div className="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
-              <Droplets size={18} />
-              <span>{isZh ? '池子与份额快照' : 'Pool and share snapshot'}</span>
-            </div>
-
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <MetricCard
-                title={isZh ? '池子储备' : 'Pool reserves'}
-                value={`${formatBigIntAmount(reserveEth, 18, 3)} ETH`}
-                detail={`${formatBigIntAmount(reserveFlux, 18, 3)} FLUX`}
-                icon={Droplets}
-              />
-              <MetricCard
-                title={isZh ? '钱包 LP 占比' : 'Wallet LP share'}
-                value={`${poolShare.toFixed(2)}%`}
-                detail={
-                  isZh
-                    ? `LP 总供应 ${formatBigIntAmount(totalSupply, 18, 4)}`
-                    : `Total LP supply ${formatBigIntAmount(totalSupply, 18, 4)}`
-                }
-                icon={Layers3}
-              />
-            </div>
-
-            <div className="mt-5 rounded-[1.75rem] bg-gray-100 p-5 dark:bg-gray-900/60">
-              <div className="text-sm text-gray-500 dark:text-gray-400">
-                {isZh ? '当前关键地址' : 'Key addresses'}
-              </div>
-              <div className="mt-3 space-y-2 text-sm text-gray-700 dark:text-gray-300">
-                <div className="flex items-center justify-between gap-3">
-                  <span>Pair</span>
-                  <span className="font-medium">{normalizedPairAddress ? truncateAddress(normalizedPairAddress, 10, 8) : '--'}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span>Staking Pool</span>
-                  <span className="font-medium">{normalizedStakingPoolAddress ? truncateAddress(normalizedStakingPoolAddress, 10, 8) : '--'}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span>Reward Reserve</span>
-                  <span className="font-medium">{formatBigIntAmount(rewardReserve, 18, 4)}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-[2.25rem] border border-black/5 bg-white/75 p-6 shadow-2xl shadow-sky-500/5 backdrop-blur-md dark:border-white/10 dark:bg-white/[0.04]">
-            <div className="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
-              <Gift size={18} />
-              <span>{isZh ? '收益与待领取状态' : 'Rewards and pending status'}</span>
-            </div>
-
-            <div className="mt-5 space-y-4">
-              <MetricCard
-                title={isZh ? '已赚取奖励' : 'Earned rewards'}
-                value={formatBigIntAmount(earnedRewards, 18, 4)}
-                detail={isZh ? '当前用户可领取奖励' : 'Rewards currently claimable by the user'}
-                icon={Gift}
-              />
-              <MetricCard
-                title={isZh ? '待记账奖励' : 'Pending rewards'}
-                value={formatBigIntAmount(pendingRewards, 18, 4)}
-                detail={isZh ? '等待同步到用户侧的奖励' : 'Rewards pending sync to the user side'}
-                icon={ShieldCheck}
-              />
-            </div>
-          </div>
-        </section>
-
-        <section className="rounded-[2.25rem] border border-black/5 bg-white/75 p-6 shadow-2xl shadow-sky-500/5 backdrop-blur-md dark:border-white/10 dark:bg-white/[0.04]">
-          <div className="text-lg font-semibold text-gray-900 dark:text-white">
-            {isZh ? '下一步操作' : 'Next actions'}
-          </div>
-          <div className="mt-5 grid gap-4 lg:grid-cols-3">
-            {quickActions.map((action) => (
-              <Link
-                key={action.href}
-                href={action.href}
-                className="group rounded-[1.75rem] border border-black/5 bg-gray-100 p-5 transition-all hover:-translate-y-0.5 hover:bg-white dark:border-white/10 dark:bg-gray-900/60 dark:hover:bg-white/[0.06]"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="text-lg font-semibold text-gray-900 dark:text-white">
-                    {action.title}
+      <div className="mx-auto max-w-[1500px]">
+        <section className="rounded-[2.25rem] border border-black/5 bg-white/78 p-6 shadow-2xl shadow-sky-500/5 backdrop-blur-md dark:border-white/10 dark:bg-white/[0.04] lg:p-7">
+          <div className="flex flex-col gap-6 xl:flex-row xl:items-center">
+            <div className={`xl:shrink-0 ${isZh ? 'xl:w-[220px]' : 'xl:w-[320px]'}`}>
+              <div className="flex items-center gap-4">
+                <FluxSwapLogo />
+                <div className={isZh ? '' : 'min-w-[180px]'}>
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                    {isZh ? '资产概览' : 'Portfolio overview'}
                   </div>
-                  <ArrowRight
-                    size={18}
-                    className="text-gray-400 transition-transform group-hover:translate-x-1 group-hover:text-sky-500"
-                  />
+                  <h1
+                    className={`mt-2 text-3xl font-black tracking-tight text-gray-900 dark:text-white ${
+                      isZh ? '' : 'whitespace-nowrap'
+                    }`}
+                  >
+                    {isZh ? '我的资产' : 'My assets'}
+                  </h1>
                 </div>
-                <div className="mt-3 text-sm text-gray-500 dark:text-gray-400">
-                  {action.detail}
-                </div>
-              </Link>
-            ))}
+              </div>
+            </div>
+
+            <div className="xl:flex-1 xl:-ml-3">
+              <div className="mr-[320px] ml-auto grid w-fit items-center gap-2 md:grid-cols-[auto_120px_auto]">
+                <SummaryBlock
+                  title={isZh ? 'FLUX 数量' : 'FLUX Balance'}
+                  value={fluxDisplay}
+                  suffix="FLUX"
+                  icon={Coins}
+                />
+                <DividerPattern />
+                <SummaryBlock
+                  title={isZh ? 'LP 数量' : 'LP Balance'}
+                  value={lpDisplay}
+                  suffix="LP"
+                  icon={Layers3}
+                />
+              </div>
+            </div>
           </div>
         </section>
+
+        <div className="mt-8 grid gap-6 xl:grid-cols-3">
+          <PortfolioSection
+            title={isZh ? '限价单订单' : 'Limit Orders'}
+            description={
+              isZh
+                ? '展示当前用户创建的限价单订单'
+                : 'Orders created by the current wallet'
+            }
+            icon={ListOrdered}
+            emptyContent={
+              <div className="flex flex-col items-center justify-center">
+                <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                  {isZh ? '还没创建限价单' : 'No limit orders yet'}
+                </div>
+                <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                  {isZh
+                    ? '去交易页面创建你的第一笔限价单。'
+                    : 'Create your first limit order from the trade page.'}
+                </div>
+                <Link
+                  href="/swap?mode=limit"
+                  className="mt-5 inline-flex items-center gap-2 rounded-full bg-gray-900 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
+                >
+                  <span>{isZh ? '去创建限价单' : 'Create limit order'}</span>
+                  <ArrowRight size={16} />
+                </Link>
+              </div>
+            }
+          />
+          <PortfolioSection
+            title={isZh ? '你的头寸' : 'Your Positions'}
+            description={
+              isZh
+                ? '展示当前用户持有的流动性与仓位'
+                : 'Liquidity and position overview for the current wallet'
+            }
+            icon={WalletCards}
+            emptyContent={
+              <div className="flex flex-col items-center justify-center">
+                <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                  {isZh ? '还没有头寸' : 'No positions yet'}
+                </div>
+                <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                  {isZh
+                    ? '去资金池页面添加流动性，建立你的第一笔头寸。'
+                    : 'Add liquidity from the portfolio page to create your first position.'}
+                </div>
+                <Link
+                  href="/portfolio/liquidity"
+                  className="mt-5 inline-flex items-center gap-2 rounded-full bg-gray-900 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
+                >
+                  <span>{isZh ? '去添加流动性' : 'Add liquidity'}</span>
+                  <ArrowRight size={16} />
+                </Link>
+              </div>
+            }
+          />
+          <PortfolioSection
+            title={isZh ? '你的质押' : 'Your Staking'}
+            description={
+              isZh
+                ? '展示当前用户的质押与收益状态'
+                : 'Staking balances and reward status'
+            }
+            icon={ShieldCheck}
+            emptyContent={
+              <div className="flex flex-col items-center justify-center">
+                <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                  {isZh ? '还没有质押' : 'No staking yet'}
+                </div>
+                <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                  {isZh
+                    ? '去质押页面查看可用池子并开始质押。'
+                    : 'Visit the earn page to view available pools and start staking.'}
+                </div>
+                <Link
+                  href="/earn"
+                  className="mt-5 inline-flex items-center gap-2 rounded-full bg-gray-900 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
+                >
+                  <span>{isZh ? '去查看质押' : 'View staking'}</span>
+                  <ArrowRight size={16} />
+                </Link>
+              </div>
+            }
+          />
+        </div>
       </div>
     </div>
   );

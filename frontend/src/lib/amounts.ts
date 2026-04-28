@@ -2,6 +2,14 @@ import { formatUnits, parseUnits } from 'viem'
 
 export const DECIMAL_INPUT_REGEX = /^\d*(\.\d*)?$/
 
+function addThousandsSeparators(value: string): string {
+  const negative = value.startsWith('-')
+  const digits = negative ? value.slice(1) : value
+  const formatted = digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+
+  return negative ? `-${formatted}` : formatted
+}
+
 export function formatDisplayAmount(
   value?: string,
   fractionDigits = 6,
@@ -20,6 +28,34 @@ export function formatDisplayAmount(
   })
 }
 
+export function formatDisplayAmountDown(
+  value?: string,
+  fractionDigits = 6,
+): string {
+  if (!value) {
+    return '0.00'
+  }
+
+  const normalized = value.replace(/,/g, '').trim()
+  if (!/^[-]?\d*(\.\d*)?$/.test(normalized)) {
+    return '0.00'
+  }
+
+  const negative = normalized.startsWith('-')
+  const unsigned = negative ? normalized.slice(1) : normalized
+  const [rawInteger = '0', rawFraction = ''] = unsigned.split('.')
+  const integerPart = rawInteger === '' ? '0' : rawInteger
+  const fractionPart = rawFraction.slice(0, fractionDigits).replace(/0+$/, '')
+  const formattedInteger = addThousandsSeparators(integerPart)
+  const signedInteger = negative ? `-${formattedInteger}` : formattedInteger
+
+  if (fractionDigits === 0 || fractionPart === '') {
+    return signedInteger
+  }
+
+  return `${signedInteger}.${fractionPart}`
+}
+
 export function formatBigIntAmount(
   value: bigint | undefined,
   decimals: number,
@@ -30,6 +66,18 @@ export function formatBigIntAmount(
   }
 
   return formatDisplayAmount(formatUnits(value, decimals), fractionDigits)
+}
+
+export function formatBigIntAmountDown(
+  value: bigint | undefined,
+  decimals: number,
+  fractionDigits = 6,
+): string {
+  if (value === undefined) {
+    return '0.00'
+  }
+
+  return formatDisplayAmountDown(formatUnits(value, decimals), fractionDigits)
 }
 
 export function parseAmount(

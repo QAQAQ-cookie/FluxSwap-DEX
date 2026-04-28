@@ -33,6 +33,7 @@ import { TokenAmountCard } from '@/components/TokenAmountCard';
 import { useIsClient } from '@/hooks/useIsClient';
 import {
   formatBigIntAmount,
+  formatBigIntAmountDown,
   formatDisplayAmount,
   parseAmount,
 } from '@/lib/amounts';
@@ -746,7 +747,7 @@ export default function EarnPage() {
                 <div className="mt-1 text-gray-500 dark:text-gray-400">{setupHint}</div>
                 {!normalizedPairAddress && (
                   <Link
-                    href="/pool/eth-flux"
+                    href="/portfolio/liquidity"
                     className="mt-2 inline-block font-semibold text-blue-600 transition-colors hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                   >
                     {copy.toPool}
@@ -786,7 +787,7 @@ export default function EarnPage() {
               </div>
               {!normalizedPairAddress && (
                 <Link
-                  href="/pool/eth-flux"
+                  href="/portfolio/liquidity"
                   className="mt-3 inline-block font-semibold text-blue-700 transition-colors hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
                 >
                   {copy.toPool}
@@ -850,7 +851,7 @@ export default function EarnPage() {
               symbol="LP"
               balanceLabel={copy.lpWalletBalance}
               balance={
-                formatBigIntAmount(lpWalletBalance, 18, 4)
+                formatBigIntAmountDown(lpWalletBalance, 18, 4)
               }
               onMax={handleMaxStake}
             />
@@ -923,7 +924,7 @@ export default function EarnPage() {
               onChange={setWithdrawAmount}
               symbol="LP"
               balanceLabel={copy.stakedBalance}
-              balance={formatBigIntAmount(stakedBalance, 18, 4)}
+              balance={formatBigIntAmountDown(stakedBalance, 18, 4)}
               onMax={handleMaxWithdraw}
             />
 

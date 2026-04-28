@@ -268,9 +268,11 @@ function TokenPicker({
 export function SwapWidget({
   hideDetails = false,
   enableModeSwitch = false,
+  initialTradeMode = "swap",
 }: {
   hideDetails?: boolean;
   enableModeSwitch?: boolean;
+  initialTradeMode?: TradeMode;
 }) {
   const { t, i18n } = useTranslation();
   const isZh = i18n.language.startsWith("zh");
@@ -390,7 +392,7 @@ export function SwapWidget({
   >(null);
   const [lastAction, setLastAction] = useState<ActionKind>(null);
   const [inputMode, setInputMode] = useState<InputMode>("pay");
-  const [tradeMode, setTradeMode] = useState<TradeMode>("swap");
+  const [tradeMode, setTradeMode] = useState<TradeMode>(initialTradeMode);
   const [limitRate, setLimitRate] = useState("");
   const [limitExpiry, setLimitExpiry] = useState("7");
   const [limitPremium, setLimitPremium] = useState("0.0");

@@ -39,6 +39,7 @@ import { TokenAmountCard } from '@/components/TokenAmountCard';
 import { useIsClient } from '@/hooks/useIsClient';
 import {
   formatBigIntAmount,
+  formatBigIntAmountDown,
   formatDisplayAmount,
   parseAmount,
   parsePercentToBps,
@@ -1054,7 +1055,7 @@ export default function PoolPage() {
               value={removeLpAmount}
               onChange={setRemoveLpAmount}
               symbol="LP"
-              balance={isConnected ? formatBigIntAmount(lpBalance, 18, 4) : '0.00'}
+              balance={isConnected ? formatBigIntAmountDown(lpBalance, 18, 4) : '0.00'}
               onMax={handleMaxLp}
             />
 

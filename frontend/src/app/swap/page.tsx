@@ -1,6 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { useSearchParams } from 'next/navigation';
 
 const SwapWidget = dynamic(
   () => import('@/components/SwapWidget').then((mod) => mod.SwapWidget),
@@ -22,10 +23,13 @@ const SwapWidget = dynamic(
 );
 
 export default function SwapPage() {
+  const searchParams = useSearchParams();
+  const initialTradeMode = searchParams.get('mode') === 'limit' ? 'limit' : 'swap';
+
   return (
-    <div className="min-h-[calc(100vh-80px)] px-4 py-20 transition-colors duration-300">
+    <div className="min-h-[calc(100vh-80px)] px-4 pt-10 pb-20 transition-colors duration-300">
       <div className="mx-auto flex w-full max-w-6xl flex-col">
-        <SwapWidget enableModeSwitch />
+        <SwapWidget enableModeSwitch initialTradeMode={initialTradeMode} />
       </div>
     </div>
   );
