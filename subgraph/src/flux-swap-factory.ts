@@ -1,16 +1,22 @@
-import { BigInt, Bytes } from "@graphprotocol/graph-ts";
+import { Address, BigInt, Bytes } from "@graphprotocol/graph-ts";
 import { PairCreated } from "../generated/FluxSwapFactory/FluxSwapFactory";
+import { IERC20 } from "../generated/FluxSwapFactory/IERC20";
 import { FluxSwapPair as FluxSwapPairTemplate } from "../generated/templates";
 import { Pair, Token } from "../generated/schema";
 
-function createTokenIfMissing(address: Bytes, timestamp: BigInt): void {
+function createTokenIfMissing(address: Address, timestamp: BigInt): void {
   let token = Token.load(address);
 
   if (token == null) {
+    let contract = IERC20.bind(address);
+    let symbolResult = contract.try_symbol();
+    let nameResult = contract.try_name();
+    let decimalsResult = contract.try_decimals();
+
     token = new Token(address);
-    token.symbol = "";
-    token.name = "";
-    token.decimals = 18;
+    token.symbol = symbolResult.reverted ? address.toHexString() : symbolResult.value;
+    token.name = nameResult.reverted ? address.toHexString() : nameResult.value;
+    token.decimals = decimalsResult.reverted ? 18 : decimalsResult.value;
     token.createdAtTimestamp = timestamp;
     token.save();
   }
