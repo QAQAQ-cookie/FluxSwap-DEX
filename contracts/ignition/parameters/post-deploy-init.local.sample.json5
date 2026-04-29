@@ -1,12 +1,12 @@
 {
-  // 本地样例默认从 Ignition 的 localhost 部署结果里自动读取核心合约地址。
+  // 本地样例默认从 Ignition 的 localhost 部署结果中自动读取核心合约地址。
   deployment: {
     source: "ignition",
     deploymentId: "chain-31337",
   },
 
   options: {
-    // 本地链上用 all 模式时，脚本会自动快进到 timelock 到期后再执行。
+    // 本地链上使用 all 模式时，脚本会自动快进到 timelock 到期后再执行。
     autoMineTimelockOnLocal: true,
 
     // execute 阶段默认使用的调用者。
@@ -48,21 +48,37 @@
   },
 
   funding: {
-    // 给 Treasury 先打一笔原生币，便于本地联调 allocateETH / 紧急提取等流程。
+    // 给 Treasury 和测试账号补一些原生币，便于本地联调。
     nativeTransfers: [
       { to: "treasury", amount: "5000000000000000000" },
+      { to: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", amount: "10000000000000000000" },
+      { to: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC", amount: "10000000000000000000" },
     ],
 
-    // 本地样例把大部分 FLUX 留在 Treasury 做协议侧联调，
-    // 同时给默认测试钱包预留一部分 FLUX，方便前端直接测试 swap / pool。
+    // 给本地常用测试账号预置多种代币，方便直接测试 swap / pool / order。
     tokenMints: [
       { token: "token", to: "treasury", amount: "180000000000000000000000" },
+
       { token: "token", to: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", amount: "200000000000000000000000" },
+      { token: "token", to: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", amount: "100000000000000000000000" },
+      { token: "token", to: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC", amount: "100000000000000000000000" },
+
+      { token: "mockUsdt", to: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", amount: "5000000000000" },
+      { token: "mockUsdt", to: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", amount: "5000000000000" },
+      { token: "mockUsdt", to: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC", amount: "5000000000000" },
+
+      { token: "mockUsdc", to: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", amount: "5000000000000" },
+      { token: "mockUsdc", to: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", amount: "5000000000000" },
+      { token: "mockUsdc", to: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC", amount: "5000000000000" },
+
+      { token: "mockWbtc", to: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", amount: "100000000000" },
+      { token: "mockWbtc", to: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", amount: "100000000000" },
+      { token: "mockWbtc", to: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC", amount: "100000000000" },
     ],
 
     tokenTransfers: [],
   },
 
-  // 如果后续要把 owner 从 bootstrap 账户移交给多签或治理地址，可以在这里继续补。
+  // 如果后续要把 owner 从 bootstrap 账户移交给多签或治理地址，可以在这里继续配。
   ownershipTransfers: [],
 }
