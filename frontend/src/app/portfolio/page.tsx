@@ -1,17 +1,15 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Coins, Layers3, ListOrdered, ShieldCheck, WalletCards } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { zeroAddress } from 'viem';
-import { useAccount, useBalance, useChainId } from 'wagmi';
+import { useAccount, useBalance, useChainId, usePublicClient } from 'wagmi';
 
 import { getContractAddress, isFluxSupportedChain } from '@/config/contracts';
 import { formatBigIntAmount, formatDisplayAmount } from '@/lib/amounts';
-import {
-  useReadFluxSwapFactoryGetPair,
-  useReadFluxSwapPairBalanceOf,
-} from '@/lib/contracts';
+import { fluxSwapPairAbi } from '@/lib/contracts';
+import { getPools, type PoolViewModel } from '@/lib/subgraph/pools';
 
 function SummaryBlock({
   title,
@@ -116,17 +114,13 @@ export default function PortfolioPage() {
   const { i18n } = useTranslation();
   const isZh = i18n.language.startsWith('zh');
   const chainId = useChainId();
+  const publicClient = usePublicClient({ chainId });
   const { address, isConnected } = useAccount();
 
   const supportedChain = isFluxSupportedChain(chainId);
-  const factoryAddress = getContractAddress('FluxSwapFactory', chainId);
   const fluxTokenAddress = getContractAddress('FluxToken', chainId);
-  const wrappedNativeAddress = getContractAddress('MockWETH', chainId);
-
-  const pairArgs = [
-    fluxTokenAddress ?? zeroAddress,
-    wrappedNativeAddress ?? zeroAddress,
-  ] as const;
+  const [pairs, setPairs] = useState<PoolViewModel[]>([]);
+  const [lpBalances, setLpBalances] = useState<Record<string, bigint>>({});
 
   const { data: fluxBalance } = useBalance({
     address,
@@ -138,41 +132,85 @@ export default function PortfolioPage() {
     },
   });
 
-  const { data: pairAddress } = useReadFluxSwapFactoryGetPair({
-    address: factoryAddress ?? zeroAddress,
-    chainId,
-    args: pairArgs,
-    query: {
-      enabled:
-        supportedChain &&
-        !!factoryAddress &&
-        !!fluxTokenAddress &&
-        !!wrappedNativeAddress,
-      retry: false,
-      refetchInterval: 10000,
-    },
-  });
+  useEffect(() => {
+    if (!supportedChain) {
+      setPairs([]);
+      return;
+    }
 
-  const normalizedPairAddress =
-    pairAddress && pairAddress !== zeroAddress ? pairAddress : undefined;
+    let cancelled = false;
 
-  const { data: lpBalance } = useReadFluxSwapPairBalanceOf({
-    address: normalizedPairAddress ?? zeroAddress,
-    chainId,
-    args: [address ?? zeroAddress],
-    query: {
-      enabled: !!address && !!normalizedPairAddress && isConnected,
-      refetchInterval: 8000,
-    },
-  });
+    (async () => {
+      try {
+        const nextPairs = await getPools();
+        if (!cancelled) {
+          setPairs(nextPairs);
+        }
+      } catch {
+        if (!cancelled) {
+          setPairs([]);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [supportedChain]);
+
+  useEffect(() => {
+    if (!publicClient || !isConnected || !address || pairs.length === 0) {
+      setLpBalances({});
+      return;
+    }
+
+    let cancelled = false;
+
+    Promise.all(
+      pairs.map(async (pair) => {
+        const balance = await publicClient.readContract({
+          address: pair.id,
+          abi: fluxSwapPairAbi,
+          functionName: 'balanceOf',
+          args: [address],
+        });
+
+        return [pair.id.toLowerCase(), balance] as const;
+      }),
+    )
+      .then((entries) => {
+        if (!cancelled) {
+          setLpBalances(Object.fromEntries(entries));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLpBalances({});
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [address, isConnected, pairs, publicClient]);
+
+  const totalLpBalance = useMemo(
+    () => Object.values(lpBalances).reduce((sum, balance) => sum + balance, 0n),
+    [lpBalances],
+  );
+  const activePositionCount = useMemo(
+    () => Object.values(lpBalances).filter((balance) => balance > 0n).length,
+    [lpBalances],
+  );
 
   const fluxDisplay = isConnected
     ? formatDisplayAmount(fluxBalance?.formatted)
     : '--';
 
   const lpDisplay = isConnected
-    ? formatBigIntAmount(lpBalance, 18, 4)
+    ? formatBigIntAmount(totalLpBalance, 18, 4)
     : '--';
+  const showLpHint = isConnected && totalLpBalance > 0n;
 
   return (
     <div className="px-4 py-10 lg:px-6">
@@ -206,12 +244,28 @@ export default function PortfolioPage() {
                   icon={Coins}
                 />
                 <DividerPattern />
-                <SummaryBlock
-                  title={isZh ? 'LP 数量' : 'LP Balance'}
-                  value={lpDisplay}
-                  suffix="LP"
-                  icon={Layers3}
-                />
+                <div className="px-2 py-2">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
+                    <Layers3 size={16} />
+                    <span>{isZh ? 'LP 数量' : 'LP Balance'}</span>
+                    {showLpHint ? (
+                      <span className="text-xs font-semibold text-gray-400 dark:text-gray-500">
+                        {isZh
+                          ? `已汇总 ${activePositionCount} 个池子的 LP 余额`
+                          : `Aggregated across ${activePositionCount} pools`}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-4 flex items-end gap-2">
+                    <div className="text-4xl font-black tracking-tight text-gray-900 dark:text-white">
+                      {lpDisplay}
+                    </div>
+                    <div className="pb-1 text-sm font-semibold text-gray-500 dark:text-gray-400">
+                      LP
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
