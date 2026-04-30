@@ -1,8 +1,7 @@
-import { Address, BigInt, Bytes } from "@graphprotocol/graph-ts";
+import { BigInt, Bytes } from "@graphprotocol/graph-ts";
 import { BurnEvent, MintEvent, Pair, SwapEvent } from "../generated/schema";
 import {
   Burn,
-  FluxSwapPair,
   Mint,
   Swap,
   Sync,
@@ -10,15 +9,6 @@ import {
 
 function buildEventId(txHash: Bytes, logIndex: BigInt): Bytes {
   return txHash.concat(Bytes.fromByteArray(Bytes.fromBigInt(logIndex)));
-}
-
-function updatePairTotalSupply(pair: Pair, pairAddress: Address): void {
-  let contract = FluxSwapPair.bind(pairAddress);
-  let totalSupplyResult = contract.try_totalSupply();
-
-  if (!totalSupplyResult.reverted) {
-    pair.totalSupply = totalSupplyResult.value;
-  }
 }
 
 export function handleMint(event: Mint): void {
@@ -41,7 +31,6 @@ export function handleMint(event: Mint): void {
 
   pair.mintCount = pair.mintCount.plus(BigInt.fromI32(1));
   pair.txCount = pair.txCount.plus(BigInt.fromI32(1));
-  updatePairTotalSupply(pair, event.address);
   pair.save();
 }
 
@@ -66,7 +55,6 @@ export function handleBurn(event: Burn): void {
 
   pair.burnCount = pair.burnCount.plus(BigInt.fromI32(1));
   pair.txCount = pair.txCount.plus(BigInt.fromI32(1));
-  updatePairTotalSupply(pair, event.address);
   pair.save();
 }
 
