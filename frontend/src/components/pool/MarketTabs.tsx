@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useTranslation } from 'react-i18next';
 
 type MarketTabsProps = {
-  active: 'pool' | 'trade';
+  active: 'pool' | 'transactions';
 };
 
 export function MarketTabs({ active }: MarketTabsProps) {
@@ -18,9 +18,9 @@ export function MarketTabs({ active }: MarketTabsProps) {
       label: isZh ? '资金池' : 'Pools',
     },
     {
-      key: 'trade' as const,
-      href: '/pool/trade',
-      label: isZh ? '交易' : 'Trades',
+      key: 'transactions' as const,
+      href: '/pool/transactions',
+      label: isZh ? '交易' : 'Transactions',
     },
   ];
 

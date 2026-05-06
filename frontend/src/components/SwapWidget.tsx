@@ -321,6 +321,7 @@ export function SwapWidget({
     limitExpiry: isZh ? "有效期" : "Expiry",
     limitVsMarket: isZh ? "较市场价" : "Vs market",
     marketPrice: isZh ? "市场" : "Market",
+    limitMarketEstimate: isZh ? "按当前市场整笔预计可买入" : "Estimated at current market for this size",
     limitOrderNotice: isZh
       ? "限价单会签名一组链上可验证参数。执行器实际成交时，只能从超过最低购买数量的 surplus 中领取不超过比例上限的奖励。"
       : "Limit orders sign chain-verifiable parameters. At execution, the executor can only take a capped share of surplus above the minimum buy amount.",
@@ -508,6 +509,8 @@ export function SwapWidget({
       refetchInterval: 8000,
     },
   });
+  const displayedPayBalanceData =
+    isLimitMode && payToken?.kind === "native" ? nativeBalanceData : payBalanceData;
 
   const { data: pairAddress } = useReadFluxSwapFactoryGetPair({
     address: factoryAddress ?? zeroAddress,
@@ -564,8 +567,7 @@ export function SwapWidget({
       !receiveBackendTokenAddress ||
       (inputMode === "pay"
         ? !parsedPayAmount || parsedPayAmount <= BigInt(0)
-        : !parsedReceiveAmount || parsedReceiveAmount <= BigInt(0)) ||
-      isLimitMode
+        : !parsedReceiveAmount || parsedReceiveAmount <= BigInt(0))
     ) {
       setTradeRouteState({
         didFetch: false,
@@ -637,8 +639,7 @@ export function SwapWidget({
       !payBackendTokenAddress ||
       !receiveBackendTokenAddress ||
       !rateQuoteAmountIn ||
-      rateQuoteAmountIn <= BigInt(0) ||
-      isLimitMode
+      rateQuoteAmountIn <= BigInt(0)
     ) {
       setRateRouteState({
         didFetch: false,
@@ -788,20 +789,26 @@ export function SwapWidget({
           Math.min(receiveToken.decimals, 8),
         )
       : "";
-  const payBalanceDisplay = payBalanceData?.formatted
-    ? formatDisplayAmount(payBalanceData.formatted)
+  const effectiveLimitReceiveAmount =
+    isLimitMode && inputMode === "receive" ? receiveAmountInput : limitReceiveAmount;
+  const payBalanceDisplay = displayedPayBalanceData?.formatted
+    ? formatDisplayAmount(displayedPayBalanceData.formatted)
     : "0.00";
   const receiveBalanceDisplay = receiveBalanceData?.formatted
     ? formatDisplayAmount(receiveBalanceData.formatted)
     : "0.00";
   const receiveAmount = isLimitMode
-    ? limitReceiveAmount
+    ? effectiveLimitReceiveAmount
     : inputMode === "receive"
       ? receiveAmountInput
       : formatBigIntAmount(quotedAmountOut, receiveToken?.decimals ?? 18);
+  const limitMarketEstimateDisplay =
+    isLimitMode
+      ? formatBigIntAmount(quotedAmountOut, receiveToken?.decimals ?? 18)
+      : "";
   const parsedLimitReceiveAmount =
     isLimitMode && receiveToken
-      ? parseAmount(limitReceiveAmount, receiveToken.decimals)
+      ? parseAmount(effectiveLimitReceiveAmount, receiveToken.decimals)
       : undefined;
   const payAmountDisplay =
     inputMode === "pay"
@@ -813,8 +820,8 @@ export function SwapWidget({
       : receiveAmountInput.trim() !== "";
   const insufficientBalance = Boolean(
     quotedAmountIn &&
-    payBalanceData?.value !== undefined &&
-    quotedAmountIn > payBalanceData.value,
+    displayedPayBalanceData?.value !== undefined &&
+    quotedAmountIn > displayedPayBalanceData.value,
   );
   const needsWrapForLimit = Boolean(
     isLimitMode &&
@@ -1135,6 +1142,29 @@ export function SwapWidget({
     setReceiveAmountInput(normalizedValue);
     setLastLimitOrderHash(null);
     setLastLimitOrderSignature(null);
+
+    if (isLimitMode) {
+      if (normalizedValue === "" || payAmount === "") {
+        setLimitRate("");
+      } else {
+        const nextReceiveNumeric = Number(normalizedValue);
+        const payAmountValue = Number(payAmount);
+
+        if (
+          Number.isFinite(nextReceiveNumeric) &&
+          nextReceiveNumeric >= 0 &&
+          Number.isFinite(payAmountValue) &&
+          payAmountValue > 0
+        ) {
+          setLimitRate(
+            (nextReceiveNumeric / payAmountValue)
+              .toFixed(8)
+              .replace(/\.?0+$/, ""),
+          );
+        }
+      }
+    }
+
     if (normalizedValue === "") {
       setPayAmount("");
     }
@@ -1286,12 +1316,12 @@ export function SwapWidget({
   };
 
   const handleMaxPay = () => {
-    if (!payBalanceData?.formatted) {
+    if (!displayedPayBalanceData?.formatted) {
       return;
     }
 
     setInputMode("pay");
-    setPayAmount(payBalanceData.formatted);
+    setPayAmount(displayedPayBalanceData.formatted);
   };
 
   const handleAction = async () => {
@@ -1882,13 +1912,7 @@ export function SwapWidget({
                   type="text"
                   placeholder={isQuoteLoading ? "..." : "0.0"}
                   value={receiveAmount}
-                  onChange={(event) => {
-                    if (isLimitMode) {
-                      return;
-                    }
-                    handleReceiveAmountChange(event.target.value);
-                  }}
-                  readOnly={isLimitMode}
+                  onChange={(event) => handleReceiveAmountChange(event.target.value)}
                   className="w-full bg-transparent text-3xl font-bold text-gray-900 outline-none placeholder:text-gray-400 dark:text-white dark:placeholder:text-gray-600"
                 />
 
@@ -1934,6 +1958,14 @@ export function SwapWidget({
                   <div className="flex items-center justify-between rounded-2xl border border-gray-200 bg-white px-4 py-3 text-base font-medium text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white">
                     <span>{limitTargetRateDisplay}</span>
                   </div>
+                  {payAmount.trim() !== "" && receiveToken ? (
+                    <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                      {copy.limitMarketEstimate}:{" "}
+                      <span className="font-semibold text-gray-700 dark:text-gray-200">
+                        {limitMarketEstimateDisplay || "--"} {receiveToken.symbol}
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="block">

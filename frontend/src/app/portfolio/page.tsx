@@ -2,14 +2,29 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Coins, Layers3, ListOrdered, ShieldCheck, WalletCards } from 'lucide-react';
+import {
+  ArrowDownUp,
+  ArrowRight,
+  Clock3,
+  Coins,
+  Droplets,
+  History,
+  Layers3,
+  ListOrdered,
+  ShieldCheck,
+  WalletCards,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAccount, useBalance, useChainId, usePublicClient } from 'wagmi';
 
 import { getContractAddress, isFluxSupportedChain } from '@/config/contracts';
-import { formatBigIntAmount, formatDisplayAmount } from '@/lib/amounts';
+import { getSwapTokenOptions } from '@/config/tokens';
+import { formatBigIntAmount, formatBigIntAmountDown, formatDisplayAmount } from '@/lib/amounts';
 import { fluxSwapPairAbi } from '@/lib/contracts';
+import { fluxSwapErc20Abi } from '@/lib/contracts/generated/FluxSwapERC20';
 import { getPools, type PoolViewModel } from '@/lib/subgraph/pools';
+import { getTrades, type TradeViewModel } from '@/lib/subgraph/trades';
+import { formatTimestamp } from '@/lib/wallet';
 
 function SummaryBlock({
   title,
@@ -110,6 +125,152 @@ function PortfolioSection({
   );
 }
 
+type WalletActivityRow = {
+  id: string;
+  txHash: string;
+  walletAddress: string;
+  activityLabel: string;
+  pairLabel: string;
+  primaryLabel: string;
+  secondaryLabel: string;
+  timeLabel: string;
+  isLiquidity: boolean;
+};
+
+type WalletTokenRow = {
+  symbol: string;
+  name: string;
+  amountLabel: string;
+  rawAmount: bigint;
+};
+
+type TokenSortDirection = 'desc' | 'asc';
+
+function getTransactionHref(chainId: number | undefined, txHash: string): string | undefined {
+  if (!txHash) {
+    return undefined;
+  }
+
+  if (chainId === 11155111) {
+    return `https://sepolia.etherscan.io/tx/${txHash}`;
+  }
+
+  return undefined;
+}
+
+function normalizeTokenSymbol(symbol: string, tokenAddress: string, wrappedNativeAddress?: string) {
+  if (wrappedNativeAddress && tokenAddress.toLowerCase() === wrappedNativeAddress.toLowerCase()) {
+    return 'ETH';
+  }
+
+  return symbol.toUpperCase();
+}
+
+function ActivityIcon({
+  isLiquidity,
+}: {
+  isLiquidity: boolean;
+}) {
+  return (
+    <span
+      className={`inline-flex h-10 w-10 items-center justify-center rounded-2xl ${
+        isLiquidity
+          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
+          : 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300'
+      }`}
+    >
+      {isLiquidity ? <Droplets size={18} /> : <ArrowDownUp size={18} />}
+    </span>
+  );
+}
+
+function buildWalletActivityRow(
+  trade: TradeViewModel,
+  walletAddress: string | undefined,
+  wrappedNativeAddress?: string,
+  isZh?: boolean,
+): WalletActivityRow {
+  const token0Symbol = normalizeTokenSymbol(
+    trade.pair.token0.symbol,
+    trade.pair.token0.id,
+    wrappedNativeAddress,
+  );
+  const token1Symbol = normalizeTokenSymbol(
+    trade.pair.token1.symbol,
+    trade.pair.token1.id,
+    wrappedNativeAddress,
+  );
+  const pairLabel = `${token0Symbol} / ${token1Symbol}`;
+  const timeLabel = formatTimestamp(trade.timestamp, isZh ? 'zh-CN' : 'en-US');
+
+  if (trade.type === 'swap') {
+    const zero = BigInt(0);
+    const soldToken =
+      trade.amount0In > zero
+        ? {
+            symbol: token0Symbol,
+            amount: trade.amount0In,
+            decimals: trade.pair.token0.decimals,
+          }
+        : {
+            symbol: token1Symbol,
+            amount: trade.amount1In,
+            decimals: trade.pair.token1.decimals,
+          };
+
+    const boughtToken =
+      trade.amount0Out > zero
+        ? {
+            symbol: token0Symbol,
+            amount: trade.amount0Out,
+            decimals: trade.pair.token0.decimals,
+          }
+        : {
+            symbol: token1Symbol,
+            amount: trade.amount1Out,
+            decimals: trade.pair.token1.decimals,
+          };
+
+    return {
+      id: trade.id,
+      txHash: trade.txHash,
+      walletAddress: (walletAddress ?? trade.sender).toLowerCase(),
+      activityLabel: isZh ? '交换' : 'Swap',
+      pairLabel: `${soldToken.symbol} -> ${boughtToken.symbol}`,
+      primaryLabel: `${formatBigIntAmountDown(soldToken.amount, soldToken.decimals, 6)} ${soldToken.symbol}`,
+      secondaryLabel: `${formatBigIntAmountDown(boughtToken.amount, boughtToken.decimals, 6)} ${boughtToken.symbol}`,
+      timeLabel,
+      isLiquidity: false,
+    };
+  }
+
+  if (trade.type === 'add') {
+    return {
+      id: trade.id,
+      txHash: trade.txHash,
+      walletAddress: (walletAddress ?? trade.sender).toLowerCase(),
+      activityLabel: isZh ? '添加流动性' : 'Add liquidity',
+      pairLabel,
+      primaryLabel: `${formatBigIntAmountDown(trade.amount0, trade.pair.token0.decimals, 6)} ${token0Symbol}`,
+      secondaryLabel: `${formatBigIntAmountDown(trade.amount1, trade.pair.token1.decimals, 6)} ${token1Symbol}`,
+      timeLabel,
+      isLiquidity: true,
+    };
+  }
+
+  return {
+    id: trade.id,
+    txHash: trade.txHash,
+    walletAddress: (walletAddress ?? trade.sender).toLowerCase(),
+    activityLabel: isZh ? '移除流动性' : 'Remove liquidity',
+    pairLabel,
+    primaryLabel: `${formatBigIntAmountDown(trade.amount0, trade.pair.token0.decimals, 6)} ${token0Symbol}`,
+    secondaryLabel: `${formatBigIntAmountDown(trade.amount1, trade.pair.token1.decimals, 6)} ${token1Symbol}`,
+    timeLabel,
+    isLiquidity: true,
+  };
+}
+
 export default function PortfolioPage() {
   const { i18n } = useTranslation();
   const isZh = i18n.language.startsWith('zh');
@@ -119,8 +280,27 @@ export default function PortfolioPage() {
 
   const supportedChain = isFluxSupportedChain(chainId);
   const fluxTokenAddress = getContractAddress('FluxToken', chainId);
+  const wrappedNativeAddress = getContractAddress('MockWETH', chainId);
+  const trackedTokens = useMemo(() => getSwapTokenOptions(chainId), [chainId]);
   const [pairs, setPairs] = useState<PoolViewModel[]>([]);
   const [lpBalances, setLpBalances] = useState<Record<string, bigint>>({});
+  const [trades, setTrades] = useState<TradeViewModel[]>([]);
+  const [walletByTxHash, setWalletByTxHash] = useState<Record<string, string>>({});
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityError, setActivityError] = useState<string | null>(null);
+  const [tokenBalances, setTokenBalances] = useState<Record<string, bigint>>({});
+  const [tokenLoading, setTokenLoading] = useState(false);
+  const [tokenError, setTokenError] = useState<string | null>(null);
+  const [tokenSortDirection, setTokenSortDirection] = useState<TokenSortDirection>('desc');
+
+  const { data: nativeBalance } = useBalance({
+    address,
+    chainId,
+    query: {
+      enabled: !!address && isConnected,
+      refetchInterval: 8000,
+    },
+  });
 
   const { data: fluxBalance } = useBalance({
     address,
@@ -149,6 +329,46 @@ export default function PortfolioPage() {
       } catch {
         if (!cancelled) {
           setPairs([]);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [supportedChain]);
+
+  useEffect(() => {
+    if (!supportedChain) {
+      setTrades([]);
+      setWalletByTxHash({});
+      setActivityLoading(false);
+      setActivityError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setActivityLoading(true);
+    setActivityError(null);
+
+    (async () => {
+      try {
+        const nextTrades = await getTrades(120);
+        if (!cancelled) {
+          setTrades(nextTrades);
+          setWalletByTxHash({});
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setTrades([]);
+          setWalletByTxHash({});
+          setActivityError(
+            error instanceof Error ? error.message : 'Failed to load wallet activity',
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setActivityLoading(false);
         }
       }
     })();
@@ -194,6 +414,92 @@ export default function PortfolioPage() {
     };
   }, [address, isConnected, pairs, publicClient]);
 
+  useEffect(() => {
+    if (!publicClient || !isConnected || !address) {
+      setTokenBalances({});
+      setTokenLoading(false);
+      setTokenError(null);
+      return;
+    }
+
+    const erc20Tokens = trackedTokens.filter((token) => token.kind === 'erc20' && token.address);
+
+    if (erc20Tokens.length === 0) {
+      setTokenBalances({});
+      setTokenLoading(false);
+      setTokenError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setTokenLoading(true);
+    setTokenError(null);
+
+    Promise.all(
+      erc20Tokens.map(async (token) => {
+        const balance = await publicClient.readContract({
+          address: token.address!,
+          abi: fluxSwapErc20Abi,
+          functionName: 'balanceOf',
+          args: [address],
+        });
+
+        return [token.symbol, balance] as const;
+      }),
+    )
+      .then((entries) => {
+        if (!cancelled) {
+          setTokenBalances(Object.fromEntries(entries));
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setTokenBalances({});
+          setTokenError(error instanceof Error ? error.message : 'Failed to load token balances');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setTokenLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [address, isConnected, publicClient, trackedTokens]);
+
+  useEffect(() => {
+    if (!publicClient || trades.length === 0) {
+      setWalletByTxHash({});
+      return;
+    }
+
+    let cancelled = false;
+
+    Promise.all(
+      trades.map(async (trade) => {
+        try {
+          const transaction = await publicClient.getTransaction({
+            hash: trade.txHash as `0x${string}`,
+          });
+
+          return [trade.txHash.toLowerCase(), transaction.from] as const;
+        } catch {
+          return [trade.txHash.toLowerCase(), trade.sender] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (!cancelled) {
+        setWalletByTxHash(Object.fromEntries(entries));
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [publicClient, trades]);
+
   const totalLpBalance = useMemo(
     () => Object.values(lpBalances).reduce((sum, balance) => sum + balance, 0n),
     [lpBalances],
@@ -211,6 +517,65 @@ export default function PortfolioPage() {
     ? formatBigIntAmount(totalLpBalance, 18, 4)
     : '--';
   const showLpHint = isConnected && totalLpBalance > 0n;
+  const walletActivityRows = useMemo(() => {
+    return trades.map((trade) =>
+      buildWalletActivityRow(
+        trade,
+        walletByTxHash[trade.txHash.toLowerCase()],
+        wrappedNativeAddress,
+        isZh,
+      ),
+    );
+  }, [trades, walletByTxHash, wrappedNativeAddress, isZh]);
+  const connectedWalletActivity = useMemo(() => {
+    if (!address) {
+      return [];
+    }
+
+    const normalizedAddress = address.toLowerCase();
+    return walletActivityRows.filter((trade) => trade.walletAddress === normalizedAddress);
+  }, [address, walletActivityRows]);
+  const walletTokens = useMemo<WalletTokenRow[]>(() => {
+    const rows: WalletTokenRow[] = [];
+
+    const nativeRawAmount = nativeBalance?.value ?? 0n;
+    if (nativeRawAmount > 0n) {
+      rows.push({
+        symbol: 'ETH',
+        name: 'Ether',
+        amountLabel: formatBigIntAmount(nativeRawAmount, 18, 6),
+        rawAmount: nativeRawAmount,
+      });
+    }
+
+    trackedTokens
+      .filter((token) => token.kind === 'erc20')
+      .forEach((token) => {
+        const rawAmount = tokenBalances[token.symbol] ?? 0n;
+        if (rawAmount <= 0n) {
+          return;
+        }
+
+        rows.push({
+          symbol: token.symbol,
+          name: token.name,
+          amountLabel: formatBigIntAmount(rawAmount, token.decimals, 6),
+          rawAmount,
+        });
+      });
+
+    return rows.sort((left, right) => {
+      if (left.rawAmount === right.rawAmount) {
+        return left.symbol.localeCompare(right.symbol);
+      }
+
+      if (tokenSortDirection === 'desc') {
+        return left.rawAmount > right.rawAmount ? -1 : 1;
+      }
+
+      return left.rawAmount > right.rawAmount ? 1 : -1;
+    });
+  }, [nativeBalance?.value, tokenBalances, tokenSortDirection, trackedTokens]);
 
   return (
     <div className="px-4 py-10 lg:px-6">
@@ -356,6 +721,332 @@ export default function PortfolioPage() {
               </div>
             }
           />
+        </div>
+
+        <div className="mt-8 grid gap-6 xl:grid-cols-2">
+          <section className="rounded-[2rem] border border-black/5 bg-white/72 p-6 shadow-xl shadow-sky-500/5 backdrop-blur-sm dark:border-white/10 dark:bg-white/[0.04]">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gray-100 text-gray-700 dark:bg-white/[0.05] dark:text-gray-200">
+                <History size={18} />
+              </div>
+              <div>
+                <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                  {isZh ? '活动' : 'Activity'}
+                </div>
+                <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  {isZh
+                    ? '展示当前连接钱包发起的全部事件活动'
+                    : 'All event activity initiated by the connected wallet'}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6">
+              {!isConnected || !address ? (
+                <div className="rounded-[1.5rem] border border-dashed border-black/10 bg-gray-50/80 px-5 py-16 text-center dark:border-white/10 dark:bg-white/[0.03]">
+                  <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                    {isZh ? '连接钱包后查看活动' : 'Connect wallet to view activity'}
+                  </div>
+                  <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                    {isZh
+                      ? '这里会展示当前钱包的交换、添加流动性和移除流动性记录'
+                      : 'Swap, add liquidity, and remove liquidity events for this wallet will appear here.'}
+                  </div>
+                </div>
+              ) : activityLoading ? (
+                <div className="rounded-[1.5rem] border border-dashed border-black/10 bg-gray-50/80 px-5 py-16 text-center dark:border-white/10 dark:bg-white/[0.03]">
+                  <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                    {isZh ? '正在加载钱包活动' : 'Loading wallet activity'}
+                  </div>
+                </div>
+              ) : activityError ? (
+                <div className="rounded-[1.5rem] border border-dashed border-black/10 bg-gray-50/80 px-5 py-16 text-center dark:border-white/10 dark:bg-white/[0.03]">
+                  <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                    {isZh ? '钱包活动加载失败' : 'Failed to load wallet activity'}
+                  </div>
+                  <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">{activityError}</div>
+                </div>
+              ) : connectedWalletActivity.length > 0 ? (
+                <div className="overflow-hidden rounded-[1.5rem]">
+                  <div className="hidden max-h-[560px] overflow-y-auto pr-1 sm:block">
+                    <div className="sticky top-0 z-10 grid grid-cols-[1fr_1.55fr_1fr_1fr] items-center gap-3 border-b border-black/5 bg-white/95 px-2 py-3 text-xs font-bold tracking-[0.08em] text-gray-500 backdrop-blur-sm dark:border-white/10 dark:bg-[#0f1726]/95 dark:text-gray-400">
+                      <div>{isZh ? '时间' : 'Time'}</div>
+                      <div>{isZh ? '类型' : 'Type'}</div>
+                      <div>{isZh ? '数量一' : 'Amount 1'}</div>
+                      <div>{isZh ? '数量二' : 'Amount 2'}</div>
+                    </div>
+
+                    <div className="divide-y divide-black/5 dark:divide-white/10">
+                      {connectedWalletActivity.map((trade) => {
+                        const transactionHref = getTransactionHref(chainId, trade.txHash);
+
+                        const rowContent = (
+                          <>
+                            <div className="flex items-center gap-2 text-sm font-semibold text-gray-600 dark:text-gray-300">
+                              <Clock3 size={15} />
+                              <span>{trade.timeLabel}</span>
+                            </div>
+
+                            <div className="flex min-w-0 items-center gap-3">
+                              <ActivityIcon isLiquidity={trade.isLiquidity} />
+                              <div className="min-w-0">
+                                <div className="text-[15px] font-black tracking-tight text-gray-900 dark:text-white">
+                                  {trade.activityLabel}
+                                </div>
+                                <div className="mt-1 text-sm font-medium text-gray-600 dark:text-gray-300">
+                                  {trade.pairLabel}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                              {trade.primaryLabel}
+                            </div>
+
+                            <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                              {trade.secondaryLabel}
+                            </div>
+                          </>
+                        );
+
+                        if (!transactionHref) {
+                          return (
+                            <div
+                              key={trade.id}
+                              className="grid grid-cols-[1fr_1.55fr_1fr_1fr] items-center gap-3 px-2 py-4 transition-colors hover:bg-sky-50/50 dark:hover:bg-white/[0.05]"
+                            >
+                              {rowContent}
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <a
+                            key={trade.id}
+                            href={transactionHref}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="grid grid-cols-[1fr_1.55fr_1fr_1fr] items-center gap-3 px-2 py-4 transition-colors hover:bg-sky-50/50 dark:hover:bg-white/[0.05]"
+                          >
+                            {rowContent}
+                          </a>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="max-h-[560px] space-y-3 overflow-y-auto pr-1 sm:hidden">
+                    {connectedWalletActivity.map((trade) => {
+                      const transactionHref = getTransactionHref(chainId, trade.txHash);
+
+                      const mobileContent = (
+                        <>
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex min-w-0 items-start gap-3">
+                              <ActivityIcon isLiquidity={trade.isLiquidity} />
+                              <div className="min-w-0">
+                                <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                                  {trade.activityLabel}
+                                </div>
+                                <div className="mt-1 text-base font-medium text-gray-700 dark:text-gray-300">
+                                  {trade.pairLabel}
+                                </div>
+                              </div>
+                            </div>
+
+                            <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">
+                              <Clock3 size={12} />
+                              {trade.timeLabel}
+                            </span>
+                          </div>
+
+                          <div className="mt-4 grid gap-3">
+                            <div className="rounded-[1.2rem] bg-gray-100 p-4 dark:bg-white/[0.05]">
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                                {isZh ? '数量一' : 'Amount 1'}
+                              </div>
+                              <div className="mt-2 text-sm font-semibold text-gray-900 dark:text-white">
+                                {trade.primaryLabel}
+                              </div>
+                            </div>
+
+                            <div className="rounded-[1.2rem] bg-gray-100 p-4 dark:bg-white/[0.05]">
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                                {isZh ? '数量二' : 'Amount 2'}
+                              </div>
+                              <div className="mt-2 text-sm font-semibold text-gray-900 dark:text-white">
+                                {trade.secondaryLabel}
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      );
+
+                      if (!transactionHref) {
+                        return (
+                          <div
+                            key={trade.id}
+                            className="rounded-[1.5rem] border border-black/5 bg-white/70 px-4 py-4 transition-colors hover:bg-sky-50/50 dark:border-white/10 dark:bg-white/[0.02] dark:hover:bg-white/[0.05]"
+                          >
+                            {mobileContent}
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <a
+                          key={trade.id}
+                          href={transactionHref}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block rounded-[1.5rem] border border-black/5 bg-white/70 px-4 py-4 transition-colors hover:bg-sky-50/50 dark:border-white/10 dark:bg-white/[0.02] dark:hover:bg-white/[0.05]"
+                        >
+                          {mobileContent}
+                        </a>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-[1.5rem] border border-dashed border-black/10 bg-gray-50/80 px-5 py-16 text-center dark:border-white/10 dark:bg-white/[0.03]">
+                  <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                    {isZh ? '当前钱包还没有活动记录' : 'No wallet activity yet'}
+                  </div>
+                  <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                    {isZh
+                      ? '完成一次交换或流动性操作后，这里会显示对应事件'
+                      : 'Your swaps and liquidity events will appear here after you make them.'}
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="rounded-[2rem] border border-black/5 bg-white/72 p-6 shadow-xl shadow-sky-500/5 backdrop-blur-sm dark:border-white/10 dark:bg-white/[0.04]">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gray-100 text-gray-700 dark:bg-white/[0.05] dark:text-gray-200">
+                <Coins size={18} />
+              </div>
+              <div>
+                <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                  {isZh ? '代币' : 'Tokens'}
+                </div>
+                <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  {isZh
+                    ? '展示当前钱包持有的全部代币'
+                    : 'All tokens currently held by the connected wallet'}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6">
+              {!isConnected || !address ? (
+                <div className="rounded-[1.5rem] border border-dashed border-black/10 bg-gray-50/80 px-5 py-16 text-center dark:border-white/10 dark:bg-white/[0.03]">
+                  <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                    {isZh ? '连接钱包后查看代币' : 'Connect wallet to view tokens'}
+                  </div>
+                </div>
+              ) : tokenLoading ? (
+                <div className="rounded-[1.5rem] border border-dashed border-black/10 bg-gray-50/80 px-5 py-16 text-center dark:border-white/10 dark:bg-white/[0.03]">
+                  <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                    {isZh ? '正在加载代币余额' : 'Loading token balances'}
+                  </div>
+                </div>
+              ) : tokenError ? (
+                <div className="rounded-[1.5rem] border border-dashed border-black/10 bg-gray-50/80 px-5 py-16 text-center dark:border-white/10 dark:bg-white/[0.03]">
+                  <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                    {isZh ? '代币余额加载失败' : 'Failed to load token balances'}
+                  </div>
+                  <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">{tokenError}</div>
+                </div>
+              ) : walletTokens.length > 0 ? (
+                <div className="overflow-hidden rounded-[1.5rem]">
+                  <div className="hidden max-h-[560px] overflow-y-auto pr-1 sm:block">
+                    <div className="sticky top-0 z-10 grid grid-cols-[1.2fr_1.6fr_1fr] items-center gap-3 border-b border-black/5 bg-white/95 px-2 py-3 text-xs font-bold tracking-[0.08em] text-gray-500 backdrop-blur-sm dark:border-white/10 dark:bg-[#0f1726]/95 dark:text-gray-400">
+                      <div>{isZh ? '代币' : 'Token'}</div>
+                      <div>{isZh ? '名称' : 'Name'}</div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setTokenSortDirection((current) => (current === 'desc' ? 'asc' : 'desc'))
+                        }
+                        className="inline-flex items-center gap-1 text-left text-xs font-bold tracking-[0.08em] text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                      >
+                        <span>{isZh ? '余额' : 'Balance'}</span>
+                        <ArrowDownUp size={13} className="shrink-0" />
+                      </button>
+                    </div>
+
+                    <div className="divide-y divide-black/5 dark:divide-white/10">
+                      {walletTokens.map((token) => (
+                        <div
+                          key={token.symbol}
+                          className="grid grid-cols-[1.2fr_1.6fr_1fr] items-center gap-3 px-2 py-4 transition-colors hover:bg-sky-50/50 dark:hover:bg-white/[0.05]"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-cyan-400 text-sm font-black text-white shadow-lg shadow-sky-500/20">
+                              {token.symbol.slice(0, 3)}
+                            </div>
+                            <div className="text-[15px] font-black tracking-tight text-gray-900 dark:text-white">
+                              {token.symbol}
+                            </div>
+                          </div>
+
+                          <div className="text-sm font-medium text-gray-600 dark:text-gray-300">
+                            {token.name}
+                          </div>
+
+                          <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                            {token.amountLabel} {token.symbol}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="max-h-[560px] space-y-3 overflow-y-auto pr-1 sm:hidden">
+                    {walletTokens.map((token) => (
+                      <div
+                        key={token.symbol}
+                        className="rounded-[1.5rem] border border-black/5 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-white/[0.02]"
+                      >
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-cyan-400 text-sm font-black text-white shadow-lg shadow-sky-500/20">
+                              {token.symbol.slice(0, 3)}
+                            </div>
+                            <div>
+                              <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                                {token.symbol}
+                              </div>
+                              <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                                {token.name}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="text-right">
+                            <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                              {token.amountLabel}
+                            </div>
+                            <div className="mt-1 text-sm font-semibold text-gray-500 dark:text-gray-400">
+                              {token.symbol}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-[1.5rem] border border-dashed border-black/10 bg-gray-50/80 px-5 py-16 text-center dark:border-white/10 dark:bg-white/[0.03]">
+                  <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                    {isZh ? '当前钱包还没有代币余额' : 'No token balances yet'}
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
         </div>
       </div>
     </div>

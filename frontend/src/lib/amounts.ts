@@ -84,12 +84,14 @@ export function parseAmount(
   value: string,
   decimals = 18,
 ): bigint | undefined {
-  if (!value || !DECIMAL_INPUT_REGEX.test(value)) {
+  const normalized = value.replace(/,/g, '').trim()
+
+  if (!normalized || !DECIMAL_INPUT_REGEX.test(normalized)) {
     return undefined
   }
 
   try {
-    return parseUnits(value, decimals)
+    return parseUnits(normalized, decimals)
   } catch {
     return undefined
   }

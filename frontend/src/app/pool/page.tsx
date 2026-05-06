@@ -168,7 +168,7 @@ export default function PoolMarketsPage() {
         pairLabel: `${token0Symbol} / ${token1Symbol}`,
         reservesLabel: `${formatBigIntAmount(pair.reserve0, pair.token0.decimals, 3)} ${token0Symbol} / ${formatBigIntAmount(pair.reserve1, pair.token1.decimals, 3)} ${token1Symbol}`,
         feeTierLabel: '0.3%',
-        protocolLabel: 'FluxSwap',
+        protocolLabel: 'V2',
       };
     });
   }, [pairs, wrappedNativeAddress]);
