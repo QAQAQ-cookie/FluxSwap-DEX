@@ -1,5 +1,7 @@
 import {
-  hashTypedData,
+  encodeAbiParameters,
+  keccak256,
+  stringToHex,
   zeroAddress,
   type Address,
   type Hex,
@@ -10,6 +12,11 @@ export const LIMIT_ORDER_EIP712_NAME = 'Flux Signed Order Settlement'
 export const LIMIT_ORDER_EIP712_VERSION = '1'
 export const LIMIT_ORDER_DEFAULT_MAX_EXECUTOR_REWARD_BPS = BigInt(3_000)
 export const LIMIT_ORDER_PRICE_SCALE = BigInt(10) ** BigInt(18)
+const SIGNED_LIMIT_ORDER_TYPE =
+  'SignedOrder(address maker,address inputToken,address outputToken,uint256 amountIn,uint256 minAmountOut,uint256 maxExecutorRewardBps,uint256 triggerPriceX18,uint256 expiry,uint256 nonce,address recipient)'
+const SIGNED_LIMIT_ORDER_TYPE_HASH = keccak256(
+  stringToHex(SIGNED_LIMIT_ORDER_TYPE),
+)
 
 export type SignedLimitOrder = {
   maker: Address
@@ -85,11 +92,40 @@ export function buildSignedLimitOrderTypedData(
 }
 
 export function hashSignedLimitOrder(
-  chainId: number,
-  settlementAddress: Address,
+  _chainId: number,
+  _settlementAddress: Address,
   order: SignedLimitOrder,
 ): Hex {
-  return hashTypedData(buildSignedLimitOrderTypedData(chainId, settlementAddress, order))
+  return keccak256(
+    encodeAbiParameters(
+      [
+        { name: 'typeHash', type: 'bytes32' },
+        { name: 'maker', type: 'address' },
+        { name: 'inputToken', type: 'address' },
+        { name: 'outputToken', type: 'address' },
+        { name: 'amountIn', type: 'uint256' },
+        { name: 'minAmountOut', type: 'uint256' },
+        { name: 'maxExecutorRewardBps', type: 'uint256' },
+        { name: 'triggerPriceX18', type: 'uint256' },
+        { name: 'expiry', type: 'uint256' },
+        { name: 'nonce', type: 'uint256' },
+        { name: 'recipient', type: 'address' },
+      ],
+      [
+        SIGNED_LIMIT_ORDER_TYPE_HASH,
+        order.maker,
+        order.inputToken,
+        order.outputToken,
+        order.amountIn,
+        order.minAmountOut,
+        order.maxExecutorRewardBps,
+        order.triggerPriceX18,
+        order.expiry,
+        order.nonce,
+        order.recipient,
+      ],
+    ),
+  )
 }
 
 export function toSignedLimitOrderTokenAddress(

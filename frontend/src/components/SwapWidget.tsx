@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useDeferredValue, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -13,14 +13,16 @@ import {
   useWriteContract,
 } from "wagmi";
 import {
+  AlertCircle,
   ArrowDown,
   ChevronDown,
   ChevronUp,
+  CheckCircle2,
+  X,
   Settings2,
   Info,
 } from "lucide-react";
 import { type Address, maxUint256, parseAbi, zeroAddress } from "viem";
-
 import { ActionButton } from "@/components/ActionButton";
 import {
   getContractAddress,
@@ -64,6 +66,10 @@ type InputMode = "pay" | "receive";
 type TradeMode = "swap" | "limit";
 type LimitPricePreset = "market" | "0.1" | "0.5" | "1.0" | "custom";
 type SwapSlippageMode = "auto" | "custom";
+type ResultModalState = {
+  kind: "success" | "error";
+  message: string;
+} | null;
 type RoutePath = readonly Address[];
 type BackendQuoteType =
   | "ROUTE_QUOTE_TYPE_EXACT_INPUT"
@@ -291,18 +297,18 @@ export function SwapWidget({
     poolReady: isZh ? "可交易" : "Tradable",
     poolUnavailable: isZh ? "不可用" : "Unavailable",
     poolNotCreatedHint: isZh
-      ? "当前交易对还没有创建，所以暂时不能交换。"
+      ? "当前交易对还没有创建，所以暂时不能交易。"
       : "This trading pair has not been created yet, so swapping is unavailable.",
     poolNoLiquidityHint: isZh
       ? "当前交易对已存在，但池子里还没有可用流动性。"
       : "This trading pair exists, but there is no available liquidity yet.",
     poolReadyHint: isZh
-      ? "当前交易对已就绪，可以直接发起交换。"
+      ? "当前交易对已就绪，可以直接发起交易。"
       : "This trading pair is ready and can be swapped now.",
     poolUnavailableHint: isZh
-      ? "当前网络没有同步好这组合约地址，请先切换到受支持网络。"
+      ? "当前网络没有同步这组合约地址，请先切换到受支持网络。"
       : "Contracts are not configured for this network. Please switch to a supported network.",
-    quotePending: isZh ? "等待链上报价中" : "Waiting for live quote",
+    quotePending: isZh ? "等待链上报价" : "Waiting for live quote",
     quoteError: isZh
       ? "当前无法获取链上报价"
       : "Unable to fetch a live quote right now",
@@ -312,18 +318,20 @@ export function SwapWidget({
     approving: isZh ? "授权中..." : "Approving...",
     approvalSubmitted: isZh ? "授权已提交" : "Approval submitted",
     approvalConfirmed: isZh ? "授权已确认" : "Approval confirmed",
-    swapping: isZh ? "交换中..." : "Swapping...",
-    readyToSwap: isZh ? "立即交换" : "Swap Now",
-    swapTab: isZh ? "交换" : "Swap",
+    swapping: isZh ? "兑换中..." : "Swapping...",
+    readyToSwap: isZh ? "立即交易" : "Swap Now",
+    swapTab: isZh ? "交易" : "Swap",
     limitTab: isZh ? "限价" : "Limit",
     limitTitle: isZh ? "创建限价单" : "Create Limit Order",
     limitTargetRate: isZh ? "目标价格" : "Target price",
     limitExpiry: isZh ? "有效期" : "Expiry",
-    limitVsMarket: isZh ? "较市场价" : "Vs market",
-    marketPrice: isZh ? "市场" : "Market",
-    limitMarketEstimate: isZh ? "按当前市场整笔预计可买入" : "Estimated at current market for this size",
+    limitVsMarket: isZh ? "对比市场价" : "Vs market",
+    marketPrice: isZh ? "市场价" : "Market",
+    limitMarketEstimate: isZh
+      ? "按当前市场价格估算的可买入数量"
+      : "Estimated at current market for this size",
     limitOrderNotice: isZh
-      ? "限价单会签名一组链上可验证参数。执行器实际成交时，只能从超过最低购买数量的 surplus 中领取不超过比例上限的奖励。"
+      ? "限价单会签名一组链上可验证参数。执行时，执行器只能从超过最低买入数量的 surplus 中领取不超过比例上限的奖励。"
       : "Limit orders sign chain-verifiable parameters. At execution, the executor can only take a capped share of surplus above the minimum buy amount.",
     limitOrderSubmit: isZh ? "创建限价单" : "Create Limit Order",
     limitOrderPending: isZh
@@ -347,13 +355,13 @@ export function SwapWidget({
 
   const settingsLabel = isZh ? "交易设置" : "Trade Settings";
   const slippageLabel = isZh ? "滑点上限" : "Max slippage";
-  const deadlineLabel = isZh ? "交换截止时间" : "Swap deadline";
+  const deadlineLabel = isZh ? "交易截止时间" : "Swap deadline";
   const autoLabel = isZh ? "自动" : "Auto";
   const slippageTooltip = isZh
-    ? "???????????????????????????????????????????????????????"
+    ? "如果价格波动超过你设置的滑点比例，交易会回退。多跳路由时，这个滑点作用于整条路由的最终结果。"
     : "If the price moves beyond your slippage percentage, the trade will revert. For multi-hop routes, this slippage applies to the overall route result.";
   const deadlineTooltip = isZh
-    ? "如果你的交易处于待处理状态超过该时间，则交易将被撤销。（最长时间：30 分钟）。"
+    ? "如果你的交易待处理时间超过这个时长，交易会被取消。最长可设置 30 分钟。"
     : "If your transaction stays pending longer than this duration, it will be canceled. (Maximum duration: 30 minutes).";
   const mounted = useIsClient();
   const chainId = useChainId();
@@ -385,6 +393,7 @@ export function SwapWidget({
   const [swapSettingsOpen, setSwapSettingsOpen] = useState(false);
   const [openSelector, setOpenSelector] = useState<SelectorTarget>(null);
   const [txError, setTxError] = useState<string | null>(null);
+  const [resultModal, setResultModal] = useState<ResultModalState>(null);
   const [lastLimitOrderHash, setLastLimitOrderHash] = useState<string | null>(
     null,
   );
@@ -717,7 +726,7 @@ export function SwapWidget({
     );
   const executableRoutePath =
     selectedExecutionPath ?? rateRouteState.executionPath;
-  const noRouteLabel = isZh ? "暂无可用路径" : "No route";
+  const noRouteLabel = isZh ? "鏆傛棤鍙敤璺緞" : "No route";
   const { data: allowance } = useReadFluxTokenAllowance({
     address: approvalTokenAddress ?? zeroAddress,
     chainId,
@@ -1335,6 +1344,7 @@ export function SwapWidget({
     }
 
     setTxError(null);
+    setResultModal(null);
     setLastAction(actionKind);
 
     try {
@@ -1474,12 +1484,17 @@ export function SwapWidget({
             (isZh ? "限价单创建失败" : "Create limit order failed");
           const hint = createOrderResult?.notice?.hint;
 
+          setResultModal(null);
           throw new Error(hint ? `${message}: ${hint}` : message);
         }
 
         setLastLimitOrderHash(orderHash);
         setLastLimitOrderSignature(signature);
         setTxError(null);
+        setResultModal({
+          kind: "success",
+          message: `${copy.limitOrderStored}: ${orderHash.slice(0, 10)}...`,
+        });
         return;
       }
 
@@ -1633,17 +1648,27 @@ export function SwapWidget({
         ...localGasOverride,
       });
     } catch (error) {
-      setTxError(
-        formatErrorMessage(error, {
-          rejectedMessage:
-            actionKind === "approve"
-              ? "你已取消本次授权"
-              : actionKind === "limit"
-                ? "你已取消本次限价单签名"
-                : "你已取消本次交易",
-        }),
-      );
+      setResultModal(null);
+      const errorMessage = formatErrorMessage(error, {
+        rejectedMessage:
+          actionKind === "approve"
+            ? "你已取消本次授权"
+            : actionKind === "limit"
+              ? "你已取消本次限价单签名"
+              : "你已取消本次交易",
+      });
+      setTxError(errorMessage);
+      if (actionKind === "limit") {
+        setResultModal({
+          kind: "error",
+          message: errorMessage,
+        });
+      }
     }
+  };
+
+  const closeResultModal = () => {
+    setResultModal(null);
   };
 
   const actionButton =
@@ -1749,7 +1774,7 @@ export function SwapWidget({
                 placeholder="30"
               />
               <span className="ml-1 text-sm font-medium text-gray-600 dark:text-gray-300">
-                {isZh ? "分钟" : "minutes"}
+                {isZh ? "鍒嗛挓" : "minutes"}
               </span>
               <div className="ml-2 flex w-5 shrink-0 flex-col overflow-hidden rounded-md border border-gray-200 dark:border-gray-700">
                 <button
@@ -2100,6 +2125,68 @@ export function SwapWidget({
           </div>
         </div>
       </div>
+      {resultModal ? (
+        <div
+          className="fixed inset-0 z-[95] flex items-center justify-center bg-black/30 p-4 backdrop-blur-[2px]"
+          onClick={closeResultModal}
+        >
+          <div
+            className="w-full max-w-[460px] rounded-[1.7rem] bg-white px-5 py-5 shadow-2xl dark:bg-gray-900"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-end">
+              <button
+                type="button"
+                onClick={closeResultModal}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                aria-label={isZh ? "关闭" : "Close"}
+              >
+                <X size={22} />
+              </button>
+            </div>
+
+            <div className="flex flex-col items-center px-3 pb-1 pt-1 text-center">
+              <div
+                className={`flex h-14 w-14 items-center justify-center rounded-[1rem] ${
+                  resultModal.kind === "success"
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-rose-100 text-rose-700"
+                }`}
+              >
+                {resultModal.kind === "success" ? (
+                  <CheckCircle2 size={26} />
+                ) : (
+                  <AlertCircle size={26} />
+                )}
+              </div>
+
+              <h3 className="mt-5 text-[1.65rem] font-semibold tracking-tight text-gray-950 dark:text-white">
+                {resultModal.kind === "success"
+                  ? isZh
+                    ? "创建成功"
+                    : "Success"
+                  : isZh
+                    ? "创建失败"
+                    : "Failed"}
+              </h3>
+
+              <p className="mt-2.5 text-base leading-7 text-gray-500 dark:text-gray-300">
+                {resultModal.message}
+              </p>
+            </div>
+
+            <div className="mt-6">
+              <button
+                type="button"
+                onClick={closeResultModal}
+                className="inline-flex h-11 w-full items-center justify-center rounded-[1rem] bg-[#232323] text-base font-medium text-white transition-colors hover:bg-black dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
+              >
+                {isZh ? "确定" : "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
