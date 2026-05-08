@@ -38,6 +38,9 @@ func TestApplyOrderEventRejectsMissingOrderWithoutPersistingEvent(t *testing.T) 
 	var count int64
 	require.NoError(t, db.Model(&domain.OrderEvent{}).Count(&count).Error)
 	require.Equal(t, int64(0), count)
+
+	require.NoError(t, db.Model(&domain.OrderActivity{}).Count(&count).Error)
+	require.Equal(t, int64(0), count)
 }
 
 // 这里通过模拟订单表异常，验证 NonceInvalidated 回写不会留下孤立事件记录。
@@ -86,6 +89,130 @@ func TestApplyNonceInvalidatedRollsBackWhenOrderUpdateFails(t *testing.T) {
 	var count int64
 	require.NoError(t, db.Model(&domain.OrderEvent{}).Count(&count).Error)
 	require.Equal(t, int64(0), count)
+
+	require.NoError(t, db.Model(&domain.OrderActivity{}).Count(&count).Error)
+	require.Equal(t, int64(0), count)
+}
+
+func TestApplyOrderExecutedRecordsOrderActivity(t *testing.T) {
+	db := openTestDB(t)
+	service := NewOrderEventService(db)
+
+	order := &domain.Order{
+		ChainID:           31337,
+		SettlementAddress: "0x1111111111111111111111111111111111111111",
+		OrderHash:         "0xdededededededededededededededededededededededededededededededede",
+		Maker:             "0x2222222222222222222222222222222222222222",
+		InputToken:        "0x3333333333333333333333333333333333333333",
+		OutputToken:       "0x4444444444444444444444444444444444444444",
+		AmountIn:          "100",
+		MinAmountOut:      "90",
+		ExecutorFee:       "1",
+		ExecutorFeeToken:  "0x4444444444444444444444444444444444444444",
+		TriggerPriceX18:   "1",
+		Expiry:            "9999999999",
+		Nonce:             "7",
+		Recipient:         "0x5555555555555555555555555555555555555555",
+		Signature:         "0x" + repeatHex("11", 65),
+		Source:            "test",
+		Status:            "pending_execute",
+		CreatedAt:         time.Now().UTC(),
+		UpdatedAt:         time.Now().UTC(),
+	}
+	require.NoError(t, repo.NewOrderRepository(db).Create(context.Background(), order))
+
+	updatedOrder, err := service.Apply(context.Background(), ApplyOrderEventParams{
+		ChainID:            31337,
+		ContractAddress:    order.SettlementAddress,
+		EventName:          "OrderExecuted",
+		TxHash:             "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		LogIndex:           0,
+		BlockNumber:        123,
+		OrderHash:          order.OrderHash,
+		GrossAmountOut:     "200",
+		RecipientAmountOut: "190",
+		ExecutorFeeAmount:  "10",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updatedOrder)
+
+	activities, activityErr := repo.NewOrderActivityRepository(db).ListByOrderHash(
+		context.Background(),
+		order.ChainID,
+		order.SettlementAddress,
+		order.OrderHash,
+		10,
+	)
+	require.NoError(t, activityErr)
+	require.Len(t, activities, 1)
+	require.Equal(t, domain.OrderActivityTypeExecutionConfirmed, activities[0].ActivityType)
+	require.Equal(t, "pending_execute", activities[0].FromStatus)
+	require.Equal(t, "executed", activities[0].ToStatus)
+
+	runtime, runtimeErr := repo.NewOrderRuntimeRepository(db).GetByOrderID(context.Background(), updatedOrder.ID)
+	require.NoError(t, runtimeErr)
+	require.Equal(t, updatedOrder.StatusReason, runtime.StatusReason)
+	require.Equal(t, updatedOrder.ExecutedTxHash, runtime.ExecutedTxHash)
+	require.Equal(t, updatedOrder.SettledAmountOut, runtime.SettledAmountOut)
+}
+
+func TestApplyNonceInvalidatedRecordsOrderActivity(t *testing.T) {
+	db := openTestDB(t)
+	service := NewOrderEventService(db)
+
+	order := &domain.Order{
+		ChainID:           31337,
+		SettlementAddress: "0x1111111111111111111111111111111111111111",
+		OrderHash:         "0xefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef",
+		Maker:             "0x2222222222222222222222222222222222222222",
+		InputToken:        "0x3333333333333333333333333333333333333333",
+		OutputToken:       "0x4444444444444444444444444444444444444444",
+		AmountIn:          "100",
+		MinAmountOut:      "90",
+		ExecutorFee:       "1",
+		ExecutorFeeToken:  "0x4444444444444444444444444444444444444444",
+		TriggerPriceX18:   "1",
+		Expiry:            "9999999999",
+		Nonce:             "77",
+		Recipient:         "0x5555555555555555555555555555555555555555",
+		Signature:         "0x" + repeatHex("11", 65),
+		Source:            "test",
+		Status:            "open",
+		CreatedAt:         time.Now().UTC(),
+		UpdatedAt:         time.Now().UTC(),
+	}
+	require.NoError(t, repo.NewOrderRepository(db).Create(context.Background(), order))
+
+	updatedOrders, err := service.ApplyNonceInvalidated(context.Background(), ApplyOrderEventParams{
+		ChainID:         31337,
+		ContractAddress: order.SettlementAddress,
+		EventName:       "NonceInvalidated",
+		TxHash:          "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		LogIndex:        1,
+		BlockNumber:     124,
+		Maker:           order.Maker,
+		Nonce:           order.Nonce,
+	})
+	require.NoError(t, err)
+	require.Len(t, updatedOrders, 1)
+
+	activities, activityErr := repo.NewOrderActivityRepository(db).ListByOrderHash(
+		context.Background(),
+		order.ChainID,
+		order.SettlementAddress,
+		order.OrderHash,
+		10,
+	)
+	require.NoError(t, activityErr)
+	require.Len(t, activities, 1)
+	require.Equal(t, domain.OrderActivityTypeCancelConfirmed, activities[0].ActivityType)
+	require.Equal(t, "open", activities[0].FromStatus)
+	require.Equal(t, "cancelled", activities[0].ToStatus)
+
+	runtime, runtimeErr := repo.NewOrderRuntimeRepository(db).GetByOrderID(context.Background(), updatedOrders[0].ID)
+	require.NoError(t, runtimeErr)
+	require.Equal(t, updatedOrders[0].StatusReason, runtime.StatusReason)
+	require.Equal(t, updatedOrders[0].CancelledTxHash, runtime.CancelledTxHash)
 }
 
 func TestRevertOrderExecutedRestoresOpenStateWhenNoEventRemains(t *testing.T) {
@@ -146,6 +273,19 @@ func TestRevertOrderExecutedRestoresOpenStateWhenNoEventRemains(t *testing.T) {
 	require.Equal(t, "", stored.ExecutedTxHash)
 	require.Equal(t, "0", stored.SettledAmountOut)
 	require.Equal(t, "0", stored.SettledExecutorFee)
+
+	activities, activityErr := repo.NewOrderActivityRepository(db).ListByOrderHash(
+		context.Background(),
+		order.ChainID,
+		order.SettlementAddress,
+		order.OrderHash,
+		10,
+	)
+	require.NoError(t, activityErr)
+	require.Len(t, activities, 2)
+	require.Equal(t, domain.OrderActivityTypeReorgRestored, activities[0].ActivityType)
+	require.Equal(t, "executed", activities[0].FromStatus)
+	require.Equal(t, "open", activities[0].ToStatus)
 }
 
 func TestRevertOrderExecutedRestoresExpiredWhenDerivedFromExpired(t *testing.T) {
@@ -347,7 +487,7 @@ func TestApplyOrderEventTreatsSQLiteUniqueViolationAsDuplicate(t *testing.T) {
 	require.ErrorIs(t, err, ErrDuplicateOrderEvent)
 }
 
-func TestRevertOrderExecutedKeepsConfirmedByChainState(t *testing.T) {
+func TestRevertOrderExecutedRestoresCancelledWhenCancelEventStillExistsForConfirmedByChainState(t *testing.T) {
 	db := openTestDB(t)
 	service := NewOrderEventService(db)
 
@@ -370,8 +510,8 @@ func TestRevertOrderExecutedKeepsConfirmedByChainState(t *testing.T) {
 		Source:             "test",
 		Status:             "executed",
 		StatusReason:       "confirmed_by_chain_state",
-		LastBlockReason:    "",
 		ExecutedTxHash:     "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		CancelledTxHash:    "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
 		SettledAmountOut:   "200",
 		SettledExecutorFee: "10",
 		LastCheckedBlock:   123,
@@ -389,6 +529,17 @@ func TestRevertOrderExecutedKeepsConfirmedByChainState(t *testing.T) {
 		OrderHash:       order.OrderHash,
 		ObservedAt:      time.Now().UTC(),
 	}))
+	require.NoError(t, repo.NewOrderEventRepository(db).Create(context.Background(), &domain.OrderEvent{
+		ChainID:         31337,
+		ContractAddress: order.SettlementAddress,
+		EventName:       "NonceInvalidated",
+		TxHash:          order.CancelledTxHash,
+		LogIndex:        1,
+		BlockNumber:     124,
+		Maker:           order.Maker,
+		Nonce:           order.Nonce,
+		ObservedAt:      time.Now().UTC(),
+	}))
 
 	require.NoError(t, service.Revert(context.Background(), ApplyOrderEventParams{
 		ChainID:         31337,
@@ -402,12 +553,13 @@ func TestRevertOrderExecutedKeepsConfirmedByChainState(t *testing.T) {
 
 	stored, err := repo.NewOrderRepository(db).GetByOrderHash(context.Background(), order.ChainID, order.SettlementAddress, order.OrderHash)
 	require.NoError(t, err)
-	require.Equal(t, "executed", stored.Status)
-	require.Equal(t, "confirmed_by_chain_state", stored.StatusReason)
-	require.Equal(t, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", stored.ExecutedTxHash)
-	require.Equal(t, "200", stored.SettledAmountOut)
-	require.Equal(t, "10", stored.SettledExecutorFee)
-	require.Equal(t, int64(123), stored.LastCheckedBlock)
+	require.Equal(t, "cancelled", stored.Status)
+	require.Equal(t, "updated_by_nonce_invalidated_event_after_pending_cancel", stored.StatusReason)
+	require.Equal(t, "", stored.ExecutedTxHash)
+	require.Equal(t, "0", stored.SettledAmountOut)
+	require.Equal(t, "0", stored.SettledExecutorFee)
+	require.Equal(t, order.CancelledTxHash, stored.CancelledTxHash)
+	require.Equal(t, int64(124), stored.LastCheckedBlock)
 }
 
 func TestRevertOrderExecutedRestoresLatestRemainingAmounts(t *testing.T) {
@@ -481,10 +633,169 @@ func TestRevertOrderExecutedRestoresLatestRemainingAmounts(t *testing.T) {
 	stored, err := repo.NewOrderRepository(db).GetByOrderHash(context.Background(), order.ChainID, order.SettlementAddress, order.OrderHash)
 	require.NoError(t, err)
 	require.Equal(t, "executed", stored.Status)
+	require.Equal(t, "updated_by_order_executed_event", stored.StatusReason)
 	require.Equal(t, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", stored.ExecutedTxHash)
 	require.Equal(t, "200", stored.SettledAmountOut)
 	require.Equal(t, "10", stored.SettledExecutorFee)
 	require.Equal(t, int64(120), stored.LastCheckedBlock)
+
+	activities, activityErr := repo.NewOrderActivityRepository(db).ListByOrderHash(
+		context.Background(),
+		order.ChainID,
+		order.SettlementAddress,
+		order.OrderHash,
+		10,
+	)
+	require.NoError(t, activityErr)
+	require.Len(t, activities, 1)
+	require.Equal(t, domain.OrderActivityTypeReorgRestored, activities[0].ActivityType)
+	require.Equal(t, "executed", activities[0].FromStatus)
+	require.Equal(t, "executed", activities[0].ToStatus)
+}
+
+func TestRevertOrderExecutedClearsStaleConfirmedByChainStateWhenNoCanonicalEventRemains(t *testing.T) {
+	db := openTestDB(t)
+	service := NewOrderEventService(db)
+
+	order := &domain.Order{
+		ChainID:            31337,
+		SettlementAddress:  "0x1111111111111111111111111111111111111111",
+		OrderHash:          "0x5656565656565656565656565656565656565656565656565656565656565656",
+		Maker:              "0x2222222222222222222222222222222222222222",
+		InputToken:         "0x3333333333333333333333333333333333333333",
+		OutputToken:        "0x4444444444444444444444444444444444444444",
+		AmountIn:           "100",
+		MinAmountOut:       "90",
+		ExecutorFee:        "1",
+		ExecutorFeeToken:   "0x4444444444444444444444444444444444444444",
+		TriggerPriceX18:    "1",
+		Expiry:             "9999999999",
+		Nonce:              "22",
+		Recipient:          "0x5555555555555555555555555555555555555555",
+		Signature:          "0x" + repeatHex("11", 65),
+		Source:             "test",
+		Status:             "executed",
+		StatusReason:       "confirmed_by_chain_state",
+		ExecutedTxHash:     "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		SettledAmountOut:   "260",
+		SettledExecutorFee: "12",
+		LastCheckedBlock:   130,
+		CreatedAt:          time.Now().UTC(),
+		UpdatedAt:          time.Now().UTC(),
+	}
+	require.NoError(t, repo.NewOrderRepository(db).Create(context.Background(), order))
+	require.NoError(t, repo.NewOrderEventRepository(db).Create(context.Background(), &domain.OrderEvent{
+		ChainID:            31337,
+		ContractAddress:    order.SettlementAddress,
+		EventName:          "OrderExecuted",
+		TxHash:             order.ExecutedTxHash,
+		LogIndex:           1,
+		BlockNumber:        130,
+		OrderHash:          order.OrderHash,
+		GrossAmountOut:     "260",
+		RecipientAmountOut: "248",
+		ExecutorFeeAmount:  "12",
+		ObservedAt:         time.Now().UTC(),
+	}))
+
+	require.NoError(t, service.Revert(context.Background(), ApplyOrderEventParams{
+		ChainID:         31337,
+		ContractAddress: order.SettlementAddress,
+		EventName:       "OrderExecuted",
+		TxHash:          order.ExecutedTxHash,
+		LogIndex:        1,
+		BlockNumber:     130,
+		OrderHash:       order.OrderHash,
+	}))
+
+	stored, err := repo.NewOrderRepository(db).GetByOrderHash(context.Background(), order.ChainID, order.SettlementAddress, order.OrderHash)
+	require.NoError(t, err)
+	require.Equal(t, "open", stored.Status)
+	require.Equal(t, "", stored.StatusReason)
+	require.Equal(t, "", stored.ExecutedTxHash)
+	require.Equal(t, "0", stored.SettledAmountOut)
+	require.Equal(t, "0", stored.SettledExecutorFee)
+	require.Equal(t, int64(0), stored.LastCheckedBlock)
+
+	activities, activityErr := repo.NewOrderActivityRepository(db).ListByOrderHash(
+		context.Background(),
+		order.ChainID,
+		order.SettlementAddress,
+		order.OrderHash,
+		10,
+	)
+	require.NoError(t, activityErr)
+	require.Len(t, activities, 1)
+	require.Equal(t, domain.OrderActivityTypeReorgRestored, activities[0].ActivityType)
+	require.Equal(t, "executed", activities[0].FromStatus)
+	require.Equal(t, "open", activities[0].ToStatus)
+}
+
+func TestRevertOrderExecutedRestoresOpenStateForConfirmedByChainStateWhenNoCancellationRemains(t *testing.T) {
+	db := openTestDB(t)
+	service := NewOrderEventService(db)
+
+	order := &domain.Order{
+		ChainID:            31337,
+		SettlementAddress:  "0x1111111111111111111111111111111111111111",
+		OrderHash:          "0x5757575757575757575757575757575757575757575757575757575757575757",
+		Maker:              "0x2222222222222222222222222222222222222222",
+		InputToken:         "0x3333333333333333333333333333333333333333",
+		OutputToken:        "0x4444444444444444444444444444444444444444",
+		AmountIn:           "100",
+		MinAmountOut:       "90",
+		ExecutorFee:        "1",
+		ExecutorFeeToken:   "0x4444444444444444444444444444444444444444",
+		TriggerPriceX18:    "1",
+		Expiry:             "9999999999",
+		Nonce:              "23",
+		Recipient:          "0x5555555555555555555555555555555555555555",
+		Signature:          "0x" + repeatHex("11", 65),
+		Source:             "test",
+		Status:             "cancelled",
+		StatusReason:       "confirmed_by_chain_state",
+		CancelledTxHash:    "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+		ExecutedTxHash:     "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		SettledAmountOut:   "260",
+		SettledExecutorFee: "12",
+		LastCheckedBlock:   130,
+		CreatedAt:          time.Now().UTC(),
+		UpdatedAt:          time.Now().UTC(),
+	}
+	require.NoError(t, repo.NewOrderRepository(db).Create(context.Background(), order))
+	require.NoError(t, repo.NewOrderEventRepository(db).Create(context.Background(), &domain.OrderEvent{
+		ChainID:            31337,
+		ContractAddress:    order.SettlementAddress,
+		EventName:          "OrderExecuted",
+		TxHash:             order.ExecutedTxHash,
+		LogIndex:           1,
+		BlockNumber:        130,
+		OrderHash:          order.OrderHash,
+		GrossAmountOut:     "260",
+		RecipientAmountOut: "248",
+		ExecutorFeeAmount:  "12",
+		ObservedAt:         time.Now().UTC(),
+	}))
+
+	require.NoError(t, service.Revert(context.Background(), ApplyOrderEventParams{
+		ChainID:         31337,
+		ContractAddress: order.SettlementAddress,
+		EventName:       "OrderExecuted",
+		TxHash:          order.ExecutedTxHash,
+		LogIndex:        1,
+		BlockNumber:     130,
+		OrderHash:       order.OrderHash,
+	}))
+
+	stored, err := repo.NewOrderRepository(db).GetByOrderHash(context.Background(), order.ChainID, order.SettlementAddress, order.OrderHash)
+	require.NoError(t, err)
+	require.Equal(t, "open", stored.Status)
+	require.Equal(t, "", stored.StatusReason)
+	require.Equal(t, "", stored.CancelledTxHash)
+	require.Equal(t, "", stored.ExecutedTxHash)
+	require.Equal(t, "0", stored.SettledAmountOut)
+	require.Equal(t, "0", stored.SettledExecutorFee)
+	require.Equal(t, int64(0), stored.LastCheckedBlock)
 }
 
 func TestRevertOrderExecutedKeepsCancelledWhenNonceInvalidatedStillExists(t *testing.T) {
@@ -568,6 +879,104 @@ func TestRevertOrderExecutedKeepsCancelledWhenNonceInvalidatedStillExists(t *tes
 	require.Equal(t, "0", stored.SettledAmountOut)
 	require.Equal(t, "0", stored.SettledExecutorFee)
 	require.Equal(t, int64(131), stored.LastCheckedBlock)
+}
+
+func TestRevertOrderExecutedPreservesRemainingExecutedEventProvenance(t *testing.T) {
+	db := openTestDB(t)
+	service := NewOrderEventService(db)
+
+	order := &domain.Order{
+		ChainID:            31337,
+		SettlementAddress:  "0x1111111111111111111111111111111111111111",
+		OrderHash:          "0x5656565656565656565656565656565656565656565656565656565656565656",
+		Maker:              "0x2222222222222222222222222222222222222222",
+		InputToken:         "0x3333333333333333333333333333333333333333",
+		OutputToken:        "0x4444444444444444444444444444444444444444",
+		AmountIn:           "100",
+		MinAmountOut:       "90",
+		ExecutorFee:        "1",
+		ExecutorFeeToken:   "0x4444444444444444444444444444444444444444",
+		TriggerPriceX18:    "1",
+		Expiry:             "9999999999",
+		Nonce:              "56",
+		Recipient:          "0x5555555555555555555555555555555555555555",
+		Signature:          "0x" + repeatHex("11", 65),
+		Source:             "test",
+		Status:             "executed",
+		StatusReason:       "updated_by_order_executed_event_after_pending_cancel",
+		CancelledTxHash:    "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+		ExecutedTxHash:     "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		SettledAmountOut:   "260",
+		SettledExecutorFee: "12",
+		LastCheckedBlock:   130,
+		CreatedAt:          time.Now().UTC(),
+		UpdatedAt:          time.Now().UTC(),
+	}
+	require.NoError(t, repo.NewOrderRepository(db).Create(context.Background(), order))
+	require.NoError(t, repo.NewOrderEventRepository(db).Create(context.Background(), &domain.OrderEvent{
+		ChainID:            31337,
+		ContractAddress:    order.SettlementAddress,
+		EventName:          "OrderExecuted",
+		TxHash:             "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		LogIndex:           0,
+		BlockNumber:        120,
+		OrderHash:          order.OrderHash,
+		GrossAmountOut:     "200",
+		RecipientAmountOut: "190",
+		ExecutorFeeAmount:  "10",
+		ObservedAt:         time.Now().UTC(),
+	}))
+	require.NoError(t, repo.NewOrderRepository(db).UpdateFields(context.Background(), order.ChainID, order.SettlementAddress, order.OrderHash, map[string]interface{}{
+		"executed_tx_hash":     "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"settled_amount_out":   "200",
+		"settled_executor_fee": "10",
+		"last_checked_block":   int64(120),
+		"updated_at":           time.Now().UTC(),
+	}))
+	require.NoError(t, repo.NewOrderEventRepository(db).Create(context.Background(), &domain.OrderEvent{
+		ChainID:            31337,
+		ContractAddress:    order.SettlementAddress,
+		EventName:          "OrderExecuted",
+		TxHash:             order.ExecutedTxHash,
+		LogIndex:           1,
+		BlockNumber:        130,
+		OrderHash:          order.OrderHash,
+		GrossAmountOut:     "260",
+		RecipientAmountOut: "248",
+		ExecutorFeeAmount:  "12",
+		ObservedAt:         time.Now().UTC(),
+	}))
+
+	require.NoError(t, service.Revert(context.Background(), ApplyOrderEventParams{
+		ChainID:         31337,
+		ContractAddress: order.SettlementAddress,
+		EventName:       "OrderExecuted",
+		TxHash:          order.ExecutedTxHash,
+		LogIndex:        1,
+		BlockNumber:     130,
+		OrderHash:       order.OrderHash,
+	}))
+
+	stored, err := repo.NewOrderRepository(db).GetByOrderHash(context.Background(), order.ChainID, order.SettlementAddress, order.OrderHash)
+	require.NoError(t, err)
+	require.Equal(t, "executed", stored.Status)
+	require.Equal(t, "updated_by_order_executed_event_after_pending_cancel", stored.StatusReason)
+	require.Equal(t, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", stored.ExecutedTxHash)
+
+	require.NoError(t, service.Revert(context.Background(), ApplyOrderEventParams{
+		ChainID:         31337,
+		ContractAddress: order.SettlementAddress,
+		EventName:       "OrderExecuted",
+		TxHash:          "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		LogIndex:        0,
+		BlockNumber:     120,
+		OrderHash:       order.OrderHash,
+	}))
+
+	stored, err = repo.NewOrderRepository(db).GetByOrderHash(context.Background(), order.ChainID, order.SettlementAddress, order.OrderHash)
+	require.NoError(t, err)
+	require.Equal(t, "pending_cancel", stored.Status)
+	require.Equal(t, "cancel_tx_submitted_by_user", stored.StatusReason)
 }
 
 func TestRevertOrderExecutedRestoresPendingCancelWhenCancelTxStillRecorded(t *testing.T) {
@@ -772,7 +1181,7 @@ func TestRevertNonceInvalidatedRestoresOpenStateWhenNoEventRemains(t *testing.T)
 	require.Equal(t, "", stored.CancelledTxHash)
 }
 
-func TestRevertNonceInvalidatedKeepsConfirmedByChainState(t *testing.T) {
+func TestRevertNonceInvalidatedRestoresExecutedWhenExecutionStillExistsForConfirmedByChainState(t *testing.T) {
 	db := openTestDB(t)
 	service := NewOrderEventService(db)
 
@@ -790,6 +1199,97 @@ func TestRevertNonceInvalidatedKeepsConfirmedByChainState(t *testing.T) {
 		TriggerPriceX18:   "1",
 		Expiry:            "9999999999",
 		Nonce:             "12",
+		Recipient:         "0x5555555555555555555555555555555555555555",
+		Signature:         "0x" + repeatHex("11", 65),
+		Source:            "test",
+		Status:            "cancelled",
+		StatusReason:      "confirmed_by_chain_state",
+		CancelledTxHash:   "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		ExecutedTxHash:    "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		SubmittedTxHash:   "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+		LastCheckedBlock:  124,
+		CreatedAt:         time.Now().UTC(),
+		UpdatedAt:         time.Now().UTC(),
+	}
+	require.NoError(t, repo.NewOrderRepository(db).Create(context.Background(), order))
+	require.NoError(t, repo.NewOrderEventRepository(db).Create(context.Background(), &domain.OrderEvent{
+		ChainID:         31337,
+		ContractAddress: order.SettlementAddress,
+		EventName:       "NonceInvalidated",
+		TxHash:          order.CancelledTxHash,
+		LogIndex:        1,
+		BlockNumber:     124,
+		Maker:           order.Maker,
+		Nonce:           order.Nonce,
+		ObservedAt:      time.Now().UTC(),
+	}))
+	require.NoError(t, repo.NewOrderEventRepository(db).Create(context.Background(), &domain.OrderEvent{
+		ChainID:            31337,
+		ContractAddress:    order.SettlementAddress,
+		EventName:          "OrderExecuted",
+		TxHash:             order.ExecutedTxHash,
+		LogIndex:           0,
+		BlockNumber:        123,
+		OrderHash:          order.OrderHash,
+		GrossAmountOut:     "200",
+		RecipientAmountOut: "190",
+		ExecutorFeeAmount:  "10",
+		ObservedAt:         time.Now().UTC(),
+	}))
+	require.NoError(t, repo.NewOrderRepository(db).UpdateFields(context.Background(), order.ChainID, order.SettlementAddress, order.OrderHash, map[string]interface{}{
+		"status":               "executed",
+		"status_reason":        "updated_by_order_executed_event_after_pending_cancel",
+		"settled_amount_out":   "200",
+		"settled_executor_fee": "10",
+		"last_checked_block":   int64(123),
+		"updated_at":           time.Now().UTC(),
+	}))
+	require.NoError(t, repo.NewOrderRepository(db).UpdateFields(context.Background(), order.ChainID, order.SettlementAddress, order.OrderHash, map[string]interface{}{
+		"status":             "cancelled",
+		"status_reason":      "confirmed_by_chain_state",
+		"cancelled_tx_hash":  order.CancelledTxHash,
+		"last_checked_block": int64(124),
+		"updated_at":         time.Now().UTC(),
+	}))
+
+	require.NoError(t, service.Revert(context.Background(), ApplyOrderEventParams{
+		ChainID:         31337,
+		ContractAddress: order.SettlementAddress,
+		EventName:       "NonceInvalidated",
+		TxHash:          order.CancelledTxHash,
+		LogIndex:        1,
+		BlockNumber:     124,
+		Maker:           order.Maker,
+		Nonce:           order.Nonce,
+	}))
+
+	stored, err := repo.NewOrderRepository(db).GetByOrderHash(context.Background(), order.ChainID, order.SettlementAddress, order.OrderHash)
+	require.NoError(t, err)
+	require.Equal(t, "executed", stored.Status)
+	require.Equal(t, "updated_by_order_executed_event_after_pending_cancel", stored.StatusReason)
+	require.Equal(t, order.ExecutedTxHash, stored.ExecutedTxHash)
+	require.Equal(t, int64(123), stored.LastCheckedBlock)
+	require.Equal(t, "", stored.LastBlockReason)
+}
+
+func TestRevertNonceInvalidatedRestoresOpenStateForConfirmedByChainStateWhenNoExecutionRemains(t *testing.T) {
+	db := openTestDB(t)
+	service := NewOrderEventService(db)
+
+	order := &domain.Order{
+		ChainID:           31337,
+		SettlementAddress: "0x1111111111111111111111111111111111111111",
+		OrderHash:         "0xefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef",
+		Maker:             "0x2222222222222222222222222222222222222222",
+		InputToken:        "0x3333333333333333333333333333333333333333",
+		OutputToken:       "0x4444444444444444444444444444444444444444",
+		AmountIn:          "100",
+		MinAmountOut:      "90",
+		ExecutorFee:       "1",
+		ExecutorFeeToken:  "0x4444444444444444444444444444444444444444",
+		TriggerPriceX18:   "1",
+		Expiry:            "9999999999",
+		Nonce:             "13",
 		Recipient:         "0x5555555555555555555555555555555555555555",
 		Signature:         "0x" + repeatHex("11", 65),
 		Source:            "test",
@@ -826,11 +1326,24 @@ func TestRevertNonceInvalidatedKeepsConfirmedByChainState(t *testing.T) {
 
 	stored, err := repo.NewOrderRepository(db).GetByOrderHash(context.Background(), order.ChainID, order.SettlementAddress, order.OrderHash)
 	require.NoError(t, err)
-	require.Equal(t, "cancelled", stored.Status)
-	require.Equal(t, "confirmed_by_chain_state", stored.StatusReason)
-	require.Equal(t, "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", stored.CancelledTxHash)
-	require.Equal(t, int64(124), stored.LastCheckedBlock)
+	require.Equal(t, "open", stored.Status)
+	require.Equal(t, "", stored.StatusReason)
+	require.Equal(t, "", stored.CancelledTxHash)
+	require.Equal(t, int64(0), stored.LastCheckedBlock)
 	require.Equal(t, "", stored.LastBlockReason)
+
+	activities, activityErr := repo.NewOrderActivityRepository(db).ListByOrderHash(
+		context.Background(),
+		order.ChainID,
+		order.SettlementAddress,
+		order.OrderHash,
+		10,
+	)
+	require.NoError(t, activityErr)
+	require.Len(t, activities, 1)
+	require.Equal(t, domain.OrderActivityTypeReorgRestored, activities[0].ActivityType)
+	require.Equal(t, "cancelled", activities[0].FromStatus)
+	require.Equal(t, "open", activities[0].ToStatus)
 }
 
 func TestRevertNonceInvalidatedKeepsExecutedOrdersWhenAnotherCancelEventRemains(t *testing.T) {
@@ -1002,6 +1515,16 @@ func TestRevertNonceInvalidatedDoesNotOverwriteChangedPendingOrder(t *testing.T)
 	require.Equal(t, "submitted_to_chain", stored.StatusReason)
 	require.Equal(t, "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", stored.SubmittedTxHash)
 	require.Equal(t, "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", stored.CancelledTxHash)
+
+	activities, activityErr := repo.NewOrderActivityRepository(db).ListByOrderHash(
+		context.Background(),
+		order.ChainID,
+		order.SettlementAddress,
+		order.OrderHash,
+		10,
+	)
+	require.NoError(t, activityErr)
+	require.Len(t, activities, 0)
 }
 
 func TestRevertNonceInvalidatedRestoresPendingCancelWhenDerivedFromPendingCancel(t *testing.T) {
@@ -1066,6 +1589,107 @@ func TestRevertNonceInvalidatedRestoresPendingCancelWhenDerivedFromPendingCancel
 	require.Equal(t, "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", stored.CancelledTxHash)
 	require.Equal(t, int64(0), stored.LastCheckedBlock)
 	require.Equal(t, "", stored.LastBlockReason)
+
+	activities, activityErr := repo.NewOrderActivityRepository(db).ListByOrderHash(
+		context.Background(),
+		order.ChainID,
+		order.SettlementAddress,
+		order.OrderHash,
+		10,
+	)
+	require.NoError(t, activityErr)
+	require.Len(t, activities, 2)
+	require.Equal(t, domain.OrderActivityTypeReorgRestored, activities[0].ActivityType)
+	require.Equal(t, "cancelled", activities[0].FromStatus)
+	require.Equal(t, "pending_cancel", activities[0].ToStatus)
+}
+
+func TestRevertNonceInvalidatedPreservesRemainingCancelEventProvenance(t *testing.T) {
+	db := openTestDB(t)
+	service := NewOrderEventService(db)
+
+	order := &domain.Order{
+		ChainID:           31337,
+		SettlementAddress: "0x1111111111111111111111111111111111111111",
+		OrderHash:         "0x9797979797979797979797979797979797979797979797979797979797979797",
+		Maker:             "0x2222222222222222222222222222222222222222",
+		InputToken:        "0x3333333333333333333333333333333333333333",
+		OutputToken:       "0x4444444444444444444444444444444444444444",
+		AmountIn:          "100",
+		MinAmountOut:      "90",
+		ExecutorFee:       "1",
+		ExecutorFeeToken:  "0x4444444444444444444444444444444444444444",
+		TriggerPriceX18:   "1",
+		Expiry:            "9999999999",
+		Nonce:             "67",
+		Recipient:         "0x5555555555555555555555555555555555555555",
+		Signature:         "0x" + repeatHex("11", 65),
+		Source:            "test",
+		Status:            "cancelled",
+		StatusReason:      "updated_by_nonce_invalidated_event_after_pending_execute",
+		SubmittedTxHash:   "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		CancelledTxHash:   "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		LastCheckedBlock:  125,
+		CreatedAt:         time.Now().UTC(),
+		UpdatedAt:         time.Now().UTC(),
+	}
+	require.NoError(t, repo.NewOrderRepository(db).Create(context.Background(), order))
+	require.NoError(t, repo.NewOrderEventRepository(db).Create(context.Background(), &domain.OrderEvent{
+		ChainID:         31337,
+		ContractAddress: order.SettlementAddress,
+		EventName:       "NonceInvalidated",
+		TxHash:          "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+		LogIndex:        0,
+		BlockNumber:     124,
+		Maker:           order.Maker,
+		Nonce:           order.Nonce,
+		ObservedAt:      time.Now().UTC(),
+	}))
+	require.NoError(t, repo.NewOrderEventRepository(db).Create(context.Background(), &domain.OrderEvent{
+		ChainID:         31337,
+		ContractAddress: order.SettlementAddress,
+		EventName:       "NonceInvalidated",
+		TxHash:          order.CancelledTxHash,
+		LogIndex:        1,
+		BlockNumber:     125,
+		Maker:           order.Maker,
+		Nonce:           order.Nonce,
+		ObservedAt:      time.Now().UTC(),
+	}))
+
+	require.NoError(t, service.Revert(context.Background(), ApplyOrderEventParams{
+		ChainID:         31337,
+		ContractAddress: order.SettlementAddress,
+		EventName:       "NonceInvalidated",
+		TxHash:          order.CancelledTxHash,
+		LogIndex:        1,
+		BlockNumber:     125,
+		Maker:           order.Maker,
+		Nonce:           order.Nonce,
+	}))
+
+	stored, err := repo.NewOrderRepository(db).GetByOrderHash(context.Background(), order.ChainID, order.SettlementAddress, order.OrderHash)
+	require.NoError(t, err)
+	require.Equal(t, "cancelled", stored.Status)
+	require.Equal(t, "updated_by_nonce_invalidated_event_after_pending_execute", stored.StatusReason)
+	require.Equal(t, "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", stored.CancelledTxHash)
+
+	require.NoError(t, service.Revert(context.Background(), ApplyOrderEventParams{
+		ChainID:         31337,
+		ContractAddress: order.SettlementAddress,
+		EventName:       "NonceInvalidated",
+		TxHash:          "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+		LogIndex:        0,
+		BlockNumber:     124,
+		Maker:           order.Maker,
+		Nonce:           order.Nonce,
+	}))
+
+	stored, err = repo.NewOrderRepository(db).GetByOrderHash(context.Background(), order.ChainID, order.SettlementAddress, order.OrderHash)
+	require.NoError(t, err)
+	require.Equal(t, "pending_execute", stored.Status)
+	require.Equal(t, "submitted_to_chain", stored.StatusReason)
+	require.Equal(t, order.SubmittedTxHash, stored.SubmittedTxHash)
 }
 
 func TestRevertNonceInvalidatedRestoresPendingExecuteWhenDerivedFromPendingExecute(t *testing.T) {
@@ -1131,6 +1755,19 @@ func TestRevertNonceInvalidatedRestoresPendingExecuteWhenDerivedFromPendingExecu
 	require.Equal(t, "", stored.CancelledTxHash)
 	require.Equal(t, int64(0), stored.LastCheckedBlock)
 	require.Equal(t, "", stored.LastBlockReason)
+
+	activities, activityErr := repo.NewOrderActivityRepository(db).ListByOrderHash(
+		context.Background(),
+		order.ChainID,
+		order.SettlementAddress,
+		order.OrderHash,
+		10,
+	)
+	require.NoError(t, activityErr)
+	require.Len(t, activities, 2)
+	require.Equal(t, domain.OrderActivityTypeReorgRestored, activities[0].ActivityType)
+	require.Equal(t, "cancelled", activities[0].FromStatus)
+	require.Equal(t, "pending_execute", activities[0].ToStatus)
 }
 
 func TestRevertNonceInvalidatedRestoresExpiredWhenDerivedFromExpired(t *testing.T) {
@@ -1195,6 +1832,19 @@ func TestRevertNonceInvalidatedRestoresExpiredWhenDerivedFromExpired(t *testing.
 	require.Equal(t, "", stored.CancelledTxHash)
 	require.Equal(t, int64(0), stored.LastCheckedBlock)
 	require.Equal(t, "ORDER_EXPIRED", stored.LastBlockReason)
+
+	activities, activityErr := repo.NewOrderActivityRepository(db).ListByOrderHash(
+		context.Background(),
+		order.ChainID,
+		order.SettlementAddress,
+		order.OrderHash,
+		10,
+	)
+	require.NoError(t, activityErr)
+	require.Len(t, activities, 2)
+	require.Equal(t, domain.OrderActivityTypeReorgRestored, activities[0].ActivityType)
+	require.Equal(t, "cancelled", activities[0].FromStatus)
+	require.Equal(t, "expired", activities[0].ToStatus)
 }
 
 func TestGuardedUpdateOrderStatusTreatsMatchingStateAsIdempotent(t *testing.T) {
@@ -1225,8 +1875,9 @@ func TestGuardedUpdateOrderStatusTreatsMatchingStateAsIdempotent(t *testing.T) {
 	}
 	require.NoError(t, repo.NewOrderRepository(db).Create(context.Background(), order))
 
-	err := guardedUpdateOrderStatus(
+	applied, err := guardedUpdateOrderStatus(
 		context.Background(),
+		db,
 		repo.NewOrderRepository(db),
 		order,
 		[]string{"cancelled"},
@@ -1239,6 +1890,7 @@ func TestGuardedUpdateOrderStatusTreatsMatchingStateAsIdempotent(t *testing.T) {
 			"updated_at":         time.Now().UTC(),
 		},
 	)
+	require.True(t, applied)
 	require.NoError(t, err)
 }
 
@@ -1292,6 +1944,71 @@ func TestApplyOrderExecutedDoesNotOverwriteCancelledOrder(t *testing.T) {
 	require.NoError(t, queryErr)
 	require.Equal(t, "cancelled", stored.Status)
 	require.Equal(t, "", stored.ExecutedTxHash)
+}
+
+func TestApplyOrderExecutedBackfillsConfirmedByChainStateExecutionSnapshot(t *testing.T) {
+	db := openTestDB(t)
+	service := NewOrderEventService(db)
+
+	order := &domain.Order{
+		ChainID:            31337,
+		SettlementAddress:  "0x1111111111111111111111111111111111111111",
+		OrderHash:          "0xf4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4",
+		Maker:              "0x2222222222222222222222222222222222222222",
+		InputToken:         "0x3333333333333333333333333333333333333333",
+		OutputToken:        "0x4444444444444444444444444444444444444444",
+		AmountIn:           "100",
+		MinAmountOut:       "90",
+		ExecutorFee:        "1",
+		ExecutorFeeToken:   "0x4444444444444444444444444444444444444444",
+		TriggerPriceX18:    "1",
+		Expiry:             "9999999999",
+		Nonce:              "44",
+		Recipient:          "0x5555555555555555555555555555555555555555",
+		Signature:          "0x" + repeatHex("11", 65),
+		Source:             "test",
+		Status:             "executed",
+		StatusReason:       "confirmed_by_chain_state",
+		ExecutedTxHash:     "",
+		SettledAmountOut:   "0",
+		SettledExecutorFee: "0",
+		CreatedAt:          time.Now().UTC(),
+		UpdatedAt:          time.Now().UTC(),
+	}
+	require.NoError(t, repo.NewOrderRepository(db).Create(context.Background(), order))
+
+	updatedOrder, err := service.Apply(context.Background(), ApplyOrderEventParams{
+		ChainID:            31337,
+		ContractAddress:    order.SettlementAddress,
+		EventName:          "OrderExecuted",
+		TxHash:             "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		LogIndex:           0,
+		BlockNumber:        123,
+		OrderHash:          order.OrderHash,
+		GrossAmountOut:     "200",
+		RecipientAmountOut: "190",
+		ExecutorFeeAmount:  "10",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updatedOrder)
+	require.Equal(t, "executed", updatedOrder.Status)
+	require.Equal(t, "confirmed_by_chain_state", updatedOrder.StatusReason)
+	require.Equal(t, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", updatedOrder.ExecutedTxHash)
+	require.Equal(t, "200", updatedOrder.SettledAmountOut)
+	require.Equal(t, "10", updatedOrder.SettledExecutorFee)
+
+	activities, activityErr := repo.NewOrderActivityRepository(db).ListByOrderHash(
+		context.Background(),
+		order.ChainID,
+		order.SettlementAddress,
+		order.OrderHash,
+		10,
+	)
+	require.NoError(t, activityErr)
+	require.Len(t, activities, 1)
+	require.Equal(t, domain.OrderActivityTypeChainReconciled, activities[0].ActivityType)
+	require.Equal(t, "executed", activities[0].FromStatus)
+	require.Equal(t, "executed", activities[0].ToStatus)
 }
 
 func TestApplyOrderExecutedClosesPendingCancelOrderAsExecuted(t *testing.T) {
@@ -1400,6 +2117,66 @@ func TestApplyNonceInvalidatedDoesNotOverwriteExecutedOrder(t *testing.T) {
 	require.NoError(t, queryErr)
 	require.Equal(t, "executed", stored.Status)
 	require.Equal(t, "", stored.CancelledTxHash)
+}
+
+func TestApplyNonceInvalidatedBackfillsConfirmedByChainStateCancelSnapshot(t *testing.T) {
+	db := openTestDB(t)
+	service := NewOrderEventService(db)
+
+	order := &domain.Order{
+		ChainID:           31337,
+		SettlementAddress: "0x1111111111111111111111111111111111111111",
+		OrderHash:         "0xf5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5",
+		Maker:             "0x2222222222222222222222222222222222222222",
+		InputToken:        "0x3333333333333333333333333333333333333333",
+		OutputToken:       "0x4444444444444444444444444444444444444444",
+		AmountIn:          "100",
+		MinAmountOut:      "90",
+		ExecutorFee:       "1",
+		ExecutorFeeToken:  "0x4444444444444444444444444444444444444444",
+		TriggerPriceX18:   "1",
+		Expiry:            "9999999999",
+		Nonce:             "45",
+		Recipient:         "0x5555555555555555555555555555555555555555",
+		Signature:         "0x" + repeatHex("11", 65),
+		Source:            "test",
+		Status:            "cancelled",
+		StatusReason:      "confirmed_by_chain_state",
+		SubmittedTxHash:   "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+		CancelledTxHash:   "",
+		CreatedAt:         time.Now().UTC(),
+		UpdatedAt:         time.Now().UTC(),
+	}
+	require.NoError(t, repo.NewOrderRepository(db).Create(context.Background(), order))
+
+	updatedOrders, err := service.ApplyNonceInvalidated(context.Background(), ApplyOrderEventParams{
+		ChainID:         31337,
+		ContractAddress: order.SettlementAddress,
+		EventName:       "NonceInvalidated",
+		TxHash:          "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+		LogIndex:        1,
+		BlockNumber:     124,
+		Maker:           order.Maker,
+		Nonce:           order.Nonce,
+	})
+	require.NoError(t, err)
+	require.Len(t, updatedOrders, 1)
+	require.Equal(t, "cancelled", updatedOrders[0].Status)
+	require.Equal(t, "updated_by_nonce_invalidated_event_after_pending_execute", updatedOrders[0].StatusReason)
+	require.Equal(t, "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", updatedOrders[0].CancelledTxHash)
+
+	activities, activityErr := repo.NewOrderActivityRepository(db).ListByOrderHash(
+		context.Background(),
+		order.ChainID,
+		order.SettlementAddress,
+		order.OrderHash,
+		10,
+	)
+	require.NoError(t, activityErr)
+	require.Len(t, activities, 1)
+	require.Equal(t, domain.OrderActivityTypeChainReconciled, activities[0].ActivityType)
+	require.Equal(t, "cancelled", activities[0].FromStatus)
+	require.Equal(t, "cancelled", activities[0].ToStatus)
 }
 
 // 测试统一使用内存 SQLite，保证本地无需额外数据库依赖即可执行。

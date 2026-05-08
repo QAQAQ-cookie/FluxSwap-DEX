@@ -10,6 +10,7 @@ import (
 
 	"fluxswap-backend/internal/chain"
 	"fluxswap-backend/internal/config"
+	"fluxswap-backend/internal/domain"
 	"fluxswap-backend/internal/repo"
 	"fluxswap-backend/rpc/executor"
 	"fluxswap-backend/rpc/internal/svc"
@@ -258,6 +259,24 @@ func TestCreateOrderStoresOrderWhenChainClientUnavailable(t *testing.T) {
 	require.NoError(t, queryErr)
 	require.Equal(t, "open", stored.Status)
 	require.Equal(t, "chain_client_unavailable_at_create", stored.LastBlockReason)
+
+	runtime, runtimeErr := repo.NewOrderRuntimeRepository(db).GetByOrderID(context.Background(), stored.ID)
+	require.NoError(t, runtimeErr)
+	require.Equal(t, stored.StatusReason, runtime.StatusReason)
+	require.Equal(t, stored.LastBlockReason, runtime.LastBlockReason)
+
+	activities, activityErr := repo.NewOrderActivityRepository(db).ListByOrderHash(
+		context.Background(),
+		stored.ChainID,
+		stored.SettlementAddress,
+		stored.OrderHash,
+		10,
+	)
+	require.NoError(t, activityErr)
+	require.Len(t, activities, 1)
+	require.Equal(t, domain.OrderActivityTypeCreated, activities[0].ActivityType)
+	require.Equal(t, domain.OrderActivitySourceRPC, activities[0].Source)
+	require.Equal(t, "open", activities[0].ToStatus)
 }
 
 func TestCreateOrderStoresInitialFeeQuoteWithoutBlockingAtCreate(t *testing.T) {
@@ -339,6 +358,71 @@ func TestCreateOrderStoresInitialFeeQuoteWithoutBlockingAtCreate(t *testing.T) {
 	require.NoError(t, queryErr)
 	require.Equal(t, "", stored.LastBlockReason)
 	require.Equal(t, "20", stored.LastRequiredExecutorFee)
+}
+
+func TestCreateOrderRollsBackWhenActivityInsertFails(t *testing.T) {
+	db := openCreateOrderTestDB(t)
+	db.Callback().Create().Before("gorm:create").Register("test:force_activity_insert_error", func(tx *gorm.DB) {
+		if tx.Statement != nil && tx.Statement.Table == "order_activities" {
+			tx.AddError(fmt.Errorf("forced activity insert failure"))
+		}
+	})
+	defer db.Callback().Create().Remove("test:force_activity_insert_error")
+
+	logic := NewCreateOrderLogic(context.Background(), &svc.ServiceContext{
+		Config: config.Config{},
+		DB:     db,
+	})
+
+	privateKey, err := crypto.GenerateKey()
+	require.NoError(t, err)
+	maker := crypto.PubkeyToAddress(privateKey.PublicKey)
+
+	order := chain.SettlementOrder{
+		Maker:                maker,
+		InputToken:           common.HexToAddress("0x0000000000000000000000000000000000000001"),
+		OutputToken:          common.HexToAddress("0x0000000000000000000000000000000000000002"),
+		AmountIn:             big.NewInt(1000),
+		MinAmountOut:         big.NewInt(900),
+		MaxExecutorRewardBps: big.NewInt(10),
+		TriggerPriceX18:      big.NewInt(1_000_000_000_000_000_000),
+		Expiry:               big.NewInt(time.Now().Add(time.Hour).Unix()),
+		Nonce:                big.NewInt(19),
+		Recipient:            maker,
+	}
+
+	digest, err := chain.ComputeOrderDigest(31337, "0x1111111111111111111111111111111111111111", order)
+	require.NoError(t, err)
+	signature, err := crypto.Sign(digest.Bytes(), privateKey)
+	require.NoError(t, err)
+	signature[64] += 27
+
+	orderHash, err := chain.ComputeOrderHash(order)
+	require.NoError(t, err)
+
+	resp, err := logic.CreateOrder(&executor.CreateOrderRequest{
+		ChainId:              31337,
+		SettlementAddress:    "0x1111111111111111111111111111111111111111",
+		OrderHash:            orderHash.Hex(),
+		Maker:                maker.Hex(),
+		InputToken:           order.InputToken.Hex(),
+		OutputToken:          order.OutputToken.Hex(),
+		AmountIn:             order.AmountIn.String(),
+		MinAmountOut:         order.MinAmountOut.String(),
+		MaxExecutorRewardBps: order.MaxExecutorRewardBps.String(),
+		TriggerPriceX18:      order.TriggerPriceX18.String(),
+		Expiry:               order.Expiry.String(),
+		Nonce:                order.Nonce.String(),
+		Recipient:            maker.Hex(),
+		Signature:            hexutil.Encode(signature),
+		Source:               "test",
+	})
+	require.Error(t, err)
+	require.Nil(t, resp)
+
+	var count int64
+	require.NoError(t, db.Table("orders").Count(&count).Error)
+	require.Equal(t, int64(0), count)
 }
 
 func TestCreateOrderRejectsExpiredByChainTime(t *testing.T) {

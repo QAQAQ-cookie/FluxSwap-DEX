@@ -38,6 +38,11 @@ func (s *ExecutorServer) GetOrder(ctx context.Context, in *executor.GetOrderRequ
 	return l.GetOrder(in)
 }
 
+func (s *ExecutorServer) GetOrderActivities(ctx context.Context, in *executor.GetOrderActivitiesRequest) (*executor.GetOrderActivitiesResponse, error) {
+	l := logic.NewGetOrderActivitiesLogic(ctx, s.svcCtx)
+	return l.GetOrderActivities(in)
+}
+
 func (s *ExecutorServer) GetBestRoute(ctx context.Context, in *executor.GetBestRouteRequest) (*executor.GetBestRouteResponse, error) {
 	l := logic.NewGetBestRouteLogic(ctx, s.svcCtx)
 	return l.GetBestRoute(in)

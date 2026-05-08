@@ -8,6 +8,7 @@ service Executor {
   rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse);
   rpc CancelOrders(CancelOrdersRequest) returns (CancelOrdersResponse);
   rpc GetOrder(GetOrderRequest) returns (GetOrderResponse);
+  rpc GetOrderActivities(GetOrderActivitiesRequest) returns (GetOrderActivitiesResponse);
   rpc GetBestRoute(GetBestRouteRequest) returns (GetBestRouteResponse);
 }
 
@@ -82,7 +83,8 @@ message GetOrderRequest {
 }
 
 message GetOrderResponse {
-  uint64 id = 1;
+  reserved 1;
+
   int64 chainId = 2;
   string settlementAddress = 3;
   string orderHash = 4;
@@ -116,6 +118,34 @@ message GetOrderResponse {
   string lastBlockReason = 32;
   string settledAmountOut = 33;
   string settledExecutorReward = 34;
+}
+
+message GetOrderActivitiesRequest {
+  int64 chainId = 1;
+  string settlementAddress = 2;
+  string orderHash = 3;
+  uint32 limit = 4;
+}
+
+message OrderActivityView {
+  string activityType = 1;
+  string fromStatus = 2;
+  string toStatus = 3;
+  string reasonCode = 4;
+  string reasonDetail = 5;
+  string source = 6;
+  string actorAddress = 7;
+  string txHash = 8;
+  int64 blockNumber = 9;
+  int64 logIndex = 10;
+  string payloadJson = 11;
+  string occurredAt = 12;
+  string createdAt = 13;
+}
+
+message GetOrderActivitiesResponse {
+  repeated OrderActivityView activities = 1;
+  ResponseNotice notice = 2;
 }
 
 message GetBestRouteRequest {

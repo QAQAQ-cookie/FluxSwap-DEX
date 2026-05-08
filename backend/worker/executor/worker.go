@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"fluxswap-backend/internal/app"
 	"fluxswap-backend/internal/chain"
 	"fluxswap-backend/internal/domain"
 	"fluxswap-backend/internal/repo"
@@ -235,12 +236,11 @@ func (w *Worker) evaluateOrder(ctx context.Context, order *domain.Order) error {
 	now := time.Now().UTC()
 	allowedStatuses := []string{"open"}
 	if strings.TrimSpace(order.Status) == "open" {
-		claimed, claimErr := w.orderRepo.ClaimOpenOrderForExecution(
+		claimed, claimErr := w.updateClaimedOrderAndRecordActivity(
 			ctx,
-			order.ChainID,
-			order.SettlementAddress,
-			order.OrderHash,
+			order,
 			now,
+			fmt.Sprintf("executor:claim:%d:%s:%s", order.ChainID, order.SettlementAddress, order.OrderHash),
 		)
 		if claimErr != nil {
 			return claimErr
@@ -248,12 +248,6 @@ func (w *Worker) evaluateOrder(ctx context.Context, order *domain.Order) error {
 		if !claimed {
 			return nil
 		}
-
-		refreshedOrder, refreshedErr := w.orderRepo.GetByOrderHash(ctx, order.ChainID, order.SettlementAddress, order.OrderHash)
-		if refreshedErr != nil {
-			return refreshedErr
-		}
-		*order = *refreshedOrder
 		allowedStatuses = []string{"submitting_execute"}
 	}
 
@@ -292,7 +286,7 @@ func (w *Worker) evaluateOrder(ctx context.Context, order *domain.Order) error {
 			)
 		}
 		if executed {
-			return w.updateOrderIfStatusIn(
+			changed, updateErr := w.updateOrderAndRecordActivity(
 				ctx,
 				order,
 				allowedStatuses,
@@ -303,7 +297,25 @@ func (w *Worker) evaluateOrder(ctx context.Context, order *domain.Order) error {
 					"submitted_tx_hash": "",
 					"cancelled_tx_hash": "",
 				}),
+				domain.OrderActivityTypeChainReconciled,
+				order.Status,
+				"executed",
+				"confirmed_by_chain_state",
+				"expiry_check_order_already_executed",
+				domain.OrderActivitySourceExecutor,
+				"",
+				0,
+				0,
+				fmt.Sprintf("executor:reconcile:%d:%s:%s:expired_check_executed", order.ChainID, order.SettlementAddress, order.OrderHash),
+				map[string]string{"reconciledState": "executed"},
 			)
+			if updateErr != nil {
+				return updateErr
+			}
+			if !changed {
+				return nil
+			}
+			return nil
 		}
 
 		invalidated, invalidatedErr := w.settlementClient.IsNonceInvalidated(ctx, order.Maker, payload.Nonce)
@@ -321,7 +333,7 @@ func (w *Worker) evaluateOrder(ctx context.Context, order *domain.Order) error {
 			)
 		}
 		if invalidated {
-			return w.updateOrderIfStatusIn(
+			changed, updateErr := w.updateOrderAndRecordActivity(
 				ctx,
 				order,
 				allowedStatuses,
@@ -332,7 +344,25 @@ func (w *Worker) evaluateOrder(ctx context.Context, order *domain.Order) error {
 					"submitted_tx_hash": "",
 					"executed_tx_hash":  "",
 				}),
+				domain.OrderActivityTypeChainReconciled,
+				order.Status,
+				"cancelled",
+				"confirmed_by_chain_state",
+				"expiry_check_nonce_invalidated",
+				domain.OrderActivitySourceExecutor,
+				"",
+				0,
+				0,
+				fmt.Sprintf("executor:reconcile:%d:%s:%s:expired_check_cancelled", order.ChainID, order.SettlementAddress, order.OrderHash),
+				map[string]string{"reconciledState": "cancelled"},
 			)
+			if updateErr != nil {
+				return updateErr
+			}
+			if !changed {
+				return nil
+			}
+			return nil
 		}
 
 		return w.updateOrderIfStatusIn(
@@ -514,17 +544,28 @@ func (w *Worker) evaluateOrder(ctx context.Context, order *domain.Order) error {
 			order.StatusReason = shortenReason("submit_failed: " + executeErr.Error())
 			order.LastBlockReason = order.StatusReason
 			order.UpdatedAt = now
-			updated, updateErr := w.orderRepo.UpdateFieldsIfStatusIn(
+			updated, updateErr := w.updateOrderAndRecordActivity(
 				ctx,
-				order.ChainID,
-				order.SettlementAddress,
-				order.OrderHash,
+				order,
 				[]string{"submitting_execute"},
 				withExecutionMetadata(feeQuoteUpdates, map[string]interface{}{
 					"status":            "open",
 					"status_reason":     order.StatusReason,
 					"last_block_reason": order.LastBlockReason,
 				}),
+				domain.OrderActivityTypeExecutionReverted,
+				"submitting_execute",
+				"open",
+				"submit_failed",
+				order.StatusReason,
+				domain.OrderActivitySourceExecutor,
+				"",
+				0,
+				0,
+				fmt.Sprintf("executor:submit_failed:%d:%s:%s", order.ChainID, order.SettlementAddress, order.OrderHash),
+				map[string]string{
+					"error": executeErr.Error(),
+				},
 			)
 			if updateErr != nil {
 				return updateErr
@@ -533,14 +574,13 @@ func (w *Worker) evaluateOrder(ctx context.Context, order *domain.Order) error {
 				fmt.Printf("order %s submit failed but state already changed, skip overwriting current status\n", order.OrderHash)
 				return nil
 			}
+			return nil
 		} else {
 			fmt.Printf("submitted order %s with tx %s\n", order.OrderHash, txHash)
 			order.UpdatedAt = now
-			updated, updateErr := w.orderRepo.UpdateFieldsIfStatusIn(
+			updated, updateErr := w.updateOrderAndRecordActivity(
 				ctx,
-				order.ChainID,
-				order.SettlementAddress,
-				order.OrderHash,
+				order,
 				[]string{"submitting_execute"},
 				withExecutionMetadata(feeQuoteUpdates, map[string]interface{}{
 					"status":            "pending_execute",
@@ -548,6 +588,19 @@ func (w *Worker) evaluateOrder(ctx context.Context, order *domain.Order) error {
 					"last_block_reason": "",
 					"submitted_tx_hash": txHash,
 				}),
+				domain.OrderActivityTypeExecutionSubmitted,
+				"submitting_execute",
+				"pending_execute",
+				"submitted_to_chain",
+				"",
+				domain.OrderActivitySourceExecutor,
+				txHash,
+				0,
+				0,
+				fmt.Sprintf("executor:submit:%d:%s:%s", order.ChainID, order.SettlementAddress, order.OrderHash),
+				map[string]string{
+					"txHash": txHash,
+				},
 			)
 			if updateErr != nil {
 				return updateErr
@@ -556,6 +609,7 @@ func (w *Worker) evaluateOrder(ctx context.Context, order *domain.Order) error {
 				fmt.Printf("order %s execution tx %s submitted but state already changed, skip overwriting current status\n", order.OrderHash, txHash)
 				return nil
 			}
+			return nil
 		}
 		return nil
 	}
@@ -577,7 +631,7 @@ func (w *Worker) evaluateOrder(ctx context.Context, order *domain.Order) error {
 			)
 		}
 		if executed {
-			return w.updateOrderIfStatusIn(
+			changed, updateErr := w.updateOrderAndRecordActivity(
 				ctx,
 				order,
 				allowedStatuses,
@@ -588,7 +642,25 @@ func (w *Worker) evaluateOrder(ctx context.Context, order *domain.Order) error {
 					"submitted_tx_hash": "",
 					"cancelled_tx_hash": "",
 				}),
+				domain.OrderActivityTypeChainReconciled,
+				order.Status,
+				"executed",
+				"confirmed_by_chain_state",
+				"can_execute_reported_order_already_executed",
+				domain.OrderActivitySourceExecutor,
+				"",
+				0,
+				0,
+				fmt.Sprintf("executor:reconcile:%d:%s:%s:reported_executed", order.ChainID, order.SettlementAddress, order.OrderHash),
+				map[string]string{"reconciledState": "executed"},
 			)
+			if updateErr != nil {
+				return updateErr
+			}
+			if !changed {
+				return nil
+			}
+			return nil
 		}
 		inconclusiveReason := shortenReason("chain_state_inconclusive: order_already_executed")
 		return w.updateOrderIfStatusIn(
@@ -617,7 +689,7 @@ func (w *Worker) evaluateOrder(ctx context.Context, order *domain.Order) error {
 			)
 		}
 		if invalidated {
-			return w.updateOrderIfStatusIn(
+			changed, updateErr := w.updateOrderAndRecordActivity(
 				ctx,
 				order,
 				allowedStatuses,
@@ -628,7 +700,25 @@ func (w *Worker) evaluateOrder(ctx context.Context, order *domain.Order) error {
 					"submitted_tx_hash": "",
 					"executed_tx_hash":  "",
 				}),
+				domain.OrderActivityTypeChainReconciled,
+				order.Status,
+				"cancelled",
+				"confirmed_by_chain_state",
+				"can_execute_reported_nonce_invalidated",
+				domain.OrderActivitySourceExecutor,
+				"",
+				0,
+				0,
+				fmt.Sprintf("executor:reconcile:%d:%s:%s:reported_cancelled", order.ChainID, order.SettlementAddress, order.OrderHash),
+				map[string]string{"reconciledState": "cancelled"},
 			)
+			if updateErr != nil {
+				return updateErr
+			}
+			if !changed {
+				return nil
+			}
+			return nil
 		}
 		inconclusiveReason := shortenReason("chain_state_inconclusive: nonce_invalidated")
 		return w.updateOrderIfStatusIn(
@@ -666,7 +756,7 @@ func (w *Worker) checkPendingReceipt(ctx context.Context, order *domain.Order) e
 	if strings.TrimSpace(order.Status) == "submitting_execute" {
 		if !chain.IsHexHash(strings.TrimSpace(order.SubmittedTxHash)) {
 			now := time.Now().UTC()
-			return w.updateOrderIfStatusIn(
+			changed, err := w.updateOrderAndRecordActivity(
 				ctx,
 				order,
 				[]string{"submitting_execute"},
@@ -679,7 +769,25 @@ func (w *Worker) checkPendingReceipt(ctx context.Context, order *domain.Order) e
 					"cancelled_tx_hash": "",
 					"updated_at":        now,
 				},
+				domain.OrderActivityTypeOrderReopened,
+				"submitting_execute",
+				"open",
+				"submission_interrupted_before_tx_hash",
+				"",
+				domain.OrderActivitySourceExecutor,
+				"",
+				0,
+				0,
+				fmt.Sprintf("executor:reopen:%d:%s:%s:submission_interrupted", order.ChainID, order.SettlementAddress, order.OrderHash),
+				map[string]string{},
 			)
+			if err != nil {
+				return err
+			}
+			if !changed {
+				return nil
+			}
+			return nil
 		}
 		now := time.Now().UTC()
 		if err := w.updateOrderIfStatusIn(
@@ -710,7 +818,7 @@ func (w *Worker) checkPendingReceipt(ctx context.Context, order *domain.Order) e
 	if !chain.IsHexHash(pendingTxHash) {
 		fmt.Printf("order %s lost pending tx hash, returning to open\n", order.OrderHash)
 		now := time.Now().UTC()
-		return w.updateOrderIfStatusIn(
+		changed, err := w.updateOrderAndRecordActivity(
 			ctx,
 			order,
 			currentPendingStatuses,
@@ -722,7 +830,25 @@ func (w *Worker) checkPendingReceipt(ctx context.Context, order *domain.Order) e
 				"cancelled_tx_hash": "",
 				"updated_at":        now,
 			},
+			domain.OrderActivityTypeOrderReopened,
+			order.Status,
+			"open",
+			"pending_without_valid_tx_hash",
+			"",
+			domain.OrderActivitySourceExecutor,
+			"",
+			0,
+			0,
+			fmt.Sprintf("executor:reopen:%d:%s:%s:missing_tx_hash", order.ChainID, order.SettlementAddress, order.OrderHash),
+			map[string]string{},
 		)
+		if err != nil {
+			return err
+		}
+		if !changed {
+			return nil
+		}
+		return nil
 	}
 
 	receipt, err := w.settlementClient.ReceiptStatus(ctx, pendingTxHash)
@@ -757,7 +883,7 @@ func (w *Worker) checkPendingReceipt(ctx context.Context, order *domain.Order) e
 					if nonceInvalidated {
 						fmt.Printf("order %s cancel tx %s disappeared but nonce already invalidated, closing as cancelled\n", order.OrderHash, pendingTxHash)
 						now := time.Now().UTC()
-						return w.updateOrderIfStatusIn(
+						changed, updateErr := w.updateOrderAndRecordActivity(
 							ctx,
 							order,
 							[]string{"pending_cancel"},
@@ -769,12 +895,30 @@ func (w *Worker) checkPendingReceipt(ctx context.Context, order *domain.Order) e
 								"executed_tx_hash":  "",
 								"updated_at":        now,
 							},
+							domain.OrderActivityTypeCancelConfirmed,
+							"pending_cancel",
+							"cancelled",
+							"confirmed_by_chain_state",
+							"cancel_receipt_missing_but_nonce_invalidated",
+							domain.OrderActivitySourceExecutor,
+							pendingTxHash,
+							0,
+							0,
+							fmt.Sprintf("executor:cancel_confirmed:%d:%s:%s:receipt_missing", order.ChainID, order.SettlementAddress, order.OrderHash),
+							map[string]string{"txHash": pendingTxHash},
 						)
+						if updateErr != nil {
+							return updateErr
+						}
+						if !changed {
+							return nil
+						}
+						return nil
 					}
 
 					fmt.Printf("order %s cancel tx %s disappeared before receipt was available, reopening order\n", order.OrderHash, pendingTxHash)
 					now := time.Now().UTC()
-					return w.updateOrderIfStatusIn(
+					changed, err := w.updateOrderAndRecordActivity(
 						ctx,
 						order,
 						[]string{"pending_cancel"},
@@ -785,12 +929,30 @@ func (w *Worker) checkPendingReceipt(ctx context.Context, order *domain.Order) e
 							"cancelled_tx_hash": "",
 							"updated_at":        now,
 						},
+						domain.OrderActivityTypeOrderReopened,
+						"pending_cancel",
+						"open",
+						"cancel_tx_missing_from_chain_retryable",
+						"",
+						domain.OrderActivitySourceExecutor,
+						pendingTxHash,
+						0,
+						0,
+						fmt.Sprintf("executor:reopen:%d:%s:%s:cancel_missing", order.ChainID, order.SettlementAddress, order.OrderHash),
+						map[string]string{"txHash": pendingTxHash},
 					)
+					if err != nil {
+						return err
+					}
+					if !changed {
+						return nil
+					}
+					return nil
 				}
 
 				fmt.Printf("order %s tx %s disappeared before receipt was available, reopening order\n", order.OrderHash, pendingTxHash)
 				now := time.Now().UTC()
-				return w.updateOrderIfStatusIn(
+				changed, err := w.updateOrderAndRecordActivity(
 					ctx,
 					order,
 					[]string{"pending_execute"},
@@ -801,7 +963,25 @@ func (w *Worker) checkPendingReceipt(ctx context.Context, order *domain.Order) e
 						"submitted_tx_hash": "",
 						"updated_at":        now,
 					},
+					domain.OrderActivityTypeOrderReopened,
+					"pending_execute",
+					"open",
+					"submitted_tx_missing_from_chain_retryable",
+					"",
+					domain.OrderActivitySourceExecutor,
+					pendingTxHash,
+					0,
+					0,
+					fmt.Sprintf("executor:reopen:%d:%s:%s:execute_missing", order.ChainID, order.SettlementAddress, order.OrderHash),
+					map[string]string{"txHash": pendingTxHash},
 				)
+				if err != nil {
+					return err
+				}
+				if !changed {
+					return nil
+				}
+				return nil
 			}
 
 			fmt.Printf("order %s tx %s still pending on chain\n", order.OrderHash, pendingTxHash)
@@ -852,7 +1032,7 @@ func (w *Worker) checkPendingReceipt(ctx context.Context, order *domain.Order) e
 			}
 			if nonceInvalidated {
 				fmt.Printf("order %s cancel tx %s confirmed in block %d and nonce already invalidated on chain\n", order.OrderHash, pendingTxHash, receipt.BlockNumber.Uint64())
-				return w.updateOrderIfStatusIn(
+				changed, updateErr := w.updateOrderAndRecordActivity(
 					ctx,
 					order,
 					[]string{"pending_cancel"},
@@ -865,7 +1045,25 @@ func (w *Worker) checkPendingReceipt(ctx context.Context, order *domain.Order) e
 						"last_checked_block": int64(receipt.BlockNumber.Uint64()),
 						"updated_at":         time.Now().UTC(),
 					},
+					domain.OrderActivityTypeCancelConfirmed,
+					"pending_cancel",
+					"cancelled",
+					"confirmed_by_chain_state",
+					"cancel_receipt_confirmed_and_nonce_invalidated",
+					domain.OrderActivitySourceExecutor,
+					pendingTxHash,
+					receiptBlockNumber,
+					0,
+					fmt.Sprintf("executor:cancel_confirmed:%d:%s:%s", order.ChainID, order.SettlementAddress, order.OrderHash),
+					map[string]string{"txHash": pendingTxHash},
 				)
+				if updateErr != nil {
+					return updateErr
+				}
+				if !changed {
+					return nil
+				}
+				return nil
 			}
 
 			fmt.Printf("order %s tx %s confirmed in block %d, waiting for indexer\n", order.OrderHash, pendingTxHash, receipt.BlockNumber.Uint64())
@@ -902,7 +1100,30 @@ func (w *Worker) checkPendingReceipt(ctx context.Context, order *domain.Order) e
 					updates["settled_amount_out"] = executionResult.GrossAmountOut.String()
 					updates["settled_executor_fee"] = executionResult.ExecutorFeeAmount.String()
 				}
-				return w.updateOrderIfStatusIn(ctx, order, []string{"pending_execute"}, updates)
+				changed, updateErr := w.updateOrderAndRecordActivity(
+					ctx,
+					order,
+					[]string{"pending_execute"},
+					updates,
+					domain.OrderActivityTypeExecutionConfirmed,
+					"pending_execute",
+					"executed",
+					"confirmed_by_chain_state",
+					"execute_receipt_confirmed_and_order_executed",
+					domain.OrderActivitySourceExecutor,
+					pendingTxHash,
+					receiptBlockNumber,
+					0,
+					fmt.Sprintf("executor:execute_confirmed:%d:%s:%s", order.ChainID, order.SettlementAddress, order.OrderHash),
+					map[string]string{"txHash": pendingTxHash},
+				)
+				if updateErr != nil {
+					return updateErr
+				}
+				if !changed {
+					return nil
+				}
+				return nil
 			}
 
 			fmt.Printf("order %s tx %s confirmed in block %d, waiting for indexer\n", order.OrderHash, pendingTxHash, receipt.BlockNumber.Uint64())
@@ -941,7 +1162,7 @@ func (w *Worker) checkPendingReceipt(ctx context.Context, order *domain.Order) e
 		}
 		nonceInvalidated, stateErr := w.settlementClient.IsNonceInvalidated(ctx, order.Maker, nonceValue)
 		if stateErr == nil && nonceInvalidated {
-			return w.updateOrderIfStatusIn(
+			changed, updateErr := w.updateOrderAndRecordActivity(
 				ctx,
 				order,
 				[]string{"pending_cancel"},
@@ -954,7 +1175,25 @@ func (w *Worker) checkPendingReceipt(ctx context.Context, order *domain.Order) e
 					"last_checked_block": int64(receipt.BlockNumber.Uint64()),
 					"updated_at":         time.Now().UTC(),
 				},
+				domain.OrderActivityTypeCancelConfirmed,
+				"pending_cancel",
+				"cancelled",
+				"confirmed_by_chain_state",
+				"cancel_receipt_reverted_but_nonce_invalidated",
+				domain.OrderActivitySourceExecutor,
+				pendingTxHash,
+				receiptBlockNumber,
+				0,
+				fmt.Sprintf("executor:cancel_confirmed:%d:%s:%s:reverted_receipt", order.ChainID, order.SettlementAddress, order.OrderHash),
+				map[string]string{"txHash": pendingTxHash},
 			)
+			if updateErr != nil {
+				return updateErr
+			}
+			if !changed {
+				return nil
+			}
+			return nil
 		}
 
 		return w.updateOrderIfStatusIn(
@@ -990,7 +1229,7 @@ func (w *Worker) checkPendingReceipt(ctx context.Context, order *domain.Order) e
 				)
 			}
 			if expiry.Uint64() <= currentBlockTimestamp {
-				return w.updateOrderIfStatusIn(
+				changed, err := w.updateOrderAndRecordActivity(
 					ctx,
 					order,
 					[]string{"pending_execute"},
@@ -1002,11 +1241,29 @@ func (w *Worker) checkPendingReceipt(ctx context.Context, order *domain.Order) e
 						"last_checked_block": receiptBlockNumber,
 						"updated_at":         now,
 					},
+					domain.OrderActivityTypeOrderExpired,
+					"pending_execute",
+					"expired",
+					"expired_after_reverted_execute",
+					"",
+					domain.OrderActivitySourceExecutor,
+					pendingTxHash,
+					receiptBlockNumber,
+					0,
+					fmt.Sprintf("executor:expire:%d:%s:%s", order.ChainID, order.SettlementAddress, order.OrderHash),
+					map[string]string{"txHash": pendingTxHash},
 				)
+				if err != nil {
+					return err
+				}
+				if !changed {
+					return nil
+				}
+				return nil
 			}
 		}
 
-		return w.updateOrderIfStatusIn(
+		changed, err := w.updateOrderAndRecordActivity(
 			ctx,
 			order,
 			[]string{"pending_execute"},
@@ -1018,7 +1275,25 @@ func (w *Worker) checkPendingReceipt(ctx context.Context, order *domain.Order) e
 				"last_checked_block": receiptBlockNumber,
 				"updated_at":         now,
 			},
+			domain.OrderActivityTypeOrderReopened,
+			"pending_execute",
+			"open",
+			"tx_reverted_retryable",
+			"",
+			domain.OrderActivitySourceExecutor,
+			pendingTxHash,
+			receiptBlockNumber,
+			0,
+			fmt.Sprintf("executor:reopen:%d:%s:%s:execute_reverted", order.ChainID, order.SettlementAddress, order.OrderHash),
+			map[string]string{"txHash": pendingTxHash},
 		)
+		if err != nil {
+			return err
+		}
+		if !changed {
+			return nil
+		}
+		return nil
 	}
 }
 
@@ -1156,6 +1431,16 @@ func (w *Worker) updateOrderIfStatusIn(
 	allowedStatuses []string,
 	updates map[string]interface{},
 ) error {
+	_, err := w.updateOrderIfStatusInAndReport(ctx, order, allowedStatuses, updates)
+	return err
+}
+
+func (w *Worker) updateOrderIfStatusInAndReport(
+	ctx context.Context,
+	order *domain.Order,
+	allowedStatuses []string,
+	updates map[string]interface{},
+) (bool, error) {
 	updated, err := w.orderRepo.UpdateFieldsIfStatusIn(
 		ctx,
 		order.ChainID,
@@ -1165,24 +1450,218 @@ func (w *Worker) updateOrderIfStatusIn(
 		updates,
 	)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if updated {
-		return nil
+		refreshedOrder, refreshedErr := w.orderRepo.GetByOrderHash(ctx, order.ChainID, order.SettlementAddress, order.OrderHash)
+		if refreshedErr != nil {
+			return false, refreshedErr
+		}
+		*order = *refreshedOrder
+		return true, nil
 	}
 
 	currentOrder, currentErr := w.orderRepo.GetByOrderHash(ctx, order.ChainID, order.SettlementAddress, order.OrderHash)
 	if currentErr != nil {
-		return currentErr
+		return false, currentErr
 	}
 	if containsOrderStatus(allowedStatuses, currentOrder.Status) {
-		return fmt.Errorf("conditional order update skipped unexpectedly for order %s in status %s", currentOrder.OrderHash, currentOrder.Status)
+		return false, fmt.Errorf("conditional order update skipped unexpectedly for order %s in status %s", currentOrder.OrderHash, currentOrder.Status)
 	}
 
-	return nil
+	return false, nil
+}
+
+func (w *Worker) recordActivity(
+	ctx context.Context,
+	order *domain.Order,
+	activityType string,
+	fromStatus string,
+	toStatus string,
+	reasonCode string,
+	reasonDetail string,
+	source string,
+	txHash string,
+	blockNumber int64,
+	logIndex int64,
+	dedupeKey string,
+	payload map[string]string,
+) error {
+	return app.RecordOrderActivity(ctx, w.db, app.RecordOrderActivityParams{
+		Order:        order,
+		ActivityType: activityType,
+		FromStatus:   fromStatus,
+		ToStatus:     toStatus,
+		ReasonCode:   reasonCode,
+		ReasonDetail: reasonDetail,
+		Source:       source,
+		TxHash:       txHash,
+		BlockNumber:  blockNumber,
+		LogIndex:     logIndex,
+		DedupeKey:    dedupeKey,
+		Payload:      payload,
+		OccurredAt:   time.Now().UTC(),
+	})
 }
 
 // containsOrderStatus 判断目标状态是否位于允许更新的状态集合中。
+func (w *Worker) updateOrderAndRecordActivity(
+	ctx context.Context,
+	order *domain.Order,
+	allowedStatuses []string,
+	updates map[string]interface{},
+	activityType string,
+	fromStatus string,
+	toStatus string,
+	reasonCode string,
+	reasonDetail string,
+	source string,
+	txHash string,
+	blockNumber int64,
+	logIndex int64,
+	dedupeKey string,
+	payload map[string]string,
+) (bool, error) {
+	if w == nil || w.db == nil {
+		return false, errors.New("worker database unavailable")
+	}
+
+	updated := false
+	var refreshedOrder *domain.Order
+	err := w.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		txOrderRepo := repo.NewOrderRepository(tx)
+		result, updateErr := txOrderRepo.UpdateFieldsIfStatusIn(
+			ctx,
+			order.ChainID,
+			order.SettlementAddress,
+			order.OrderHash,
+			allowedStatuses,
+			updates,
+		)
+		if updateErr != nil {
+			return updateErr
+		}
+		if !result {
+			return nil
+		}
+
+		currentOrder, refreshedErr := txOrderRepo.GetByOrderHash(ctx, order.ChainID, order.SettlementAddress, order.OrderHash)
+		if refreshedErr != nil {
+			return refreshedErr
+		}
+		refreshedOrder = currentOrder
+
+		if err := app.RecordOrderActivity(ctx, tx, app.RecordOrderActivityParams{
+			Order:        refreshedOrder,
+			ActivityType: activityType,
+			FromStatus:   fromStatus,
+			ToStatus:     toStatus,
+			ReasonCode:   reasonCode,
+			ReasonDetail: reasonDetail,
+			Source:       source,
+			TxHash:       txHash,
+			BlockNumber:  blockNumber,
+			LogIndex:     logIndex,
+			DedupeKey:    dedupeKey,
+			Payload:      payload,
+			OccurredAt:   time.Now().UTC(),
+		}); err != nil {
+			return err
+		}
+
+		updated = true
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	if updated {
+		*order = *refreshedOrder
+		return true, nil
+	}
+
+	currentOrder, currentErr := w.orderRepo.GetByOrderHash(ctx, order.ChainID, order.SettlementAddress, order.OrderHash)
+	if currentErr != nil {
+		return false, currentErr
+	}
+	if containsOrderStatus(allowedStatuses, currentOrder.Status) {
+		return false, fmt.Errorf("conditional order update skipped unexpectedly for order %s in status %s", currentOrder.OrderHash, currentOrder.Status)
+	}
+
+	return false, nil
+}
+
+func (w *Worker) updateClaimedOrderAndRecordActivity(
+	ctx context.Context,
+	order *domain.Order,
+	at time.Time,
+	dedupeKey string,
+) (bool, error) {
+	if w == nil || w.db == nil {
+		return false, errors.New("worker database unavailable")
+	}
+
+	claimed := false
+	var refreshedOrder *domain.Order
+	err := w.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		txOrderRepo := repo.NewOrderRepository(tx)
+		result, claimErr := txOrderRepo.ClaimOpenOrderForExecution(
+			ctx,
+			order.ChainID,
+			order.SettlementAddress,
+			order.OrderHash,
+			at,
+		)
+		if claimErr != nil {
+			return claimErr
+		}
+		if !result {
+			return nil
+		}
+
+		currentOrder, refreshedErr := txOrderRepo.GetByOrderHash(ctx, order.ChainID, order.SettlementAddress, order.OrderHash)
+		if refreshedErr != nil {
+			return refreshedErr
+		}
+		refreshedOrder = currentOrder
+
+		if err := app.RecordOrderActivity(ctx, tx, app.RecordOrderActivityParams{
+			Order:        refreshedOrder,
+			ActivityType: domain.OrderActivityTypeExecutionClaimed,
+			FromStatus:   "open",
+			ToStatus:     "submitting_execute",
+			ReasonCode:   "claimed_for_submission",
+			ReasonDetail: "",
+			Source:       domain.OrderActivitySourceExecutor,
+			DedupeKey:    dedupeKey,
+			Payload:      map[string]string{},
+			OccurredAt:   at,
+		}); err != nil {
+			return err
+		}
+
+		claimed = true
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	if claimed {
+		*order = *refreshedOrder
+		return true, nil
+	}
+
+	currentOrder, currentErr := w.orderRepo.GetByOrderHash(ctx, order.ChainID, order.SettlementAddress, order.OrderHash)
+	if currentErr != nil {
+		return false, currentErr
+	}
+	if strings.TrimSpace(currentOrder.Status) == "open" {
+		return false, fmt.Errorf("conditional claim skipped unexpectedly for order %s in status %s", currentOrder.OrderHash, currentOrder.Status)
+	}
+
+	return false, nil
+}
+
 func containsOrderStatus(statuses []string, target string) bool {
 	normalizedTarget := strings.TrimSpace(target)
 	for _, status := range statuses {

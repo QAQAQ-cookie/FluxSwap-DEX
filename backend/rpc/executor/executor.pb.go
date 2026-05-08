@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v3.19.4
-// source: rpc/proto/executor.proto
+// source: proto/executor.proto
 
 package executor
 
@@ -54,11 +54,11 @@ func (x RouteQuoteType) String() string {
 }
 
 func (RouteQuoteType) Descriptor() protoreflect.EnumDescriptor {
-	return file_rpc_proto_executor_proto_enumTypes[0].Descriptor()
+	return file_proto_executor_proto_enumTypes[0].Descriptor()
 }
 
 func (RouteQuoteType) Type() protoreflect.EnumType {
-	return &file_rpc_proto_executor_proto_enumTypes[0]
+	return &file_proto_executor_proto_enumTypes[0]
 }
 
 func (x RouteQuoteType) Number() protoreflect.EnumNumber {
@@ -67,7 +67,7 @@ func (x RouteQuoteType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use RouteQuoteType.Descriptor instead.
 func (RouteQuoteType) EnumDescriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{0}
+	return file_proto_executor_proto_rawDescGZIP(), []int{0}
 }
 
 type ResponseNotice struct {
@@ -83,7 +83,7 @@ type ResponseNotice struct {
 
 func (x *ResponseNotice) Reset() {
 	*x = ResponseNotice{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[0]
+	mi := &file_proto_executor_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -95,7 +95,7 @@ func (x *ResponseNotice) String() string {
 func (*ResponseNotice) ProtoMessage() {}
 
 func (x *ResponseNotice) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[0]
+	mi := &file_proto_executor_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -108,7 +108,7 @@ func (x *ResponseNotice) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResponseNotice.ProtoReflect.Descriptor instead.
 func (*ResponseNotice) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{0}
+	return file_proto_executor_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *ResponseNotice) GetSuccess() bool {
@@ -169,7 +169,7 @@ type CreateOrderRequest struct {
 
 func (x *CreateOrderRequest) Reset() {
 	*x = CreateOrderRequest{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[1]
+	mi := &file_proto_executor_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -181,7 +181,7 @@ func (x *CreateOrderRequest) String() string {
 func (*CreateOrderRequest) ProtoMessage() {}
 
 func (x *CreateOrderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[1]
+	mi := &file_proto_executor_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -194,7 +194,7 @@ func (x *CreateOrderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateOrderRequest.ProtoReflect.Descriptor instead.
 func (*CreateOrderRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{1}
+	return file_proto_executor_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *CreateOrderRequest) GetChainId() int64 {
@@ -312,7 +312,7 @@ type CreateOrderResponse struct {
 
 func (x *CreateOrderResponse) Reset() {
 	*x = CreateOrderResponse{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[2]
+	mi := &file_proto_executor_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -324,7 +324,7 @@ func (x *CreateOrderResponse) String() string {
 func (*CreateOrderResponse) ProtoMessage() {}
 
 func (x *CreateOrderResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[2]
+	mi := &file_proto_executor_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -337,7 +337,7 @@ func (x *CreateOrderResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateOrderResponse.ProtoReflect.Descriptor instead.
 func (*CreateOrderResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{2}
+	return file_proto_executor_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *CreateOrderResponse) GetOrder() *GetOrderResponse {
@@ -367,7 +367,7 @@ type CancelOrderItem struct {
 
 func (x *CancelOrderItem) Reset() {
 	*x = CancelOrderItem{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[3]
+	mi := &file_proto_executor_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -379,7 +379,7 @@ func (x *CancelOrderItem) String() string {
 func (*CancelOrderItem) ProtoMessage() {}
 
 func (x *CancelOrderItem) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[3]
+	mi := &file_proto_executor_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -392,7 +392,7 @@ func (x *CancelOrderItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelOrderItem.ProtoReflect.Descriptor instead.
 func (*CancelOrderItem) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{3}
+	return file_proto_executor_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *CancelOrderItem) GetChainId() int64 {
@@ -440,7 +440,7 @@ type CancelOrdersRequest struct {
 
 func (x *CancelOrdersRequest) Reset() {
 	*x = CancelOrdersRequest{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[4]
+	mi := &file_proto_executor_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -452,7 +452,7 @@ func (x *CancelOrdersRequest) String() string {
 func (*CancelOrdersRequest) ProtoMessage() {}
 
 func (x *CancelOrdersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[4]
+	mi := &file_proto_executor_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -465,7 +465,7 @@ func (x *CancelOrdersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelOrdersRequest.ProtoReflect.Descriptor instead.
 func (*CancelOrdersRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{4}
+	return file_proto_executor_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *CancelOrdersRequest) GetOrders() []*CancelOrderItem {
@@ -500,7 +500,7 @@ type CancelOrdersResult struct {
 
 func (x *CancelOrdersResult) Reset() {
 	*x = CancelOrdersResult{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[5]
+	mi := &file_proto_executor_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -512,7 +512,7 @@ func (x *CancelOrdersResult) String() string {
 func (*CancelOrdersResult) ProtoMessage() {}
 
 func (x *CancelOrdersResult) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[5]
+	mi := &file_proto_executor_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -525,7 +525,7 @@ func (x *CancelOrdersResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelOrdersResult.ProtoReflect.Descriptor instead.
 func (*CancelOrdersResult) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{5}
+	return file_proto_executor_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *CancelOrdersResult) GetChainId() int64 {
@@ -610,7 +610,7 @@ type CancelOrdersResponse struct {
 
 func (x *CancelOrdersResponse) Reset() {
 	*x = CancelOrdersResponse{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[6]
+	mi := &file_proto_executor_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -622,7 +622,7 @@ func (x *CancelOrdersResponse) String() string {
 func (*CancelOrdersResponse) ProtoMessage() {}
 
 func (x *CancelOrdersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[6]
+	mi := &file_proto_executor_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -635,7 +635,7 @@ func (x *CancelOrdersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelOrdersResponse.ProtoReflect.Descriptor instead.
 func (*CancelOrdersResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{6}
+	return file_proto_executor_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CancelOrdersResponse) GetTotal() uint32 {
@@ -677,7 +677,7 @@ type GetOrderRequest struct {
 
 func (x *GetOrderRequest) Reset() {
 	*x = GetOrderRequest{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[7]
+	mi := &file_proto_executor_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -689,7 +689,7 @@ func (x *GetOrderRequest) String() string {
 func (*GetOrderRequest) ProtoMessage() {}
 
 func (x *GetOrderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[7]
+	mi := &file_proto_executor_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -702,7 +702,7 @@ func (x *GetOrderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetOrderRequest.ProtoReflect.Descriptor instead.
 func (*GetOrderRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{7}
+	return file_proto_executor_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GetOrderRequest) GetChainId() int64 {
@@ -728,7 +728,6 @@ func (x *GetOrderRequest) GetOrderHash() string {
 
 type GetOrderResponse struct {
 	state                      protoimpl.MessageState `protogen:"open.v1"`
-	Id                         uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	ChainId                    int64                  `protobuf:"varint,2,opt,name=chainId,proto3" json:"chainId,omitempty"`
 	SettlementAddress          string                 `protobuf:"bytes,3,opt,name=settlementAddress,proto3" json:"settlementAddress,omitempty"`
 	OrderHash                  string                 `protobuf:"bytes,4,opt,name=orderHash,proto3" json:"orderHash,omitempty"`
@@ -768,7 +767,7 @@ type GetOrderResponse struct {
 
 func (x *GetOrderResponse) Reset() {
 	*x = GetOrderResponse{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[8]
+	mi := &file_proto_executor_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -780,7 +779,7 @@ func (x *GetOrderResponse) String() string {
 func (*GetOrderResponse) ProtoMessage() {}
 
 func (x *GetOrderResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[8]
+	mi := &file_proto_executor_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -793,14 +792,7 @@ func (x *GetOrderResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetOrderResponse.ProtoReflect.Descriptor instead.
 func (*GetOrderResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *GetOrderResponse) GetId() uint64 {
-	if x != nil {
-		return x.Id
-	}
-	return 0
+	return file_proto_executor_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetOrderResponse) GetChainId() int64 {
@@ -1034,6 +1026,266 @@ func (x *GetOrderResponse) GetSettledExecutorReward() string {
 	return ""
 }
 
+type GetOrderActivitiesRequest struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	ChainId           int64                  `protobuf:"varint,1,opt,name=chainId,proto3" json:"chainId,omitempty"`
+	SettlementAddress string                 `protobuf:"bytes,2,opt,name=settlementAddress,proto3" json:"settlementAddress,omitempty"`
+	OrderHash         string                 `protobuf:"bytes,3,opt,name=orderHash,proto3" json:"orderHash,omitempty"`
+	Limit             uint32                 `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *GetOrderActivitiesRequest) Reset() {
+	*x = GetOrderActivitiesRequest{}
+	mi := &file_proto_executor_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetOrderActivitiesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetOrderActivitiesRequest) ProtoMessage() {}
+
+func (x *GetOrderActivitiesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_executor_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetOrderActivitiesRequest.ProtoReflect.Descriptor instead.
+func (*GetOrderActivitiesRequest) Descriptor() ([]byte, []int) {
+	return file_proto_executor_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *GetOrderActivitiesRequest) GetChainId() int64 {
+	if x != nil {
+		return x.ChainId
+	}
+	return 0
+}
+
+func (x *GetOrderActivitiesRequest) GetSettlementAddress() string {
+	if x != nil {
+		return x.SettlementAddress
+	}
+	return ""
+}
+
+func (x *GetOrderActivitiesRequest) GetOrderHash() string {
+	if x != nil {
+		return x.OrderHash
+	}
+	return ""
+}
+
+func (x *GetOrderActivitiesRequest) GetLimit() uint32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type OrderActivityView struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActivityType  string                 `protobuf:"bytes,1,opt,name=activityType,proto3" json:"activityType,omitempty"`
+	FromStatus    string                 `protobuf:"bytes,2,opt,name=fromStatus,proto3" json:"fromStatus,omitempty"`
+	ToStatus      string                 `protobuf:"bytes,3,opt,name=toStatus,proto3" json:"toStatus,omitempty"`
+	ReasonCode    string                 `protobuf:"bytes,4,opt,name=reasonCode,proto3" json:"reasonCode,omitempty"`
+	ReasonDetail  string                 `protobuf:"bytes,5,opt,name=reasonDetail,proto3" json:"reasonDetail,omitempty"`
+	Source        string                 `protobuf:"bytes,6,opt,name=source,proto3" json:"source,omitempty"`
+	ActorAddress  string                 `protobuf:"bytes,7,opt,name=actorAddress,proto3" json:"actorAddress,omitempty"`
+	TxHash        string                 `protobuf:"bytes,8,opt,name=txHash,proto3" json:"txHash,omitempty"`
+	BlockNumber   int64                  `protobuf:"varint,9,opt,name=blockNumber,proto3" json:"blockNumber,omitempty"`
+	LogIndex      int64                  `protobuf:"varint,10,opt,name=logIndex,proto3" json:"logIndex,omitempty"`
+	PayloadJson   string                 `protobuf:"bytes,11,opt,name=payloadJson,proto3" json:"payloadJson,omitempty"`
+	OccurredAt    string                 `protobuf:"bytes,12,opt,name=occurredAt,proto3" json:"occurredAt,omitempty"`
+	CreatedAt     string                 `protobuf:"bytes,13,opt,name=createdAt,proto3" json:"createdAt,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OrderActivityView) Reset() {
+	*x = OrderActivityView{}
+	mi := &file_proto_executor_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OrderActivityView) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OrderActivityView) ProtoMessage() {}
+
+func (x *OrderActivityView) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_executor_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OrderActivityView.ProtoReflect.Descriptor instead.
+func (*OrderActivityView) Descriptor() ([]byte, []int) {
+	return file_proto_executor_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *OrderActivityView) GetActivityType() string {
+	if x != nil {
+		return x.ActivityType
+	}
+	return ""
+}
+
+func (x *OrderActivityView) GetFromStatus() string {
+	if x != nil {
+		return x.FromStatus
+	}
+	return ""
+}
+
+func (x *OrderActivityView) GetToStatus() string {
+	if x != nil {
+		return x.ToStatus
+	}
+	return ""
+}
+
+func (x *OrderActivityView) GetReasonCode() string {
+	if x != nil {
+		return x.ReasonCode
+	}
+	return ""
+}
+
+func (x *OrderActivityView) GetReasonDetail() string {
+	if x != nil {
+		return x.ReasonDetail
+	}
+	return ""
+}
+
+func (x *OrderActivityView) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *OrderActivityView) GetActorAddress() string {
+	if x != nil {
+		return x.ActorAddress
+	}
+	return ""
+}
+
+func (x *OrderActivityView) GetTxHash() string {
+	if x != nil {
+		return x.TxHash
+	}
+	return ""
+}
+
+func (x *OrderActivityView) GetBlockNumber() int64 {
+	if x != nil {
+		return x.BlockNumber
+	}
+	return 0
+}
+
+func (x *OrderActivityView) GetLogIndex() int64 {
+	if x != nil {
+		return x.LogIndex
+	}
+	return 0
+}
+
+func (x *OrderActivityView) GetPayloadJson() string {
+	if x != nil {
+		return x.PayloadJson
+	}
+	return ""
+}
+
+func (x *OrderActivityView) GetOccurredAt() string {
+	if x != nil {
+		return x.OccurredAt
+	}
+	return ""
+}
+
+func (x *OrderActivityView) GetCreatedAt() string {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return ""
+}
+
+type GetOrderActivitiesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Activities    []*OrderActivityView   `protobuf:"bytes,1,rep,name=activities,proto3" json:"activities,omitempty"`
+	Notice        *ResponseNotice        `protobuf:"bytes,2,opt,name=notice,proto3" json:"notice,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetOrderActivitiesResponse) Reset() {
+	*x = GetOrderActivitiesResponse{}
+	mi := &file_proto_executor_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetOrderActivitiesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetOrderActivitiesResponse) ProtoMessage() {}
+
+func (x *GetOrderActivitiesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_executor_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetOrderActivitiesResponse.ProtoReflect.Descriptor instead.
+func (*GetOrderActivitiesResponse) Descriptor() ([]byte, []int) {
+	return file_proto_executor_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *GetOrderActivitiesResponse) GetActivities() []*OrderActivityView {
+	if x != nil {
+		return x.Activities
+	}
+	return nil
+}
+
+func (x *GetOrderActivitiesResponse) GetNotice() *ResponseNotice {
+	if x != nil {
+		return x.Notice
+	}
+	return nil
+}
+
 type GetBestRouteRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ChainId       int64                  `protobuf:"varint,1,opt,name=chainId,proto3" json:"chainId,omitempty"`
@@ -1048,7 +1300,7 @@ type GetBestRouteRequest struct {
 
 func (x *GetBestRouteRequest) Reset() {
 	*x = GetBestRouteRequest{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[9]
+	mi := &file_proto_executor_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1060,7 +1312,7 @@ func (x *GetBestRouteRequest) String() string {
 func (*GetBestRouteRequest) ProtoMessage() {}
 
 func (x *GetBestRouteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[9]
+	mi := &file_proto_executor_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1073,7 +1325,7 @@ func (x *GetBestRouteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBestRouteRequest.ProtoReflect.Descriptor instead.
 func (*GetBestRouteRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{9}
+	return file_proto_executor_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *GetBestRouteRequest) GetChainId() int64 {
@@ -1135,7 +1387,7 @@ type RoutePath struct {
 
 func (x *RoutePath) Reset() {
 	*x = RoutePath{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[10]
+	mi := &file_proto_executor_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1147,7 +1399,7 @@ func (x *RoutePath) String() string {
 func (*RoutePath) ProtoMessage() {}
 
 func (x *RoutePath) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[10]
+	mi := &file_proto_executor_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1160,7 +1412,7 @@ func (x *RoutePath) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoutePath.ProtoReflect.Descriptor instead.
 func (*RoutePath) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{10}
+	return file_proto_executor_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *RoutePath) GetTokens() []string {
@@ -1237,7 +1489,7 @@ type RouteQuote struct {
 
 func (x *RouteQuote) Reset() {
 	*x = RouteQuote{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[11]
+	mi := &file_proto_executor_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1249,7 +1501,7 @@ func (x *RouteQuote) String() string {
 func (*RouteQuote) ProtoMessage() {}
 
 func (x *RouteQuote) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[11]
+	mi := &file_proto_executor_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1262,7 +1514,7 @@ func (x *RouteQuote) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RouteQuote.ProtoReflect.Descriptor instead.
 func (*RouteQuote) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{11}
+	return file_proto_executor_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *RouteQuote) GetQuoteType() RouteQuoteType {
@@ -1307,7 +1559,7 @@ type RouteView struct {
 
 func (x *RouteView) Reset() {
 	*x = RouteView{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[12]
+	mi := &file_proto_executor_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1319,7 +1571,7 @@ func (x *RouteView) String() string {
 func (*RouteView) ProtoMessage() {}
 
 func (x *RouteView) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[12]
+	mi := &file_proto_executor_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1332,7 +1584,7 @@ func (x *RouteView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RouteView.ProtoReflect.Descriptor instead.
 func (*RouteView) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{12}
+	return file_proto_executor_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *RouteView) GetPathTokens() []string {
@@ -1437,7 +1689,7 @@ type RouteExecution struct {
 
 func (x *RouteExecution) Reset() {
 	*x = RouteExecution{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[13]
+	mi := &file_proto_executor_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1449,7 +1701,7 @@ func (x *RouteExecution) String() string {
 func (*RouteExecution) ProtoMessage() {}
 
 func (x *RouteExecution) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[13]
+	mi := &file_proto_executor_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1462,7 +1714,7 @@ func (x *RouteExecution) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RouteExecution.ProtoReflect.Descriptor instead.
 func (*RouteExecution) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{13}
+	return file_proto_executor_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *RouteExecution) GetRouterPath() []string {
@@ -1501,7 +1753,7 @@ type GetBestRouteResponse struct {
 
 func (x *GetBestRouteResponse) Reset() {
 	*x = GetBestRouteResponse{}
-	mi := &file_rpc_proto_executor_proto_msgTypes[14]
+	mi := &file_proto_executor_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1513,7 +1765,7 @@ func (x *GetBestRouteResponse) String() string {
 func (*GetBestRouteResponse) ProtoMessage() {}
 
 func (x *GetBestRouteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_proto_executor_proto_msgTypes[14]
+	mi := &file_proto_executor_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1526,7 +1778,7 @@ func (x *GetBestRouteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBestRouteResponse.ProtoReflect.Descriptor instead.
 func (*GetBestRouteResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_proto_executor_proto_rawDescGZIP(), []int{14}
+	return file_proto_executor_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *GetBestRouteResponse) GetNotice() *ResponseNotice {
@@ -1578,11 +1830,11 @@ func (x *GetBestRouteResponse) GetQuote() *RouteQuote {
 	return nil
 }
 
-var File_rpc_proto_executor_proto protoreflect.FileDescriptor
+var File_proto_executor_proto protoreflect.FileDescriptor
 
-const file_rpc_proto_executor_proto_rawDesc = "" +
+const file_proto_executor_proto_rawDesc = "" +
 	"\n" +
-	"\x18rpc/proto/executor.proto\x12\bexecutor\"\x82\x01\n" +
+	"\x14proto/executor.proto\x12\bexecutor\"\x82\x01\n" +
 	"\x0eResponseNotice\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x12\n" +
 	"\x04code\x18\x02 \x01(\tR\x04code\x12\x18\n" +
@@ -1640,10 +1892,9 @@ const file_rpc_proto_executor_proto_rawDesc = "" +
 	"\x0fGetOrderRequest\x12\x18\n" +
 	"\achainId\x18\x01 \x01(\x03R\achainId\x12,\n" +
 	"\x11settlementAddress\x18\x02 \x01(\tR\x11settlementAddress\x12\x1c\n" +
-	"\torderHash\x18\x03 \x01(\tR\torderHash\"\x8a\n" +
+	"\torderHash\x18\x03 \x01(\tR\torderHash\"\x80\n" +
 	"\n" +
-	"\x10GetOrderResponse\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x04R\x02id\x12\x18\n" +
+	"\x10GetOrderResponse\x12\x18\n" +
 	"\achainId\x18\x02 \x01(\x03R\achainId\x12,\n" +
 	"\x11settlementAddress\x18\x03 \x01(\tR\x11settlementAddress\x12\x1c\n" +
 	"\torderHash\x18\x04 \x01(\tR\torderHash\x12\x14\n" +
@@ -1679,7 +1930,38 @@ const file_rpc_proto_executor_proto_rawDesc = "" +
 	"\x14lastExecutionCheckAt\x18\x1f \x01(\tR\x14lastExecutionCheckAt\x12(\n" +
 	"\x0flastBlockReason\x18  \x01(\tR\x0flastBlockReason\x12*\n" +
 	"\x10settledAmountOut\x18! \x01(\tR\x10settledAmountOut\x124\n" +
-	"\x15settledExecutorReward\x18\" \x01(\tR\x15settledExecutorReward\"\xcf\x01\n" +
+	"\x15settledExecutorReward\x18\" \x01(\tR\x15settledExecutorRewardJ\x04\b\x01\x10\x02\"\x97\x01\n" +
+	"\x19GetOrderActivitiesRequest\x12\x18\n" +
+	"\achainId\x18\x01 \x01(\x03R\achainId\x12,\n" +
+	"\x11settlementAddress\x18\x02 \x01(\tR\x11settlementAddress\x12\x1c\n" +
+	"\torderHash\x18\x03 \x01(\tR\torderHash\x12\x14\n" +
+	"\x05limit\x18\x04 \x01(\rR\x05limit\"\xa9\x03\n" +
+	"\x11OrderActivityView\x12\"\n" +
+	"\factivityType\x18\x01 \x01(\tR\factivityType\x12\x1e\n" +
+	"\n" +
+	"fromStatus\x18\x02 \x01(\tR\n" +
+	"fromStatus\x12\x1a\n" +
+	"\btoStatus\x18\x03 \x01(\tR\btoStatus\x12\x1e\n" +
+	"\n" +
+	"reasonCode\x18\x04 \x01(\tR\n" +
+	"reasonCode\x12\"\n" +
+	"\freasonDetail\x18\x05 \x01(\tR\freasonDetail\x12\x16\n" +
+	"\x06source\x18\x06 \x01(\tR\x06source\x12\"\n" +
+	"\factorAddress\x18\a \x01(\tR\factorAddress\x12\x16\n" +
+	"\x06txHash\x18\b \x01(\tR\x06txHash\x12 \n" +
+	"\vblockNumber\x18\t \x01(\x03R\vblockNumber\x12\x1a\n" +
+	"\blogIndex\x18\n" +
+	" \x01(\x03R\blogIndex\x12 \n" +
+	"\vpayloadJson\x18\v \x01(\tR\vpayloadJson\x12\x1e\n" +
+	"\n" +
+	"occurredAt\x18\f \x01(\tR\n" +
+	"occurredAt\x12\x1c\n" +
+	"\tcreatedAt\x18\r \x01(\tR\tcreatedAt\"\x8b\x01\n" +
+	"\x1aGetOrderActivitiesResponse\x12;\n" +
+	"\n" +
+	"activities\x18\x01 \x03(\v2\x1b.executor.OrderActivityViewR\n" +
+	"activities\x120\n" +
+	"\x06notice\x18\x02 \x01(\v2\x18.executor.ResponseNoticeR\x06notice\"\xcf\x01\n" +
 	"\x13GetBestRouteRequest\x12\x18\n" +
 	"\achainId\x18\x01 \x01(\x03R\achainId\x12\x18\n" +
 	"\atokenIn\x18\x02 \x01(\tR\atokenIn\x12\x1a\n" +
@@ -1740,47 +2022,51 @@ const file_rpc_proto_executor_proto_rawDesc = "" +
 	"\x0eRouteQuoteType\x12 \n" +
 	"\x1cROUTE_QUOTE_TYPE_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cROUTE_QUOTE_TYPE_EXACT_INPUT\x10\x01\x12!\n" +
-	"\x1dROUTE_QUOTE_TYPE_EXACT_OUTPUT\x10\x022\xb7\x02\n" +
+	"\x1dROUTE_QUOTE_TYPE_EXACT_OUTPUT\x10\x022\x98\x03\n" +
 	"\bExecutor\x12J\n" +
 	"\vCreateOrder\x12\x1c.executor.CreateOrderRequest\x1a\x1d.executor.CreateOrderResponse\x12M\n" +
 	"\fCancelOrders\x12\x1d.executor.CancelOrdersRequest\x1a\x1e.executor.CancelOrdersResponse\x12A\n" +
-	"\bGetOrder\x12\x19.executor.GetOrderRequest\x1a\x1a.executor.GetOrderResponse\x12M\n" +
+	"\bGetOrder\x12\x19.executor.GetOrderRequest\x1a\x1a.executor.GetOrderResponse\x12_\n" +
+	"\x12GetOrderActivities\x12#.executor.GetOrderActivitiesRequest\x1a$.executor.GetOrderActivitiesResponse\x12M\n" +
 	"\fGetBestRoute\x12\x1d.executor.GetBestRouteRequest\x1a\x1e.executor.GetBestRouteResponseB\fZ\n" +
 	"./executorb\x06proto3"
 
 var (
-	file_rpc_proto_executor_proto_rawDescOnce sync.Once
-	file_rpc_proto_executor_proto_rawDescData []byte
+	file_proto_executor_proto_rawDescOnce sync.Once
+	file_proto_executor_proto_rawDescData []byte
 )
 
-func file_rpc_proto_executor_proto_rawDescGZIP() []byte {
-	file_rpc_proto_executor_proto_rawDescOnce.Do(func() {
-		file_rpc_proto_executor_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_rpc_proto_executor_proto_rawDesc), len(file_rpc_proto_executor_proto_rawDesc)))
+func file_proto_executor_proto_rawDescGZIP() []byte {
+	file_proto_executor_proto_rawDescOnce.Do(func() {
+		file_proto_executor_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_executor_proto_rawDesc), len(file_proto_executor_proto_rawDesc)))
 	})
-	return file_rpc_proto_executor_proto_rawDescData
+	return file_proto_executor_proto_rawDescData
 }
 
-var file_rpc_proto_executor_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_rpc_proto_executor_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
-var file_rpc_proto_executor_proto_goTypes = []any{
-	(RouteQuoteType)(0),          // 0: executor.RouteQuoteType
-	(*ResponseNotice)(nil),       // 1: executor.ResponseNotice
-	(*CreateOrderRequest)(nil),   // 2: executor.CreateOrderRequest
-	(*CreateOrderResponse)(nil),  // 3: executor.CreateOrderResponse
-	(*CancelOrderItem)(nil),      // 4: executor.CancelOrderItem
-	(*CancelOrdersRequest)(nil),  // 5: executor.CancelOrdersRequest
-	(*CancelOrdersResult)(nil),   // 6: executor.CancelOrdersResult
-	(*CancelOrdersResponse)(nil), // 7: executor.CancelOrdersResponse
-	(*GetOrderRequest)(nil),      // 8: executor.GetOrderRequest
-	(*GetOrderResponse)(nil),     // 9: executor.GetOrderResponse
-	(*GetBestRouteRequest)(nil),  // 10: executor.GetBestRouteRequest
-	(*RoutePath)(nil),            // 11: executor.RoutePath
-	(*RouteQuote)(nil),           // 12: executor.RouteQuote
-	(*RouteView)(nil),            // 13: executor.RouteView
-	(*RouteExecution)(nil),       // 14: executor.RouteExecution
-	(*GetBestRouteResponse)(nil), // 15: executor.GetBestRouteResponse
+var file_proto_executor_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_proto_executor_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_proto_executor_proto_goTypes = []any{
+	(RouteQuoteType)(0),                // 0: executor.RouteQuoteType
+	(*ResponseNotice)(nil),             // 1: executor.ResponseNotice
+	(*CreateOrderRequest)(nil),         // 2: executor.CreateOrderRequest
+	(*CreateOrderResponse)(nil),        // 3: executor.CreateOrderResponse
+	(*CancelOrderItem)(nil),            // 4: executor.CancelOrderItem
+	(*CancelOrdersRequest)(nil),        // 5: executor.CancelOrdersRequest
+	(*CancelOrdersResult)(nil),         // 6: executor.CancelOrdersResult
+	(*CancelOrdersResponse)(nil),       // 7: executor.CancelOrdersResponse
+	(*GetOrderRequest)(nil),            // 8: executor.GetOrderRequest
+	(*GetOrderResponse)(nil),           // 9: executor.GetOrderResponse
+	(*GetOrderActivitiesRequest)(nil),  // 10: executor.GetOrderActivitiesRequest
+	(*OrderActivityView)(nil),          // 11: executor.OrderActivityView
+	(*GetOrderActivitiesResponse)(nil), // 12: executor.GetOrderActivitiesResponse
+	(*GetBestRouteRequest)(nil),        // 13: executor.GetBestRouteRequest
+	(*RoutePath)(nil),                  // 14: executor.RoutePath
+	(*RouteQuote)(nil),                 // 15: executor.RouteQuote
+	(*RouteView)(nil),                  // 16: executor.RouteView
+	(*RouteExecution)(nil),             // 17: executor.RouteExecution
+	(*GetBestRouteResponse)(nil),       // 18: executor.GetBestRouteResponse
 }
-var file_rpc_proto_executor_proto_depIdxs = []int32{
+var file_proto_executor_proto_depIdxs = []int32{
 	9,  // 0: executor.CreateOrderResponse.order:type_name -> executor.GetOrderResponse
 	1,  // 1: executor.CreateOrderResponse.notice:type_name -> executor.ResponseNotice
 	4,  // 2: executor.CancelOrdersRequest.orders:type_name -> executor.CancelOrderItem
@@ -1788,49 +2074,53 @@ var file_rpc_proto_executor_proto_depIdxs = []int32{
 	6,  // 4: executor.CancelOrdersResponse.results:type_name -> executor.CancelOrdersResult
 	1,  // 5: executor.CancelOrdersResponse.notice:type_name -> executor.ResponseNotice
 	1,  // 6: executor.GetOrderResponse.notice:type_name -> executor.ResponseNotice
-	0,  // 7: executor.GetBestRouteRequest.quoteType:type_name -> executor.RouteQuoteType
-	0,  // 8: executor.RouteQuote.quoteType:type_name -> executor.RouteQuoteType
-	1,  // 9: executor.GetBestRouteResponse.notice:type_name -> executor.ResponseNotice
-	13, // 10: executor.GetBestRouteResponse.selectedRoute:type_name -> executor.RouteView
-	13, // 11: executor.GetBestRouteResponse.alternativeRoutes:type_name -> executor.RouteView
-	14, // 12: executor.GetBestRouteResponse.execution:type_name -> executor.RouteExecution
-	12, // 13: executor.GetBestRouteResponse.quote:type_name -> executor.RouteQuote
-	2,  // 14: executor.Executor.CreateOrder:input_type -> executor.CreateOrderRequest
-	5,  // 15: executor.Executor.CancelOrders:input_type -> executor.CancelOrdersRequest
-	8,  // 16: executor.Executor.GetOrder:input_type -> executor.GetOrderRequest
-	10, // 17: executor.Executor.GetBestRoute:input_type -> executor.GetBestRouteRequest
-	3,  // 18: executor.Executor.CreateOrder:output_type -> executor.CreateOrderResponse
-	7,  // 19: executor.Executor.CancelOrders:output_type -> executor.CancelOrdersResponse
-	9,  // 20: executor.Executor.GetOrder:output_type -> executor.GetOrderResponse
-	15, // 21: executor.Executor.GetBestRoute:output_type -> executor.GetBestRouteResponse
-	18, // [18:22] is the sub-list for method output_type
-	14, // [14:18] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	11, // 7: executor.GetOrderActivitiesResponse.activities:type_name -> executor.OrderActivityView
+	1,  // 8: executor.GetOrderActivitiesResponse.notice:type_name -> executor.ResponseNotice
+	0,  // 9: executor.GetBestRouteRequest.quoteType:type_name -> executor.RouteQuoteType
+	0,  // 10: executor.RouteQuote.quoteType:type_name -> executor.RouteQuoteType
+	1,  // 11: executor.GetBestRouteResponse.notice:type_name -> executor.ResponseNotice
+	16, // 12: executor.GetBestRouteResponse.selectedRoute:type_name -> executor.RouteView
+	16, // 13: executor.GetBestRouteResponse.alternativeRoutes:type_name -> executor.RouteView
+	17, // 14: executor.GetBestRouteResponse.execution:type_name -> executor.RouteExecution
+	15, // 15: executor.GetBestRouteResponse.quote:type_name -> executor.RouteQuote
+	2,  // 16: executor.Executor.CreateOrder:input_type -> executor.CreateOrderRequest
+	5,  // 17: executor.Executor.CancelOrders:input_type -> executor.CancelOrdersRequest
+	8,  // 18: executor.Executor.GetOrder:input_type -> executor.GetOrderRequest
+	10, // 19: executor.Executor.GetOrderActivities:input_type -> executor.GetOrderActivitiesRequest
+	13, // 20: executor.Executor.GetBestRoute:input_type -> executor.GetBestRouteRequest
+	3,  // 21: executor.Executor.CreateOrder:output_type -> executor.CreateOrderResponse
+	7,  // 22: executor.Executor.CancelOrders:output_type -> executor.CancelOrdersResponse
+	9,  // 23: executor.Executor.GetOrder:output_type -> executor.GetOrderResponse
+	12, // 24: executor.Executor.GetOrderActivities:output_type -> executor.GetOrderActivitiesResponse
+	18, // 25: executor.Executor.GetBestRoute:output_type -> executor.GetBestRouteResponse
+	21, // [21:26] is the sub-list for method output_type
+	16, // [16:21] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
-func init() { file_rpc_proto_executor_proto_init() }
-func file_rpc_proto_executor_proto_init() {
-	if File_rpc_proto_executor_proto != nil {
+func init() { file_proto_executor_proto_init() }
+func file_proto_executor_proto_init() {
+	if File_proto_executor_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_rpc_proto_executor_proto_rawDesc), len(file_rpc_proto_executor_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_executor_proto_rawDesc), len(file_proto_executor_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   15,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_rpc_proto_executor_proto_goTypes,
-		DependencyIndexes: file_rpc_proto_executor_proto_depIdxs,
-		EnumInfos:         file_rpc_proto_executor_proto_enumTypes,
-		MessageInfos:      file_rpc_proto_executor_proto_msgTypes,
+		GoTypes:           file_proto_executor_proto_goTypes,
+		DependencyIndexes: file_proto_executor_proto_depIdxs,
+		EnumInfos:         file_proto_executor_proto_enumTypes,
+		MessageInfos:      file_proto_executor_proto_msgTypes,
 	}.Build()
-	File_rpc_proto_executor_proto = out.File
-	file_rpc_proto_executor_proto_goTypes = nil
-	file_rpc_proto_executor_proto_depIdxs = nil
+	File_proto_executor_proto = out.File
+	file_proto_executor_proto_goTypes = nil
+	file_proto_executor_proto_depIdxs = nil
 }

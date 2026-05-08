@@ -29,6 +29,8 @@
   - PostgreSQL、migrate、rpc、executor、indexer 一体化编排
 - `Dockerfile`
   - 后端镜像构建文件
+- `DB_SCHEMA.md`
+  - 后端数据库表结构、索引和读写路径说明
 
 ## 进程入口
 

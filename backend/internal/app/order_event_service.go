@@ -116,6 +116,48 @@ func (s *OrderEventService) Apply(ctx context.Context, params ApplyOrderEventPar
 			if refreshedErr != nil {
 				return refreshedErr
 			}
+			if shouldBackfillExecutedEvent(refreshedOrder) {
+				restoredStatusReason := buildExecutedStatusReasonForRestoredEvent(refreshedOrder)
+				if err := updateOrderFields(
+					ctx,
+					tx,
+					orderRepo,
+					refreshedOrder,
+					map[string]interface{}{
+						"status":               "executed",
+						"status_reason":        restoredStatusReason,
+						"last_block_reason":    "",
+						"executed_tx_hash":     normalizeLower(params.TxHash),
+						"settled_amount_out":   strings.TrimSpace(params.GrossAmountOut),
+						"settled_executor_fee": strings.TrimSpace(params.ExecutorFeeAmount),
+						"last_checked_block":   params.BlockNumber,
+						"updated_at":           time.Now().UTC(),
+					},
+				); err != nil {
+					return err
+				}
+				if activityErr := RecordOrderActivity(ctx, tx, RecordOrderActivityParams{
+					Order:        refreshedOrder,
+					ActivityType: domain.OrderActivityTypeChainReconciled,
+					FromStatus:   "executed",
+					ToStatus:     "executed",
+					ReasonCode:   refreshedOrder.StatusReason,
+					ReasonDetail: strings.TrimSpace(params.EventName),
+					Source:       domain.OrderActivitySourceIndexer,
+					TxHash:       params.TxHash,
+					BlockNumber:  params.BlockNumber,
+					LogIndex:     params.LogIndex,
+					DedupeKey:    fmt.Sprintf("indexer:executed:%d:%s:%d", params.ChainID, normalizeLower(params.TxHash), params.LogIndex),
+					Payload: map[string]string{
+						"grossAmountOut":     strings.TrimSpace(params.GrossAmountOut),
+						"recipientAmountOut": strings.TrimSpace(params.RecipientAmountOut),
+						"executorFeeAmount":  strings.TrimSpace(params.ExecutorFeeAmount),
+					},
+					OccurredAt: time.Now().UTC(),
+				}); activityErr != nil {
+					return activityErr
+				}
+			}
 			updatedOrder = refreshedOrder
 			return nil
 		}
@@ -128,6 +170,33 @@ func (s *OrderEventService) Apply(ctx context.Context, params ApplyOrderEventPar
 		)
 		if err != nil {
 			return err
+		}
+		if strings.TrimSpace(params.EventName) == "OrderExecuted" {
+			activityType := domain.OrderActivityTypeExecutionConfirmed
+			if strings.TrimSpace(order.Status) != "pending_execute" && strings.TrimSpace(order.Status) != "submitting_execute" {
+				activityType = domain.OrderActivityTypeChainReconciled
+			}
+			if activityErr := RecordOrderActivity(ctx, tx, RecordOrderActivityParams{
+				Order:        updatedOrder,
+				ActivityType: activityType,
+				FromStatus:   order.Status,
+				ToStatus:     updatedOrder.Status,
+				ReasonCode:   updatedOrder.StatusReason,
+				ReasonDetail: strings.TrimSpace(params.EventName),
+				Source:       domain.OrderActivitySourceIndexer,
+				TxHash:       params.TxHash,
+				BlockNumber:  params.BlockNumber,
+				LogIndex:     params.LogIndex,
+				DedupeKey:    fmt.Sprintf("indexer:executed:%d:%s:%d", params.ChainID, normalizeLower(params.TxHash), params.LogIndex),
+				Payload: map[string]string{
+					"grossAmountOut":     strings.TrimSpace(params.GrossAmountOut),
+					"recipientAmountOut": strings.TrimSpace(params.RecipientAmountOut),
+					"executorFeeAmount":  strings.TrimSpace(params.ExecutorFeeAmount),
+				},
+				OccurredAt: time.Now().UTC(),
+			}); activityErr != nil {
+				return activityErr
+			}
 		}
 		return nil
 	})
@@ -169,14 +238,21 @@ func (s *OrderEventService) ApplyNonceInvalidated(ctx context.Context, params Ap
 
 		candidates := make([]domain.Order, 0, len(orders))
 		for i := range orders {
-			if !containsStatus(orderCancelledTransitionStatuses, orders[i].Status) {
+			if !containsStatus(orderCancelledTransitionStatuses, orders[i].Status) &&
+				!shouldBackfillCancelledEvent(&orders[i]) {
 				continue
 			}
 			candidates = append(candidates, orders[i])
 		}
 
 		for i := range candidates {
+			fromStatus := candidates[i].Status
 			cancelledStatusReason := buildCancelledStatusReason(&candidates[i])
+			activityType := domain.OrderActivityTypeCancelConfirmed
+			if shouldBackfillCancelledEvent(&candidates[i]) {
+				cancelledStatusReason = buildCancelledStatusReasonForRestoredEvent(&candidates[i])
+				activityType = domain.OrderActivityTypeChainReconciled
+			}
 			updated, updateErr := orderRepo.UpdateFieldsIfStatusIn(
 				ctx,
 				candidates[i].ChainID,
@@ -205,6 +281,45 @@ func (s *OrderEventService) ApplyNonceInvalidated(ctx context.Context, params Ap
 				if refreshedErr != nil {
 					return refreshedErr
 				}
+				if shouldBackfillCancelledEvent(refreshed) {
+					refreshedStatusReason := buildCancelledStatusReasonForRestoredEvent(refreshed)
+					if err := updateOrderFields(
+						ctx,
+						tx,
+						orderRepo,
+						refreshed,
+						map[string]interface{}{
+							"status":             "cancelled",
+							"status_reason":      refreshedStatusReason,
+							"cancelled_tx_hash":  normalizeLower(params.TxHash),
+							"last_checked_block": params.BlockNumber,
+							"last_block_reason":  "",
+							"updated_at":         time.Now().UTC(),
+						},
+					); err != nil {
+						return err
+					}
+					if activityErr := RecordOrderActivity(ctx, tx, RecordOrderActivityParams{
+						Order:        refreshed,
+						ActivityType: domain.OrderActivityTypeChainReconciled,
+						FromStatus:   fromStatus,
+						ToStatus:     refreshed.Status,
+						ReasonCode:   refreshed.StatusReason,
+						ReasonDetail: "NonceInvalidated",
+						Source:       domain.OrderActivitySourceIndexer,
+						ActorAddress: normalizeLower(params.Maker),
+						TxHash:       params.TxHash,
+						BlockNumber:  params.BlockNumber,
+						LogIndex:     params.LogIndex,
+						DedupeKey:    fmt.Sprintf("indexer:cancelled:%d:%s:%s:%d", params.ChainID, normalizeLower(params.TxHash), refreshed.OrderHash, params.LogIndex),
+						Payload: map[string]string{
+							"nonce": strings.TrimSpace(params.Nonce),
+						},
+						OccurredAt: time.Now().UTC(),
+					}); activityErr != nil {
+						return activityErr
+					}
+				}
 				candidates[i] = *refreshed
 				continue
 			}
@@ -219,6 +334,26 @@ func (s *OrderEventService) ApplyNonceInvalidated(ctx context.Context, params Ap
 				return refreshedErr
 			}
 			candidates[i] = *refreshed
+			if activityErr := RecordOrderActivity(ctx, tx, RecordOrderActivityParams{
+				Order:        &candidates[i],
+				ActivityType: activityType,
+				FromStatus:   fromStatus,
+				ToStatus:     candidates[i].Status,
+				ReasonCode:   candidates[i].StatusReason,
+				ReasonDetail: "NonceInvalidated",
+				Source:       domain.OrderActivitySourceIndexer,
+				ActorAddress: normalizeLower(params.Maker),
+				TxHash:       params.TxHash,
+				BlockNumber:  params.BlockNumber,
+				LogIndex:     params.LogIndex,
+				DedupeKey:    fmt.Sprintf("indexer:cancelled:%d:%s:%s:%d", params.ChainID, normalizeLower(params.TxHash), candidates[i].OrderHash, params.LogIndex),
+				Payload: map[string]string{
+					"nonce": strings.TrimSpace(params.Nonce),
+				},
+				OccurredAt: time.Now().UTC(),
+			}); activityErr != nil {
+				return activityErr
+			}
 		}
 
 		updatedOrders = candidates
@@ -276,11 +411,6 @@ func (s *OrderEventService) Revert(ctx context.Context, params ApplyOrderEventPa
 			}
 
 			if len(remainingEvents) == 0 {
-				if strings.TrimSpace(order.Status) == "executed" &&
-					strings.TrimSpace(order.StatusReason) == "confirmed_by_chain_state" {
-					return nil
-				}
-
 				remainingCancelEvents, cancelErr := orderEventRepo.ListByMakerAndNonce(
 					ctx,
 					params.ChainID,
@@ -295,13 +425,15 @@ func (s *OrderEventService) Revert(ctx context.Context, params ApplyOrderEventPa
 
 				if len(remainingCancelEvents) > 0 {
 					latestCancel := remainingCancelEvents[len(remainingCancelEvents)-1]
-					return updateOrderFields(
+					cancelledStatusReason := buildCancelledStatusReasonForRestoredEvent(order)
+					if err := updateOrderFields(
 						ctx,
+						tx,
 						orderRepo,
 						order,
 						map[string]interface{}{
 							"status":               "cancelled",
-							"status_reason":        "updated_by_nonce_invalidated_event",
+							"status_reason":        cancelledStatusReason,
 							"last_block_reason":    "",
 							"executed_tx_hash":     "",
 							"settled_amount_out":   "0",
@@ -310,14 +442,36 @@ func (s *OrderEventService) Revert(ctx context.Context, params ApplyOrderEventPa
 							"last_checked_block":   latestCancel.BlockNumber,
 							"updated_at":           time.Now().UTC(),
 						},
-					)
+					); err != nil {
+						return err
+					}
+					return RecordOrderActivity(ctx, tx, RecordOrderActivityParams{
+						Order:        order,
+						ActivityType: domain.OrderActivityTypeReorgRestored,
+						FromStatus:   "executed",
+						ToStatus:     "cancelled",
+						ReasonCode:   "revert_order_executed_event",
+						ReasonDetail: "restored_latest_nonce_invalidated_event",
+						Source:       domain.OrderActivitySourceIndexer,
+						TxHash:       latestCancel.TxHash,
+						BlockNumber:  latestCancel.BlockNumber,
+						LogIndex:     latestCancel.LogIndex,
+						DedupeKey:    fmt.Sprintf("reorg:restore:executed_to_cancelled:%d:%s:%s:%s", order.ChainID, normalizeLower(order.SettlementAddress), order.OrderHash, normalizeLower(params.TxHash)),
+						Payload: map[string]string{
+							"revertedTxHash":     normalizeLower(params.TxHash),
+							"restoredTxHash":     latestCancel.TxHash,
+							"restoredStatusReason": cancelledStatusReason,
+						},
+						OccurredAt: time.Now().UTC(),
+					})
 				}
 
 				if strings.TrimSpace(order.Status) == "executed" &&
 					strings.TrimSpace(order.StatusReason) == "updated_by_order_executed_event_after_pending_cancel" &&
 					strings.TrimSpace(order.CancelledTxHash) != "" {
-					return updateOrderFields(
+					if err := updateOrderFields(
 						ctx,
+						tx,
 						orderRepo,
 						order,
 						map[string]interface{}{
@@ -330,13 +484,31 @@ func (s *OrderEventService) Revert(ctx context.Context, params ApplyOrderEventPa
 							"last_checked_block":   0,
 							"updated_at":           time.Now().UTC(),
 						},
-					)
+					); err != nil {
+						return err
+					}
+					return RecordOrderActivity(ctx, tx, RecordOrderActivityParams{
+						Order:        order,
+						ActivityType: domain.OrderActivityTypeReorgRestored,
+						FromStatus:   "executed",
+						ToStatus:     "pending_cancel",
+						ReasonCode:   "revert_order_executed_event",
+						ReasonDetail: "restored_pending_cancel_state",
+						Source:       domain.OrderActivitySourceIndexer,
+						TxHash:       normalizeLower(order.CancelledTxHash),
+						DedupeKey:    fmt.Sprintf("reorg:restore:executed_to_pending_cancel:%d:%s:%s:%s", order.ChainID, normalizeLower(order.SettlementAddress), order.OrderHash, normalizeLower(params.TxHash)),
+						Payload: map[string]string{
+							"revertedTxHash": normalizeLower(params.TxHash),
+						},
+						OccurredAt: time.Now().UTC(),
+					})
 				}
 
 				if strings.TrimSpace(order.Status) == "executed" &&
 					strings.TrimSpace(order.StatusReason) == "updated_by_order_executed_event_after_expired" {
-					return updateOrderFields(
+					if err := updateOrderFields(
 						ctx,
+						tx,
 						orderRepo,
 						order,
 						map[string]interface{}{
@@ -349,17 +521,38 @@ func (s *OrderEventService) Revert(ctx context.Context, params ApplyOrderEventPa
 							"last_checked_block":   0,
 							"updated_at":           time.Now().UTC(),
 						},
-					)
+					); err != nil {
+						return err
+					}
+					return RecordOrderActivity(ctx, tx, RecordOrderActivityParams{
+						Order:        order,
+						ActivityType: domain.OrderActivityTypeReorgRestored,
+						FromStatus:   "executed",
+						ToStatus:     "expired",
+						ReasonCode:   "revert_order_executed_event",
+						ReasonDetail: "restored_expired_state",
+						Source:       domain.OrderActivitySourceIndexer,
+						DedupeKey:    fmt.Sprintf("reorg:restore:executed_to_expired:%d:%s:%s:%s", order.ChainID, normalizeLower(order.SettlementAddress), order.OrderHash, normalizeLower(params.TxHash)),
+						Payload: map[string]string{
+							"revertedTxHash": normalizeLower(params.TxHash),
+						},
+						OccurredAt: time.Now().UTC(),
+					})
 				}
 
-				if order.Status == "executed" && shouldClearExecutedStatusReason(order.StatusReason) {
-					order.Status = "open"
-				}
+				fromStatus := strings.TrimSpace(order.Status)
 				if shouldClearExecutedStatusReason(order.StatusReason) {
+					if order.Status != "open" {
+						order.Status = "open"
+					}
 					order.StatusReason = ""
+					if fromStatus == "cancelled" {
+						order.CancelledTxHash = ""
+					}
 				}
-				return updateOrderFields(
+				if err := updateOrderFields(
 					ctx,
+					tx,
 					orderRepo,
 					order,
 					map[string]interface{}{
@@ -367,22 +560,42 @@ func (s *OrderEventService) Revert(ctx context.Context, params ApplyOrderEventPa
 						"status_reason":        order.StatusReason,
 						"last_block_reason":    "",
 						"executed_tx_hash":     "",
+						"cancelled_tx_hash":    order.CancelledTxHash,
 						"settled_amount_out":   "0",
 						"settled_executor_fee": "0",
 						"last_checked_block":   0,
 						"updated_at":           time.Now().UTC(),
 					},
-				)
+				); err != nil {
+					return err
+				}
+				return RecordOrderActivity(ctx, tx, RecordOrderActivityParams{
+					Order:        order,
+					ActivityType: domain.OrderActivityTypeReorgRestored,
+					FromStatus:   fromStatus,
+					ToStatus:     order.Status,
+					ReasonCode:   "revert_order_executed_event",
+					ReasonDetail: "cleared_derived_execution_state",
+					Source:       domain.OrderActivitySourceIndexer,
+					DedupeKey:    fmt.Sprintf("reorg:restore:executed_to_%s:%d:%s:%s:%s", normalizeLower(order.Status), order.ChainID, normalizeLower(order.SettlementAddress), order.OrderHash, normalizeLower(params.TxHash)),
+					Payload: map[string]string{
+						"revertedTxHash": normalizeLower(params.TxHash),
+					},
+					OccurredAt: time.Now().UTC(),
+				})
 			}
 
 			latest := remainingEvents[len(remainingEvents)-1]
-			return updateOrderFields(
+			restoredStatusReason := buildExecutedStatusReasonForRestoredEvent(order)
+			fromStatus := strings.TrimSpace(order.Status)
+			if err := updateOrderFields(
 				ctx,
+				tx,
 				orderRepo,
 				order,
 				map[string]interface{}{
 					"status":               "executed",
-					"status_reason":        "updated_by_order_executed_event",
+					"status_reason":        restoredStatusReason,
 					"last_block_reason":    "",
 					"executed_tx_hash":     latest.TxHash,
 					"settled_amount_out":   latest.GrossAmountOut,
@@ -390,7 +603,28 @@ func (s *OrderEventService) Revert(ctx context.Context, params ApplyOrderEventPa
 					"last_checked_block":   latest.BlockNumber,
 					"updated_at":           time.Now().UTC(),
 				},
-			)
+			); err != nil {
+				return err
+			}
+			return RecordOrderActivity(ctx, tx, RecordOrderActivityParams{
+				Order:        order,
+				ActivityType: domain.OrderActivityTypeReorgRestored,
+				FromStatus:   fromStatus,
+				ToStatus:     "executed",
+				ReasonCode:   "revert_order_executed_event",
+				ReasonDetail: "restored_latest_order_executed_event",
+				Source:       domain.OrderActivitySourceIndexer,
+				TxHash:       latest.TxHash,
+				BlockNumber:  latest.BlockNumber,
+				LogIndex:     latest.LogIndex,
+				DedupeKey:    fmt.Sprintf("reorg:restore:executed_to_executed:%d:%s:%s:%s", order.ChainID, normalizeLower(order.SettlementAddress), order.OrderHash, normalizeLower(params.TxHash)),
+				Payload: map[string]string{
+					"revertedTxHash":      normalizeLower(params.TxHash),
+					"restoredTxHash":      latest.TxHash,
+					"restoredStatusReason": restoredStatusReason,
+				},
+				OccurredAt: time.Now().UTC(),
+			})
 
 		case "NonceInvalidated":
 			orders, listErr := orderRepo.ListOrdersByMakerAndNonce(
@@ -418,27 +652,104 @@ func (s *OrderEventService) Revert(ctx context.Context, params ApplyOrderEventPa
 
 			for i := range orders {
 				now := time.Now().UTC()
-				if strings.TrimSpace(orders[i].Status) == "cancelled" &&
-					strings.TrimSpace(orders[i].StatusReason) == "confirmed_by_chain_state" {
-					continue
-				}
 				if len(remainingEvents) == 0 {
-					if restoredUpdates, ok := buildCancelledReorgRestoreUpdates(&orders[i], now); ok {
-						if err := guardedUpdateOrderStatus(
+					if strings.TrimSpace(orders[i].Status) == "cancelled" &&
+						strings.TrimSpace(orders[i].StatusReason) == "confirmed_by_chain_state" {
+						remainingExecutedEvents, executedErr := orderEventRepo.ListByOrderHash(
 							ctx,
+							params.ChainID,
+							params.ContractAddress,
+							"OrderExecuted",
+							orders[i].OrderHash,
+						)
+						if executedErr != nil {
+							return executedErr
+						}
+						if len(remainingExecutedEvents) > 0 {
+							latestExecuted := remainingExecutedEvents[len(remainingExecutedEvents)-1]
+							restoredStatusReason := buildExecutedStatusReasonForRestoredEvent(&orders[i])
+							if err := updateOrderFields(
+								ctx,
+								tx,
+								orderRepo,
+								&orders[i],
+								map[string]interface{}{
+									"status":               "executed",
+									"status_reason":        restoredStatusReason,
+									"last_block_reason":    "",
+									"executed_tx_hash":     latestExecuted.TxHash,
+									"settled_amount_out":   latestExecuted.GrossAmountOut,
+									"settled_executor_fee": latestExecuted.ExecutorFeeAmount,
+									"last_checked_block":   latestExecuted.BlockNumber,
+									"updated_at":           now,
+								},
+							); err != nil {
+								return err
+							}
+							if activityErr := RecordOrderActivity(ctx, tx, RecordOrderActivityParams{
+								Order:        &orders[i],
+								ActivityType: domain.OrderActivityTypeReorgRestored,
+								FromStatus:   "cancelled",
+								ToStatus:     "executed",
+								ReasonCode:   "revert_nonce_invalidated_event",
+								ReasonDetail: "restored_latest_order_executed_event",
+								Source:       domain.OrderActivitySourceIndexer,
+								TxHash:       latestExecuted.TxHash,
+								BlockNumber:  latestExecuted.BlockNumber,
+								LogIndex:     latestExecuted.LogIndex,
+								DedupeKey:    fmt.Sprintf("reorg:restore:cancelled_to_executed:%d:%s:%s:%s", orders[i].ChainID, normalizeLower(orders[i].SettlementAddress), orders[i].OrderHash, normalizeLower(params.TxHash)),
+								Payload: map[string]string{
+									"revertedTxHash":       normalizeLower(params.TxHash),
+									"restoredTxHash":       latestExecuted.TxHash,
+									"restoredStatusReason": restoredStatusReason,
+								},
+								OccurredAt: now,
+							}); activityErr != nil {
+								return activityErr
+							}
+							continue
+						}
+					}
+					if restoredUpdates, ok := buildCancelledReorgRestoreUpdates(&orders[i], now); ok {
+						targetStatus, _ := restoredUpdates["status"].(string)
+						targetReason, _ := restoredUpdates["status_reason"].(string)
+						applied, err := guardedUpdateOrderStatus(
+							ctx,
+							tx,
 							orderRepo,
 							&orders[i],
 							[]string{"cancelled"},
 							restoredUpdates,
-						); err != nil {
+						)
+						if err != nil {
 							return err
+						}
+						if !applied {
+							continue
+						}
+						if activityErr := RecordOrderActivity(ctx, tx, RecordOrderActivityParams{
+							Order:        &orders[i],
+							ActivityType: domain.OrderActivityTypeReorgRestored,
+							FromStatus:   "cancelled",
+							ToStatus:     strings.TrimSpace(targetStatus),
+							ReasonCode:   "revert_nonce_invalidated_event",
+							ReasonDetail: strings.TrimSpace(targetReason),
+							Source:       domain.OrderActivitySourceIndexer,
+							DedupeKey:    fmt.Sprintf("reorg:restore:cancelled_to_%s:%d:%s:%s:%s", normalizeLower(targetStatus), orders[i].ChainID, normalizeLower(orders[i].SettlementAddress), orders[i].OrderHash, normalizeLower(params.TxHash)),
+							Payload: map[string]string{
+								"revertedTxHash": normalizeLower(params.TxHash),
+							},
+							OccurredAt: now,
+						}); activityErr != nil {
+							return activityErr
 						}
 						continue
 					}
 
 					if orders[i].Status == "cancelled" && shouldClearCancelledStatusReason(orders[i].StatusReason) {
-						if err := guardedUpdateOrderStatus(
+						applied, err := guardedUpdateOrderStatus(
 							ctx,
+							tx,
 							orderRepo,
 							&orders[i],
 							[]string{"cancelled"},
@@ -450,8 +761,28 @@ func (s *OrderEventService) Revert(ctx context.Context, params ApplyOrderEventPa
 								"last_block_reason":  "",
 								"updated_at":         now,
 							},
-						); err != nil {
+						)
+						if err != nil {
 							return err
+						}
+						if !applied {
+							continue
+						}
+						if activityErr := RecordOrderActivity(ctx, tx, RecordOrderActivityParams{
+							Order:        &orders[i],
+							ActivityType: domain.OrderActivityTypeReorgRestored,
+							FromStatus:   "cancelled",
+							ToStatus:     "open",
+							ReasonCode:   "revert_nonce_invalidated_event",
+							ReasonDetail: "cleared_derived_cancel_state",
+							Source:       domain.OrderActivitySourceIndexer,
+							DedupeKey:    fmt.Sprintf("reorg:restore:cancelled_to_open:%d:%s:%s:%s", orders[i].ChainID, normalizeLower(orders[i].SettlementAddress), orders[i].OrderHash, normalizeLower(params.TxHash)),
+							Payload: map[string]string{
+								"revertedTxHash": normalizeLower(params.TxHash),
+							},
+							OccurredAt: now,
+						}); activityErr != nil {
+							return activityErr
 						}
 					}
 					continue
@@ -462,9 +793,11 @@ func (s *OrderEventService) Revert(ctx context.Context, params ApplyOrderEventPa
 				}
 
 				latest := remainingEvents[len(remainingEvents)-1]
-				cancelledStatusReason := buildCancelledStatusReason(&orders[i])
-				if err := guardedUpdateOrderStatus(
+				cancelledStatusReason := buildCancelledStatusReasonForRestoredEvent(&orders[i])
+				fromStatus := strings.TrimSpace(orders[i].Status)
+				applied, err := guardedUpdateOrderStatus(
 					ctx,
+					tx,
 					orderRepo,
 					&orders[i],
 					orderRevertCancelledStatuses,
@@ -476,8 +809,33 @@ func (s *OrderEventService) Revert(ctx context.Context, params ApplyOrderEventPa
 						"last_block_reason":  "",
 						"updated_at":         now,
 					},
-				); err != nil {
+				)
+				if err != nil {
 					return err
+				}
+				if !applied {
+					continue
+				}
+				if activityErr := RecordOrderActivity(ctx, tx, RecordOrderActivityParams{
+					Order:        &orders[i],
+					ActivityType: domain.OrderActivityTypeReorgRestored,
+					FromStatus:   fromStatus,
+					ToStatus:     "cancelled",
+					ReasonCode:   "revert_nonce_invalidated_event",
+					ReasonDetail: "restored_latest_nonce_invalidated_event",
+					Source:       domain.OrderActivitySourceIndexer,
+					TxHash:       latest.TxHash,
+					BlockNumber:  latest.BlockNumber,
+					LogIndex:     latest.LogIndex,
+					DedupeKey:    fmt.Sprintf("reorg:restore:cancelled_to_cancelled:%d:%s:%s:%s", orders[i].ChainID, normalizeLower(orders[i].SettlementAddress), orders[i].OrderHash, normalizeLower(params.TxHash)),
+					Payload: map[string]string{
+						"revertedTxHash":      normalizeLower(params.TxHash),
+						"restoredTxHash":      latest.TxHash,
+						"restoredStatusReason": cancelledStatusReason,
+					},
+					OccurredAt: now,
+				}); activityErr != nil {
+					return activityErr
 				}
 			}
 			return nil
@@ -634,7 +992,8 @@ func shouldClearExecutedStatusReason(reason string) bool {
 	switch strings.TrimSpace(reason) {
 	case "updated_by_order_executed_event",
 		"updated_by_order_executed_event_after_pending_cancel",
-		"updated_by_order_executed_event_after_expired":
+		"updated_by_order_executed_event_after_expired",
+		"confirmed_by_chain_state":
 		return true
 	default:
 		return false
@@ -656,12 +1015,39 @@ func buildExecutedStatusReason(order *domain.Order) string {
 	}
 }
 
+func buildExecutedStatusReasonForRestoredEvent(order *domain.Order) string {
+	if order == nil {
+		return "updated_by_order_executed_event"
+	}
+
+	if strings.TrimSpace(order.CancelledTxHash) != "" {
+		return "updated_by_order_executed_event_after_pending_cancel"
+	}
+
+	switch strings.TrimSpace(order.StatusReason) {
+	case "updated_by_order_executed_event",
+		"updated_by_order_executed_event_after_pending_cancel",
+		"updated_by_order_executed_event_after_expired",
+		"confirmed_by_chain_state":
+		return strings.TrimSpace(order.StatusReason)
+	default:
+		return "updated_by_order_executed_event"
+	}
+}
+
+func shouldBackfillExecutedEvent(order *domain.Order) bool {
+	return order != nil &&
+		strings.TrimSpace(order.Status) == "executed" &&
+		strings.TrimSpace(order.StatusReason) == "confirmed_by_chain_state"
+}
+
 func shouldClearCancelledStatusReason(reason string) bool {
 	switch strings.TrimSpace(reason) {
 	case "updated_by_nonce_invalidated_event",
 		"updated_by_nonce_invalidated_event_after_pending_cancel",
 		"updated_by_nonce_invalidated_event_after_pending_execute",
-		"updated_by_nonce_invalidated_event_after_submitting_execute":
+		"updated_by_nonce_invalidated_event_after_submitting_execute",
+		"confirmed_by_chain_state":
 		return true
 	default:
 		return false
@@ -687,6 +1073,54 @@ func buildCancelledStatusReason(order *domain.Order) string {
 		return "updated_by_nonce_invalidated_event_after_submitting_execute"
 	}
 	return "updated_by_nonce_invalidated_event"
+}
+
+func buildCancelledStatusReasonForRestoredEvent(order *domain.Order) string {
+	if order == nil {
+		return "updated_by_nonce_invalidated_event"
+	}
+
+	switch strings.TrimSpace(order.StatusReason) {
+	case "updated_by_nonce_invalidated_event",
+		"updated_by_nonce_invalidated_event_after_pending_cancel",
+		"updated_by_nonce_invalidated_event_after_pending_execute",
+		"updated_by_nonce_invalidated_event_after_submitting_execute",
+		"updated_by_nonce_invalidated_event_after_expired":
+		return strings.TrimSpace(order.StatusReason)
+	case "updated_by_order_executed_event_after_pending_cancel":
+		return "updated_by_nonce_invalidated_event_after_pending_cancel"
+	case "updated_by_order_executed_event_after_expired":
+		return "updated_by_nonce_invalidated_event_after_expired"
+	}
+
+	switch strings.TrimSpace(order.Status) {
+	case "open", "pending_cancel", "pending_execute", "submitting_execute", "expired":
+		return buildCancelledStatusReason(order)
+	case "executed":
+		if strings.TrimSpace(order.CancelledTxHash) != "" {
+			return "updated_by_nonce_invalidated_event_after_pending_cancel"
+		}
+		if strings.TrimSpace(order.SubmittedTxHash) != "" {
+			return "updated_by_nonce_invalidated_event_after_pending_execute"
+		}
+	}
+	if strings.TrimSpace(order.SubmittedTxHash) != "" {
+		return "updated_by_nonce_invalidated_event_after_pending_execute"
+	}
+	if strings.TrimSpace(order.CancelledTxHash) != "" {
+		return "updated_by_nonce_invalidated_event_after_pending_cancel"
+	}
+	if strings.TrimSpace(order.LastBlockReason) == "ORDER_EXPIRED" {
+		return "updated_by_nonce_invalidated_event_after_expired"
+	}
+
+	return "updated_by_nonce_invalidated_event"
+}
+
+func shouldBackfillCancelledEvent(order *domain.Order) bool {
+	return order != nil &&
+		strings.TrimSpace(order.Status) == "cancelled" &&
+		strings.TrimSpace(order.StatusReason) == "confirmed_by_chain_state"
 }
 
 func buildCancelledReorgRestoreUpdates(order *domain.Order, now time.Time) (map[string]interface{}, bool) {
@@ -751,6 +1185,7 @@ func formatTime(value time.Time) string {
 
 func updateOrderFields(
 	ctx context.Context,
+	db *gorm.DB,
 	orderRepo *repo.OrderRepository,
 	order *domain.Order,
 	updates map[string]interface{},
@@ -785,11 +1220,12 @@ func updateOrderFields(
 
 func guardedUpdateOrderStatus(
 	ctx context.Context,
+	db *gorm.DB,
 	orderRepo *repo.OrderRepository,
 	order *domain.Order,
 	allowedStatuses []string,
 	updates map[string]interface{},
-) error {
+) (bool, error) {
 	updated, err := orderRepo.UpdateFieldsIfStatusIn(
 		ctx,
 		order.ChainID,
@@ -799,24 +1235,30 @@ func guardedUpdateOrderStatus(
 		updates,
 	)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if updated {
-		return nil
+		refreshedOrder, refreshedErr := orderRepo.GetByOrderHash(ctx, order.ChainID, order.SettlementAddress, order.OrderHash)
+		if refreshedErr != nil {
+			return false, refreshedErr
+		}
+		*order = *refreshedOrder
+		return true, nil
 	}
 
 	currentOrder, currentErr := orderRepo.GetByOrderHash(ctx, order.ChainID, order.SettlementAddress, order.OrderHash)
 	if currentErr != nil {
-		return currentErr
+		return false, currentErr
 	}
 	if containsStatus(allowedStatuses, currentOrder.Status) {
 		if orderMatchesUpdates(currentOrder, updates) {
-			return nil
+			*order = *currentOrder
+			return true, nil
 		}
-		return fmt.Errorf("guarded update skipped unexpectedly for order %s in status %s", currentOrder.OrderHash, currentOrder.Status)
+		return false, fmt.Errorf("guarded update skipped unexpectedly for order %s in status %s", currentOrder.OrderHash, currentOrder.Status)
 	}
 
-	return nil
+	return false, nil
 }
 
 func containsStatus(statuses []string, target string) bool {

@@ -3,10 +3,12 @@ package logic
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"strings"
 	"time"
 
+	"fluxswap-backend/internal/app"
 	"fluxswap-backend/internal/chain"
 	"fluxswap-backend/internal/domain"
 	"fluxswap-backend/internal/repo"
@@ -395,27 +397,43 @@ func (l *CreateOrderLogic) CreateOrder(in *executor.CreateOrderRequest) (*execut
 	}
 
 	// 将构造好的订单写入数据库。
-	if err := orderRepo.Create(l.ctx, order); err != nil {
-		// 如果并发请求导致唯一键冲突，把它按订单已存在处理。
+	if err := l.svcCtx.DB.WithContext(l.ctx).Transaction(func(tx *gorm.DB) error {
+		txOrderRepo := repo.NewOrderRepository(tx)
+		if err := txOrderRepo.Create(l.ctx, order); err != nil {
+			return err
+		}
+		return app.RecordOrderActivity(l.ctx, tx, app.RecordOrderActivityParams{
+			Order:        order,
+			ActivityType: domain.OrderActivityTypeCreated,
+			FromStatus:   "",
+			ToStatus:     order.Status,
+			ReasonCode:   "order_created",
+			ReasonDetail: "",
+			Source:       domain.OrderActivitySourceRPC,
+			ActorAddress: order.Maker,
+			DedupeKey:    fmt.Sprintf("rpc:create:%d:%s:%s", order.ChainID, order.SettlementAddress, order.OrderHash),
+			Payload: map[string]string{
+				"source":                  order.Source,
+				"maxExecutorRewardBps":    order.ExecutorFee,
+				"estimatedGasUsed":        order.EstimatedGasUsed,
+				"gasPriceAtQuote":         order.GasPriceAtQuote,
+				"lastRequiredExecutorFee": order.LastRequiredExecutorFee,
+				"lastBlockReason":         order.LastBlockReason,
+			},
+			OccurredAt: now,
+		})
+	}); err != nil {
 		if repo.IsDuplicateKeyError(err) {
-			// 返回业务失败提示，避免把并发重复提交误报为系统异常。
 			return &executor.CreateOrderResponse{
-				// 这里只返回 notice，因为并发场景下当前写入对象不一定是最终库内对象。
 				Notice: failureNotice(
-					// 业务错误码：订单已存在。
 					"ORDER_ALREADY_EXISTS",
-					// 简短错误信息。
 					"order already exists",
-					// 给调用方的处理建议。
 					"reuse the stored order instead of creating the same signed order again",
-					// 当前失败发生在查重阶段。
 					"dedupe_check",
 				),
 			}, nil
 		}
-		// 记录订单创建失败的内部错误。
 		l.Errorf("create order failed: %v", err)
-		// 对外返回内部错误，避免暴露数据库实现细节。
 		return nil, status.Error(codes.Internal, "create order failed")
 	}
 

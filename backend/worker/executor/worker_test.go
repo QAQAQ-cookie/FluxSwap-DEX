@@ -170,6 +170,7 @@ func TestCheckPendingReceiptClosesExecutedOrderByChainState(t *testing.T) {
 		UpdatedAt:         now,
 	}
 	require.NoError(t, repo.NewOrderRepository(db).Create(context.Background(), order))
+	originalSubmittedTxHash := order.SubmittedTxHash
 
 	worker := &Worker{
 		db:        db,
@@ -198,10 +199,23 @@ func TestCheckPendingReceiptClosesExecutedOrderByChainState(t *testing.T) {
 	require.Equal(t, "confirmed_by_chain_state", stored.StatusReason)
 	require.Equal(t, "", stored.SubmittedTxHash)
 	require.Equal(t, "", stored.CancelledTxHash)
-	require.Equal(t, order.SubmittedTxHash, stored.ExecutedTxHash)
+	require.Equal(t, originalSubmittedTxHash, stored.ExecutedTxHash)
 	require.Equal(t, "95", stored.SettledAmountOut)
 	require.Equal(t, "1", stored.SettledExecutorFee)
 	require.Equal(t, int64(123), stored.LastCheckedBlock)
+
+	activities, activityErr := repo.NewOrderActivityRepository(db).ListByOrderHash(
+		context.Background(),
+		stored.ChainID,
+		stored.SettlementAddress,
+		stored.OrderHash,
+		10,
+	)
+	require.NoError(t, activityErr)
+	require.Len(t, activities, 1)
+	require.Equal(t, domain.OrderActivityTypeExecutionConfirmed, activities[0].ActivityType)
+	require.Equal(t, "pending_execute", activities[0].FromStatus)
+	require.Equal(t, "executed", activities[0].ToStatus)
 }
 
 // 撤单交易已确认但 indexer 尚未回写时，worker 应能根据链上 nonce 状态直接把订单收敛为 cancelled。
@@ -259,6 +273,19 @@ func TestCheckPendingReceiptClosesCancelledOrderByChainState(t *testing.T) {
 	require.Equal(t, "", stored.ExecutedTxHash)
 	require.Equal(t, order.CancelledTxHash, stored.CancelledTxHash)
 	require.Equal(t, int64(456), stored.LastCheckedBlock)
+
+	activities, activityErr := repo.NewOrderActivityRepository(db).ListByOrderHash(
+		context.Background(),
+		stored.ChainID,
+		stored.SettlementAddress,
+		stored.OrderHash,
+		10,
+	)
+	require.NoError(t, activityErr)
+	require.Len(t, activities, 1)
+	require.Equal(t, domain.OrderActivityTypeCancelConfirmed, activities[0].ActivityType)
+	require.Equal(t, "pending_cancel", activities[0].FromStatus)
+	require.Equal(t, "cancelled", activities[0].ToStatus)
 }
 
 func TestCheckPendingReceiptClosesCancelledOrderByChainStateAfterRevertedCancel(t *testing.T) {
@@ -314,6 +341,19 @@ func TestCheckPendingReceiptClosesCancelledOrderByChainStateAfterRevertedCancel(
 	require.Equal(t, "", stored.SubmittedTxHash)
 	require.Equal(t, "", stored.ExecutedTxHash)
 	require.Equal(t, order.CancelledTxHash, stored.CancelledTxHash)
+
+	activities, activityErr := repo.NewOrderActivityRepository(db).ListByOrderHash(
+		context.Background(),
+		stored.ChainID,
+		stored.SettlementAddress,
+		stored.OrderHash,
+		10,
+	)
+	require.NoError(t, activityErr)
+	require.Len(t, activities, 1)
+	require.Equal(t, domain.OrderActivityTypeCancelConfirmed, activities[0].ActivityType)
+	require.Equal(t, "pending_cancel", activities[0].FromStatus)
+	require.Equal(t, "cancelled", activities[0].ToStatus)
 }
 
 func TestEvaluateOrderMarksExpiredOrderByChainTime(t *testing.T) {
@@ -414,6 +454,20 @@ func TestEvaluateOrderClosesExecutedOrderByChainStateBeforeExpiring(t *testing.T
 	require.Equal(t, "", stored.SubmittedTxHash)
 	require.Equal(t, "", stored.CancelledTxHash)
 	require.False(t, client.canExecuteCalled)
+
+	activities, activityErr := repo.NewOrderActivityRepository(db).ListByOrderHash(
+		context.Background(),
+		stored.ChainID,
+		stored.SettlementAddress,
+		stored.OrderHash,
+		10,
+	)
+	require.NoError(t, activityErr)
+	require.Len(t, activities, 2)
+	require.Equal(t, domain.OrderActivityTypeChainReconciled, activities[0].ActivityType)
+	require.Equal(t, "submitting_execute", activities[0].FromStatus)
+	require.Equal(t, "executed", activities[0].ToStatus)
+	require.Equal(t, "submitting_execute", activities[1].ToStatus)
 }
 
 func TestEvaluateOrderClosesCancelledOrderByChainStateBeforeExpiring(t *testing.T) {
@@ -465,6 +519,20 @@ func TestEvaluateOrderClosesCancelledOrderByChainStateBeforeExpiring(t *testing.
 	require.Equal(t, "", stored.SubmittedTxHash)
 	require.Equal(t, "", stored.ExecutedTxHash)
 	require.False(t, client.canExecuteCalled)
+
+	activities, activityErr := repo.NewOrderActivityRepository(db).ListByOrderHash(
+		context.Background(),
+		stored.ChainID,
+		stored.SettlementAddress,
+		stored.OrderHash,
+		10,
+	)
+	require.NoError(t, activityErr)
+	require.Len(t, activities, 2)
+	require.Equal(t, domain.OrderActivityTypeChainReconciled, activities[0].ActivityType)
+	require.Equal(t, "submitting_execute", activities[0].FromStatus)
+	require.Equal(t, "cancelled", activities[0].ToStatus)
+	require.Equal(t, domain.OrderActivityTypeExecutionClaimed, activities[1].ActivityType)
 }
 
 func TestEvaluateOrderBlocksOnInsufficientBalance(t *testing.T) {
@@ -839,6 +907,99 @@ func TestEvaluateOrderClaimsOpenOrderBeforeSubmitting(t *testing.T) {
 	require.Equal(t, "pending_execute", stored.Status)
 	require.Equal(t, "submitted_to_chain", stored.StatusReason)
 	require.Equal(t, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", stored.SubmittedTxHash)
+
+	activities, activityErr := repo.NewOrderActivityRepository(db).ListByOrderHash(
+		context.Background(),
+		stored.ChainID,
+		stored.SettlementAddress,
+		stored.OrderHash,
+		10,
+	)
+	require.NoError(t, activityErr)
+	require.Len(t, activities, 2)
+	require.Equal(t, domain.OrderActivityTypeExecutionSubmitted, activities[0].ActivityType)
+	require.Equal(t, domain.OrderActivityTypeExecutionClaimed, activities[1].ActivityType)
+
+	runtime, runtimeErr := repo.NewOrderRuntimeRepository(db).GetByOrderID(context.Background(), stored.ID)
+	require.NoError(t, runtimeErr)
+	require.Equal(t, stored.StatusReason, runtime.StatusReason)
+	require.Equal(t, stored.SubmittedTxHash, runtime.SubmittedTxHash)
+}
+
+func TestEvaluateOrderRollsBackClaimWhenActivityInsertFails(t *testing.T) {
+	db := openWorkerTestDB(t)
+	now := time.Now().UTC()
+	db.Callback().Create().Before("gorm:create").Register("test:force_activity_insert_error", func(tx *gorm.DB) {
+		if tx.Statement != nil && tx.Statement.Table == "order_activities" {
+			tx.AddError(fmt.Errorf("forced activity insert failure"))
+		}
+	})
+	defer db.Callback().Create().Remove("test:force_activity_insert_error")
+
+	order := &domain.Order{
+		ChainID:           31337,
+		SettlementAddress: "0x1111111111111111111111111111111111111111",
+		OrderHash:         "0x5757575757575757575757575757575757575757575757575757575757575757",
+		Maker:             "0x2222222222222222222222222222222222222222",
+		InputToken:        "0x3333333333333333333333333333333333333333",
+		OutputToken:       "0x4444444444444444444444444444444444444444",
+		AmountIn:          "100",
+		MinAmountOut:      "90",
+		ExecutorFee:       "10000",
+		ExecutorFeeToken:  "0x4444444444444444444444444444444444444444",
+		TriggerPriceX18:   "1",
+		Expiry:            "9999999999",
+		Nonce:             "261",
+		Recipient:         "0x5555555555555555555555555555555555555555",
+		Signature:         validWorkerTestSignature(),
+		Source:            "test",
+		Status:            "open",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	require.NoError(t, repo.NewOrderRepository(db).Create(context.Background(), order))
+
+	worker := &Worker{
+		db:        db,
+		cfg:       Config{ChainID: 31337, EstimatedGasUsed: 400000, FeeSafetyBps: 20000, TxDeadline: time.Minute},
+		orderRepo: repo.NewOrderRepository(db),
+		settlementClient: &stubSettlementClient{
+			settlementAddress: order.SettlementAddress,
+			currentBlockTime:  10,
+			canExecute:        true,
+			fundingCheck: &chain.FundingCheckResult{
+				Token:              common.HexToAddress(order.InputToken),
+				Balance:            big.NewInt(100),
+				Allowance:          big.NewInt(100),
+				RequiredAmountIn:   big.NewInt(100),
+				HasEnoughBalance:   true,
+				HasEnoughAllowance: true,
+			},
+			orderQuote:      big.NewInt(100),
+			suggestFee:      big.NewInt(10),
+			suggestGasPrice: big.NewInt(1),
+			executeTxHash:   "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		},
+	}
+
+	err := worker.evaluateOrder(context.Background(), order)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "forced activity insert failure")
+
+	stored, queryErr := repo.NewOrderRepository(db).GetByOrderHash(context.Background(), order.ChainID, order.SettlementAddress, order.OrderHash)
+	require.NoError(t, queryErr)
+	require.Equal(t, "open", stored.Status)
+	require.Equal(t, "", stored.StatusReason)
+
+	activities, activityErr := repo.NewOrderActivityRepository(db).ListByOrderHash(
+		context.Background(),
+		stored.ChainID,
+		stored.SettlementAddress,
+		stored.OrderHash,
+		10,
+	)
+	require.NoError(t, activityErr)
+	require.Len(t, activities, 0)
 }
 
 func TestEvaluateOrderPersistsFeeQuoteMetadataAndUsesChainTimeDeadline(t *testing.T) {
@@ -953,6 +1114,17 @@ func TestCheckPendingReceiptReopensSubmittingExecuteWithoutTxHash(t *testing.T) 
 	require.Equal(t, "", stored.SubmittedTxHash)
 	require.Equal(t, "", stored.ExecutedTxHash)
 	require.Equal(t, "", stored.CancelledTxHash)
+
+	activities, activityErr := repo.NewOrderActivityRepository(db).ListByOrderHash(
+		context.Background(),
+		stored.ChainID,
+		stored.SettlementAddress,
+		stored.OrderHash,
+		10,
+	)
+	require.NoError(t, activityErr)
+	require.Len(t, activities, 1)
+	require.Equal(t, domain.OrderActivityTypeOrderReopened, activities[0].ActivityType)
 }
 
 func TestEvaluateOrderDoesNotOverwritePendingCancelAfterExecutionSubmitted(t *testing.T) {
@@ -1128,6 +1300,17 @@ func TestCheckPendingReceiptReopensExecuteOrderWhenTransactionDisappears(t *test
 	require.Equal(t, "open", stored.Status)
 	require.Equal(t, "submitted_tx_missing_from_chain_retryable", stored.StatusReason)
 	require.Equal(t, "", stored.SubmittedTxHash)
+
+	activities, activityErr := repo.NewOrderActivityRepository(db).ListByOrderHash(
+		context.Background(),
+		stored.ChainID,
+		stored.SettlementAddress,
+		stored.OrderHash,
+		10,
+	)
+	require.NoError(t, activityErr)
+	require.Len(t, activities, 1)
+	require.Equal(t, domain.OrderActivityTypeOrderReopened, activities[0].ActivityType)
 }
 
 func TestCheckPendingReceiptKeepsExecuteOrderPendingWhenTransactionStillKnown(t *testing.T) {

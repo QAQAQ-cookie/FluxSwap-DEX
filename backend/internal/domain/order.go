@@ -25,20 +25,20 @@ type Order struct {
 	Signature         string    `gorm:"type:text;not null"`
 	Source            string    `gorm:"size:32;not null;default:'rpc'"`
 	Status            string    `gorm:"size:32;not null;index"`
-	StatusReason      string    `gorm:"type:text;not null;default:''"`
-	EstimatedGasUsed  string    `gorm:"type:numeric(78,0);not null;default:'0'"`
-	GasPriceAtQuote   string    `gorm:"type:numeric(78,0);not null;default:'0'"`
-	FeeQuoteAt        time.Time `gorm:"not null;default:CURRENT_TIMESTAMP"`
-	LastRequiredExecutorFee string    `gorm:"type:numeric(78,0);not null;default:'0'"`
-	LastFeeCheckAt    time.Time `gorm:"not null;default:CURRENT_TIMESTAMP"`
-	LastExecutionCheckAt time.Time `gorm:"not null;default:CURRENT_TIMESTAMP"`
-	LastBlockReason   string    `gorm:"type:text;not null;default:''"`
-	SettledAmountOut  string    `gorm:"type:numeric(78,0);not null;default:'0'"`
-	SettledExecutorFee string   `gorm:"type:numeric(78,0);not null;default:'0'"`
-	SubmittedTxHash   string    `gorm:"size:66;not null;default:''"`
-	ExecutedTxHash    string    `gorm:"size:66;not null;default:''"`
-	CancelledTxHash   string    `gorm:"size:66;not null;default:''"`
-	LastCheckedBlock  int64     `gorm:"not null;default:0"`
+	StatusReason      string    `gorm:"-"`
+	EstimatedGasUsed  string    `gorm:"-"`
+	GasPriceAtQuote   string    `gorm:"-"`
+	FeeQuoteAt        time.Time `gorm:"-"`
+	LastRequiredExecutorFee string    `gorm:"-"`
+	LastFeeCheckAt    time.Time `gorm:"-"`
+	LastExecutionCheckAt time.Time `gorm:"-"`
+	LastBlockReason   string    `gorm:"-"`
+	SettledAmountOut  string    `gorm:"-"`
+	SettledExecutorFee string   `gorm:"-"`
+	SubmittedTxHash   string    `gorm:"-"`
+	ExecutedTxHash    string    `gorm:"-"`
+	CancelledTxHash   string    `gorm:"-"`
+	LastCheckedBlock  int64     `gorm:"-"`
 	CreatedAt         time.Time `gorm:"not null"`
 	UpdatedAt         time.Time `gorm:"not null"`
 }

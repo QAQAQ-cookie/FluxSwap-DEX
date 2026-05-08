@@ -14,25 +14,31 @@ import (
 )
 
 type (
-	CancelOrderItem      = executor.CancelOrderItem
-	CancelOrdersRequest  = executor.CancelOrdersRequest
-	CancelOrdersResponse = executor.CancelOrdersResponse
-	CancelOrdersResult   = executor.CancelOrdersResult
-	CreateOrderRequest   = executor.CreateOrderRequest
-	CreateOrderResponse  = executor.CreateOrderResponse
-	GetBestRouteRequest  = executor.GetBestRouteRequest
-	GetBestRouteResponse = executor.GetBestRouteResponse
-	GetOrderRequest      = executor.GetOrderRequest
-	GetOrderResponse     = executor.GetOrderResponse
-	RouteExecution       = executor.RouteExecution
-	RouteView            = executor.RouteView
-	ResponseNotice       = executor.ResponseNotice
+	CancelOrderItem            = executor.CancelOrderItem
+	CancelOrdersRequest        = executor.CancelOrdersRequest
+	CancelOrdersResponse       = executor.CancelOrdersResponse
+	CancelOrdersResult         = executor.CancelOrdersResult
+	CreateOrderRequest         = executor.CreateOrderRequest
+	CreateOrderResponse        = executor.CreateOrderResponse
+	GetBestRouteRequest        = executor.GetBestRouteRequest
+	GetBestRouteResponse       = executor.GetBestRouteResponse
+	GetOrderActivitiesRequest  = executor.GetOrderActivitiesRequest
+	GetOrderActivitiesResponse = executor.GetOrderActivitiesResponse
+	GetOrderRequest            = executor.GetOrderRequest
+	GetOrderResponse           = executor.GetOrderResponse
+	OrderActivityView          = executor.OrderActivityView
+	ResponseNotice             = executor.ResponseNotice
+	RouteExecution             = executor.RouteExecution
+	RoutePath                  = executor.RoutePath
+	RouteQuote                 = executor.RouteQuote
+	RouteView                  = executor.RouteView
 
 	Executor interface {
 		CreateOrder(ctx context.Context, in *CreateOrderRequest, opts ...grpc.CallOption) (*CreateOrderResponse, error)
 		CancelOrders(ctx context.Context, in *CancelOrdersRequest, opts ...grpc.CallOption) (*CancelOrdersResponse, error)
-		GetBestRoute(ctx context.Context, in *GetBestRouteRequest, opts ...grpc.CallOption) (*GetBestRouteResponse, error)
 		GetOrder(ctx context.Context, in *GetOrderRequest, opts ...grpc.CallOption) (*GetOrderResponse, error)
+		GetOrderActivities(ctx context.Context, in *GetOrderActivitiesRequest, opts ...grpc.CallOption) (*GetOrderActivitiesResponse, error)
+		GetBestRoute(ctx context.Context, in *GetBestRouteRequest, opts ...grpc.CallOption) (*GetBestRouteResponse, error)
 	}
 
 	defaultExecutor struct {
@@ -56,12 +62,17 @@ func (m *defaultExecutor) CancelOrders(ctx context.Context, in *CancelOrdersRequ
 	return client.CancelOrders(ctx, in, opts...)
 }
 
-func (m *defaultExecutor) GetBestRoute(ctx context.Context, in *GetBestRouteRequest, opts ...grpc.CallOption) (*GetBestRouteResponse, error) {
-	client := executor.NewExecutorClient(m.cli.Conn())
-	return client.GetBestRoute(ctx, in, opts...)
-}
-
 func (m *defaultExecutor) GetOrder(ctx context.Context, in *GetOrderRequest, opts ...grpc.CallOption) (*GetOrderResponse, error) {
 	client := executor.NewExecutorClient(m.cli.Conn())
 	return client.GetOrder(ctx, in, opts...)
+}
+
+func (m *defaultExecutor) GetOrderActivities(ctx context.Context, in *GetOrderActivitiesRequest, opts ...grpc.CallOption) (*GetOrderActivitiesResponse, error) {
+	client := executor.NewExecutorClient(m.cli.Conn())
+	return client.GetOrderActivities(ctx, in, opts...)
+}
+
+func (m *defaultExecutor) GetBestRoute(ctx context.Context, in *GetBestRouteRequest, opts ...grpc.CallOption) (*GetBestRouteResponse, error) {
+	client := executor.NewExecutorClient(m.cli.Conn())
+	return client.GetBestRoute(ctx, in, opts...)
 }

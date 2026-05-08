@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"regexp"
 	"strings"
+	"time"
 
 	"fluxswap-backend/internal/app"
 	"fluxswap-backend/internal/chain"
@@ -55,7 +56,6 @@ func orderToResponse(order *domain.Order) *executor.GetOrderResponse {
 	}
 
 	return &executor.GetOrderResponse{
-		Id:                         payload.ID,
 		ChainId:                    payload.ChainID,
 		SettlementAddress:          payload.SettlementAddress,
 		OrderHash:                  payload.OrderHash,
@@ -92,7 +92,36 @@ func orderToResponse(order *domain.Order) *executor.GetOrderResponse {
 	}
 }
 
-// buildCreateOrderNotice 根据订单最终落库状态生成更贴近前端的创建结果提示。
+func orderActivityToView(activity *domain.OrderActivity) *executor.OrderActivityView {
+	if activity == nil {
+		return nil
+	}
+
+	return &executor.OrderActivityView{
+		ActivityType: activity.ActivityType,
+		FromStatus:   activity.FromStatus,
+		ToStatus:     activity.ToStatus,
+		ReasonCode:   activity.ReasonCode,
+		ReasonDetail: activity.ReasonDetail,
+		Source:       activity.Source,
+		ActorAddress: activity.ActorAddress,
+		TxHash:       activity.TxHash,
+		BlockNumber:  activity.BlockNumber,
+		LogIndex:     activity.LogIndex,
+		PayloadJson:  activity.PayloadJSON,
+		OccurredAt:   formatTimeUTC(activity.OccurredAt),
+		CreatedAt:    formatTimeUTC(activity.CreatedAt),
+	}
+}
+
+func formatTimeUTC(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+
+	return value.UTC().Format("2006-01-02T15:04:05Z07:00")
+}
+
 func buildCreateOrderNotice(order *domain.Order) *executor.ResponseNotice {
 	if order == nil {
 		return successNotice(

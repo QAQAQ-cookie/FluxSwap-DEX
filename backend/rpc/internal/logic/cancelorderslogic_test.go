@@ -120,6 +120,24 @@ func TestCancelOrdersRegistersUserSubmittedTxHash(t *testing.T) {
 	require.Equal(t, "pending_cancel", stored.Status)
 	require.Equal(t, "cancel_tx_submitted_by_user", stored.StatusReason)
 	require.Equal(t, "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", stored.CancelledTxHash)
+
+	runtime, runtimeErr := repo.NewOrderRuntimeRepository(db).GetByOrderID(context.Background(), stored.ID)
+	require.NoError(t, runtimeErr)
+	require.Equal(t, stored.StatusReason, runtime.StatusReason)
+	require.Equal(t, stored.CancelledTxHash, runtime.CancelledTxHash)
+
+	activities, activityErr := repo.NewOrderActivityRepository(db).ListByOrderHash(
+		context.Background(),
+		stored.ChainID,
+		stored.SettlementAddress,
+		stored.OrderHash,
+		10,
+	)
+	require.NoError(t, activityErr)
+	require.Len(t, activities, 1)
+	require.Equal(t, domain.OrderActivityTypeCancelRequested, activities[0].ActivityType)
+	require.Equal(t, "open", activities[0].FromStatus)
+	require.Equal(t, "pending_cancel", activities[0].ToStatus)
 }
 
 func TestCancelOrdersRejectsInvalidCancelTxHash(t *testing.T) {
@@ -492,6 +510,75 @@ func TestCancelOrdersReturnsWriteFailurePerResult(t *testing.T) {
 	require.Equal(t, "UPDATE_ORDER_FAILED", resp.Results[0].Code)
 	require.True(t, strings.TrimSpace(resp.Results[0].Error) != "")
 	require.Equal(t, "write", resp.Results[0].Stage)
+}
+
+func TestCancelOrdersRollsBackWhenActivityInsertFails(t *testing.T) {
+	db := openLogicTestDB(t)
+	now := time.Now().UTC()
+	db.Callback().Create().Before("gorm:create").Register("test:force_activity_insert_error", func(tx *gorm.DB) {
+		if tx.Statement != nil && tx.Statement.Table == "order_activities" {
+			tx.AddError(fmt.Errorf("forced activity insert failure"))
+		}
+	})
+	defer db.Callback().Create().Remove("test:force_activity_insert_error")
+
+	order := &domain.Order{
+		ChainID:           31337,
+		SettlementAddress: "0x1111111111111111111111111111111111111111",
+		OrderHash:         "0xabababababababababababababababababababababababababababababababac",
+		Maker:             "0x2222222222222222222222222222222222222222",
+		InputToken:        "0x3333333333333333333333333333333333333333",
+		OutputToken:       "0x4444444444444444444444444444444444444444",
+		AmountIn:          "100",
+		MinAmountOut:      "90",
+		ExecutorFee:       "1",
+		ExecutorFeeToken:  "0x4444444444444444444444444444444444444444",
+		TriggerPriceX18:   "1",
+		Expiry:            "9999999999",
+		Nonce:             "20",
+		Recipient:         "0x5555555555555555555555555555555555555555",
+		Signature:         "0x" + logicRepeatHex("11", 65),
+		Source:            "test",
+		Status:            "open",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	require.NoError(t, repo.NewOrderRepository(db).Create(context.Background(), order))
+
+	logic := NewCancelOrdersLogic(context.Background(), &svc.ServiceContext{
+		Config: config.Config{},
+		DB:     db,
+		ChainClients: map[string]svc.ChainClient{
+			"31337:0x1111111111111111111111111111111111111111": &stubCancelChainClient{},
+		},
+	})
+
+	resp, err := logic.CancelOrders(&executor.CancelOrdersRequest{
+		Orders: []*executor.CancelOrderItem{
+			{
+				ChainId:           order.ChainID,
+				SettlementAddress: order.SettlementAddress,
+				OrderHash:         order.OrderHash,
+				Maker:             order.Maker,
+			},
+		},
+		CancelTxHash: "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, uint32(0), resp.CancelledCount)
+	require.Len(t, resp.Results, 1)
+	require.Equal(t, "UPDATE_ORDER_FAILED", resp.Results[0].Code)
+
+	stored, queryErr := repo.NewOrderRepository(db).GetByOrderHash(
+		context.Background(),
+		order.ChainID,
+		order.SettlementAddress,
+		order.OrderHash,
+	)
+	require.NoError(t, queryErr)
+	require.Equal(t, "open", stored.Status)
+	require.Equal(t, "", stored.CancelledTxHash)
 }
 
 func TestCancelOrdersRejectsDuplicateOrderInBatch(t *testing.T) {

@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -13,7 +14,7 @@ import (
 )
 
 func TestIsDuplicateKeyErrorDetectsSQLiteUniqueViolation(t *testing.T) {
-	dsn := "file:repo_duplicate_key_test?mode=memory&cache=shared"
+	dsn := fmt.Sprintf("file:repo_duplicate_key_test_%s?mode=memory&cache=shared", t.Name())
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, AutoMigrate(db))

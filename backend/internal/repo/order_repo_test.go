@@ -2,6 +2,7 @@
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -40,10 +41,56 @@ func TestListOpenOrdersForSettlementPrefersOldestExecutionCheck(t *testing.T) {
 	require.Equal(t, orders[2].OrderHash, result[1].OrderHash)
 }
 
+func TestUpdateFieldsPersistsRuntimeAtomically(t *testing.T) {
+	db := openOrderRepoTestDB(t)
+	orderRepo := NewOrderRepository(db)
+	order := buildOrderRepoTestOrder("0xdededededededededededededededededededededededededededededededede", time.Now().UTC(), time.Now().UTC())
+	require.NoError(t, orderRepo.Create(context.Background(), order))
+
+	err := orderRepo.UpdateFields(
+		context.Background(),
+		order.ChainID,
+		order.SettlementAddress,
+		order.OrderHash,
+		map[string]interface{}{
+			"status":            "pending_execute",
+			"status_reason":     "submitted_to_chain",
+			"submitted_tx_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"updated_at":        time.Now().UTC(),
+		},
+	)
+	require.NoError(t, err)
+
+	stored, err := orderRepo.GetByOrderHash(context.Background(), order.ChainID, order.SettlementAddress, order.OrderHash)
+	require.NoError(t, err)
+	require.Equal(t, "pending_execute", stored.Status)
+	require.Equal(t, "submitted_to_chain", stored.StatusReason)
+	require.Equal(t, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", stored.SubmittedTxHash)
+}
+
+func TestClaimOpenOrderForExecutionPersistsRuntimeAtomically(t *testing.T) {
+	db := openOrderRepoTestDB(t)
+	orderRepo := NewOrderRepository(db)
+	now := time.Now().UTC()
+	order := buildOrderRepoTestOrder("0xefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef", now, now)
+	require.NoError(t, orderRepo.Create(context.Background(), order))
+
+	claimed, err := orderRepo.ClaimOpenOrderForExecution(context.Background(), order.ChainID, order.SettlementAddress, order.OrderHash, now)
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	stored, err := orderRepo.GetByOrderHash(context.Background(), order.ChainID, order.SettlementAddress, order.OrderHash)
+	require.NoError(t, err)
+	require.Equal(t, "submitting_execute", stored.Status)
+	require.Equal(t, "claimed_for_submission", stored.StatusReason)
+	require.Equal(t, "", stored.SubmittedTxHash)
+	require.WithinDuration(t, now, stored.LastExecutionCheckAt, time.Second)
+}
+
 func openOrderRepoTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	dsn := "file:order_repo_test?mode=memory&cache=shared"
+	dsn := fmt.Sprintf("file:order_repo_test_%s?mode=memory&cache=shared", t.Name())
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, AutoMigrate(db))

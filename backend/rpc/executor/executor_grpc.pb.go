@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.1
 // - protoc             v3.19.4
-// source: rpc/proto/executor.proto
+// source: proto/executor.proto
 
 package executor
 
@@ -19,10 +19,11 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Executor_CreateOrder_FullMethodName  = "/executor.Executor/CreateOrder"
-	Executor_CancelOrders_FullMethodName = "/executor.Executor/CancelOrders"
-	Executor_GetOrder_FullMethodName     = "/executor.Executor/GetOrder"
-	Executor_GetBestRoute_FullMethodName = "/executor.Executor/GetBestRoute"
+	Executor_CreateOrder_FullMethodName        = "/executor.Executor/CreateOrder"
+	Executor_CancelOrders_FullMethodName       = "/executor.Executor/CancelOrders"
+	Executor_GetOrder_FullMethodName           = "/executor.Executor/GetOrder"
+	Executor_GetOrderActivities_FullMethodName = "/executor.Executor/GetOrderActivities"
+	Executor_GetBestRoute_FullMethodName       = "/executor.Executor/GetBestRoute"
 )
 
 // ExecutorClient is the client API for Executor service.
@@ -32,6 +33,7 @@ type ExecutorClient interface {
 	CreateOrder(ctx context.Context, in *CreateOrderRequest, opts ...grpc.CallOption) (*CreateOrderResponse, error)
 	CancelOrders(ctx context.Context, in *CancelOrdersRequest, opts ...grpc.CallOption) (*CancelOrdersResponse, error)
 	GetOrder(ctx context.Context, in *GetOrderRequest, opts ...grpc.CallOption) (*GetOrderResponse, error)
+	GetOrderActivities(ctx context.Context, in *GetOrderActivitiesRequest, opts ...grpc.CallOption) (*GetOrderActivitiesResponse, error)
 	GetBestRoute(ctx context.Context, in *GetBestRouteRequest, opts ...grpc.CallOption) (*GetBestRouteResponse, error)
 }
 
@@ -73,6 +75,16 @@ func (c *executorClient) GetOrder(ctx context.Context, in *GetOrderRequest, opts
 	return out, nil
 }
 
+func (c *executorClient) GetOrderActivities(ctx context.Context, in *GetOrderActivitiesRequest, opts ...grpc.CallOption) (*GetOrderActivitiesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetOrderActivitiesResponse)
+	err := c.cc.Invoke(ctx, Executor_GetOrderActivities_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *executorClient) GetBestRoute(ctx context.Context, in *GetBestRouteRequest, opts ...grpc.CallOption) (*GetBestRouteResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetBestRouteResponse)
@@ -90,6 +102,7 @@ type ExecutorServer interface {
 	CreateOrder(context.Context, *CreateOrderRequest) (*CreateOrderResponse, error)
 	CancelOrders(context.Context, *CancelOrdersRequest) (*CancelOrdersResponse, error)
 	GetOrder(context.Context, *GetOrderRequest) (*GetOrderResponse, error)
+	GetOrderActivities(context.Context, *GetOrderActivitiesRequest) (*GetOrderActivitiesResponse, error)
 	GetBestRoute(context.Context, *GetBestRouteRequest) (*GetBestRouteResponse, error)
 	mustEmbedUnimplementedExecutorServer()
 }
@@ -109,6 +122,9 @@ func (UnimplementedExecutorServer) CancelOrders(context.Context, *CancelOrdersRe
 }
 func (UnimplementedExecutorServer) GetOrder(context.Context, *GetOrderRequest) (*GetOrderResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetOrder not implemented")
+}
+func (UnimplementedExecutorServer) GetOrderActivities(context.Context, *GetOrderActivitiesRequest) (*GetOrderActivitiesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetOrderActivities not implemented")
 }
 func (UnimplementedExecutorServer) GetBestRoute(context.Context, *GetBestRouteRequest) (*GetBestRouteResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetBestRoute not implemented")
@@ -188,6 +204,24 @@ func _Executor_GetOrder_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Executor_GetOrderActivities_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetOrderActivitiesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ExecutorServer).GetOrderActivities(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Executor_GetOrderActivities_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ExecutorServer).GetOrderActivities(ctx, req.(*GetOrderActivitiesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Executor_GetBestRoute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetBestRouteRequest)
 	if err := dec(in); err != nil {
@@ -226,10 +260,14 @@ var Executor_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Executor_GetOrder_Handler,
 		},
 		{
+			MethodName: "GetOrderActivities",
+			Handler:    _Executor_GetOrderActivities_Handler,
+		},
+		{
 			MethodName: "GetBestRoute",
 			Handler:    _Executor_GetBestRoute_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "rpc/proto/executor.proto",
+	Metadata: "proto/executor.proto",
 }

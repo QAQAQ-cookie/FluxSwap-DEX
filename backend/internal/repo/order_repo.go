@@ -16,6 +16,23 @@ type OrderRepository struct {
 	db *gorm.DB
 }
 
+var orderRuntimeFieldNames = map[string]struct{}{
+	"status_reason":               {},
+	"estimated_gas_used":          {},
+	"gas_price_at_quote":          {},
+	"fee_quote_at":                {},
+	"last_required_executor_fee":  {},
+	"last_fee_check_at":           {},
+	"last_execution_check_at":     {},
+	"last_block_reason":           {},
+	"settled_amount_out":          {},
+	"settled_executor_fee":        {},
+	"submitted_tx_hash":           {},
+	"executed_tx_hash":            {},
+	"cancelled_tx_hash":           {},
+	"last_checked_block":          {},
+}
+
 // NewOrderRepository 基于给定的 Gorm 连接创建订单仓储。
 func NewOrderRepository(db *gorm.DB) *OrderRepository {
 	return &OrderRepository{db: db}
@@ -27,7 +44,16 @@ func (r *OrderRepository) Create(ctx context.Context, order *domain.Order) error
 		return errors.New("order repository unavailable")
 	}
 
-	return r.db.WithContext(ctx).Create(order).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.WithContext(ctx).Create(order).Error; err != nil {
+			return err
+		}
+		runtime := newOrderRuntimeSnapshot(order, time.Now().UTC())
+		if runtime == nil {
+			return nil
+		}
+		return NewOrderRuntimeRepository(tx).Create(ctx, runtime)
+	})
 }
 
 // Update 持久化整笔订单。
@@ -36,7 +62,28 @@ func (r *OrderRepository) Update(ctx context.Context, order *domain.Order) error
 		return errors.New("order repository unavailable")
 	}
 
-	return r.db.WithContext(ctx).Save(order).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.WithContext(ctx).Save(order).Error; err != nil {
+			return err
+		}
+		runtime := newOrderRuntimeSnapshot(order, time.Now().UTC())
+		if runtime == nil {
+			return nil
+		}
+
+		runtimeRepo := NewOrderRuntimeRepository(tx)
+		existing, err := runtimeRepo.GetByOrderID(ctx, order.ID)
+		if err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			return runtimeRepo.Create(ctx, runtime)
+		}
+
+		runtime.ID = existing.ID
+		runtime.CreatedAt = existing.CreatedAt
+		return runtimeRepo.Save(ctx, runtime)
+	})
 }
 
 // UpdateFields 按业务唯一键更新订单的部分字段。
@@ -54,15 +101,38 @@ func (r *OrderRepository) UpdateFields(
 		return errors.New("updates must not be empty")
 	}
 
-	return r.db.WithContext(ctx).
-		Model(&domain.Order{}).
-		Where(
-			"chain_id = ? AND settlement_address = ? AND order_hash = ?",
-			chainID,
-			strings.ToLower(strings.TrimSpace(settlementAddress)),
-			strings.ToLower(strings.TrimSpace(orderHash)),
-		).
-		Updates(updates).Error
+	orderUpdates, runtimeUpdates := splitOrderAndRuntimeUpdates(updates)
+	if len(orderUpdates) == 0 && len(runtimeUpdates) == 0 {
+		return errors.New("updates must not be empty")
+	}
+
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if len(orderUpdates) > 0 {
+			if err := tx.WithContext(ctx).
+				Model(&domain.Order{}).
+				Where(
+					"chain_id = ? AND settlement_address = ? AND order_hash = ?",
+					chainID,
+					strings.ToLower(strings.TrimSpace(settlementAddress)),
+					strings.ToLower(strings.TrimSpace(orderHash)),
+				).
+				Updates(orderUpdates).Error; err != nil {
+				return err
+			}
+		}
+
+		if len(runtimeUpdates) > 0 {
+			order, err := NewOrderRepository(tx).GetByOrderHash(ctx, chainID, settlementAddress, orderHash)
+			if err != nil {
+				return err
+			}
+			if err := NewOrderRuntimeRepository(tx).UpdateByOrderID(ctx, order.ID, runtimeUpdates); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 }
 
 // UpdateFieldsIfStatusIn 仅在订单当前状态属于给定集合时更新字段。
@@ -84,26 +154,53 @@ func (r *OrderRepository) UpdateFieldsIfStatusIn(
 		return false, errors.New("updates must not be empty")
 	}
 
+	orderUpdates, runtimeUpdates := splitOrderAndRuntimeUpdates(updates)
+	if len(orderUpdates) == 0 {
+		return false, errors.New("status-guarded updates must include order table fields")
+	}
+
 	normalizedStatuses := make([]string, 0, len(statuses))
 	for _, status := range statuses {
 		normalizedStatuses = append(normalizedStatuses, strings.TrimSpace(status))
 	}
 
-	result := r.db.WithContext(ctx).
-		Model(&domain.Order{}).
-		Where(
-			"chain_id = ? AND settlement_address = ? AND order_hash = ? AND status IN ?",
-			chainID,
-			strings.ToLower(strings.TrimSpace(settlementAddress)),
-			strings.ToLower(strings.TrimSpace(orderHash)),
-			normalizedStatuses,
-		).
-		Updates(updates)
-	if result.Error != nil {
-		return false, result.Error
+	updated := false
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.WithContext(ctx).
+			Model(&domain.Order{}).
+			Where(
+				"chain_id = ? AND settlement_address = ? AND order_hash = ? AND status IN ?",
+				chainID,
+				strings.ToLower(strings.TrimSpace(settlementAddress)),
+				strings.ToLower(strings.TrimSpace(orderHash)),
+				normalizedStatuses,
+			).
+			Updates(orderUpdates)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return nil
+		}
+
+		if len(runtimeUpdates) > 0 {
+			order, getErr := NewOrderRepository(tx).GetByOrderHash(ctx, chainID, settlementAddress, orderHash)
+			if getErr != nil {
+				return getErr
+			}
+			if err := NewOrderRuntimeRepository(tx).UpdateByOrderID(ctx, order.ID, runtimeUpdates); err != nil {
+				return err
+			}
+		}
+
+		updated = true
+		return nil
+	})
+	if err != nil {
+		return false, err
 	}
 
-	return result.RowsAffected == 1, nil
+	return updated, nil
 }
 
 // ClaimOpenOrderForExecution 原子地把 open 订单抢占为 submitting_execute。
@@ -118,28 +215,50 @@ func (r *OrderRepository) ClaimOpenOrderForExecution(
 		return false, errors.New("order repository unavailable")
 	}
 
-	result := r.db.WithContext(ctx).
-		Model(&domain.Order{}).
-		Where(
-			"chain_id = ? AND settlement_address = ? AND order_hash = ? AND status = ?",
-			chainID,
-			strings.ToLower(strings.TrimSpace(settlementAddress)),
-			strings.ToLower(strings.TrimSpace(orderHash)),
-			"open",
-		).
-		Updates(map[string]interface{}{
-			"status":                  "submitting_execute",
+	claimed := false
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.WithContext(ctx).
+			Model(&domain.Order{}).
+			Where(
+				"chain_id = ? AND settlement_address = ? AND order_hash = ? AND status = ?",
+				chainID,
+				strings.ToLower(strings.TrimSpace(settlementAddress)),
+				strings.ToLower(strings.TrimSpace(orderHash)),
+				"open",
+			).
+			Updates(map[string]interface{}{
+				"status":     "submitting_execute",
+				"updated_at": at.UTC(),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return nil
+		}
+
+		order, getErr := NewOrderRepository(tx).GetByOrderHash(ctx, chainID, settlementAddress, orderHash)
+		if getErr != nil {
+			return getErr
+		}
+		if err := NewOrderRuntimeRepository(tx).UpdateByOrderID(ctx, order.ID, map[string]interface{}{
 			"status_reason":           "claimed_for_submission",
 			"last_block_reason":       "",
 			"submitted_tx_hash":       "",
 			"last_execution_check_at": at.UTC(),
 			"updated_at":              at.UTC(),
-		})
-	if result.Error != nil {
-		return false, result.Error
+		}); err != nil {
+			return err
+		}
+
+		claimed = true
+		return nil
+	})
+	if err != nil {
+		return false, err
 	}
 
-	return result.RowsAffected == 1, nil
+	return claimed, nil
 }
 
 // GetByOrderHash 按业务唯一键查询订单。
@@ -163,6 +282,10 @@ func (r *OrderRepository) GetByOrderHash(
 		).
 		First(&order).Error
 	if err != nil {
+		return nil, err
+	}
+
+	if err := r.attachRuntime(ctx, &order); err != nil {
 		return nil, err
 	}
 
@@ -196,6 +319,10 @@ func (r *OrderRepository) ListOpenOrdersByMakerAndNonce(
 		return nil, err
 	}
 
+	if err := r.attachRuntimes(ctx, orders); err != nil {
+		return nil, err
+	}
+
 	return orders, nil
 }
 
@@ -222,6 +349,10 @@ func (r *OrderRepository) ListOrdersByMakerAndNonce(
 		).
 		Find(&orders).Error
 	if err != nil {
+		return nil, err
+	}
+
+	if err := r.attachRuntimes(ctx, orders); err != nil {
 		return nil, err
 	}
 
@@ -255,6 +386,10 @@ func (r *OrderRepository) ListOpenOrdersByMakerAndNonceBelow(
 		return nil, err
 	}
 
+	if err := r.attachRuntimes(ctx, orders); err != nil {
+		return nil, err
+	}
+
 	return orders, nil
 }
 
@@ -274,6 +409,10 @@ func (r *OrderRepository) ListByStatus(ctx context.Context, status string, limit
 		return nil, err
 	}
 
+	if err := r.attachRuntimes(ctx, orders); err != nil {
+		return nil, err
+	}
+
 	return orders, nil
 }
 
@@ -290,18 +429,25 @@ func (r *OrderRepository) ListOpenOrdersForSettlement(
 
 	var orders []domain.Order
 	err := r.db.WithContext(ctx).
+		Table("orders").
+		Joins("LEFT JOIN order_runtime ON order_runtime.order_id = orders.id").
 		Where(
-			"chain_id = ? AND settlement_address = ? AND status = ?",
+			"orders.chain_id = ? AND orders.settlement_address = ? AND orders.status = ?",
 			chainID,
 			strings.ToLower(strings.TrimSpace(settlementAddress)),
 			"open",
 		).
-		Order("last_execution_check_at ASC").
-		Order("updated_at ASC").
-		Order("id ASC").
+		Select("orders.*").
+		Order("order_runtime.last_execution_check_at ASC").
+		Order("orders.updated_at ASC").
+		Order("orders.id ASC").
 		Limit(limit).
 		Find(&orders).Error
 	if err != nil {
+		return nil, err
+	}
+
+	if err := r.attachRuntimes(ctx, orders); err != nil {
 		return nil, err
 	}
 
@@ -334,6 +480,85 @@ func (r *OrderRepository) ListPendingOrdersForSettlement(
 		return nil, err
 	}
 
+	if err := r.attachRuntimes(ctx, orders); err != nil {
+		return nil, err
+	}
+
 	return orders, nil
+}
+
+func (r *OrderRepository) attachRuntime(ctx context.Context, order *domain.Order) error {
+	if order == nil || order.ID == 0 {
+		return nil
+	}
+	runtime, err := NewOrderRuntimeRepository(r.db).GetByOrderID(ctx, order.ID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	applyRuntimeToOrder(order, runtime)
+	return nil
+}
+
+func (r *OrderRepository) attachRuntimes(ctx context.Context, orders []domain.Order) error {
+	if len(orders) == 0 {
+		return nil
+	}
+	orderIDs := make([]uint64, 0, len(orders))
+	for i := range orders {
+		if orders[i].ID != 0 {
+			orderIDs = append(orderIDs, orders[i].ID)
+		}
+	}
+
+	runtimes, err := NewOrderRuntimeRepository(r.db).ListByOrderIDs(ctx, orderIDs)
+	if err != nil {
+		return err
+	}
+	runtimeByOrderID := make(map[uint64]domain.OrderRuntime, len(runtimes))
+	for i := range runtimes {
+		runtimeByOrderID[runtimes[i].OrderID] = runtimes[i]
+	}
+	for i := range orders {
+		if runtime, ok := runtimeByOrderID[orders[i].ID]; ok {
+			applyRuntimeToOrder(&orders[i], &runtime)
+		}
+	}
+	return nil
+}
+
+func applyRuntimeToOrder(order *domain.Order, runtime *domain.OrderRuntime) {
+	if order == nil || runtime == nil {
+		return
+	}
+	order.StatusReason = runtime.StatusReason
+	order.EstimatedGasUsed = runtime.EstimatedGasUsed
+	order.GasPriceAtQuote = runtime.GasPriceAtQuote
+	order.FeeQuoteAt = runtime.FeeQuoteAt
+	order.LastRequiredExecutorFee = runtime.LastRequiredExecutorFee
+	order.LastFeeCheckAt = runtime.LastFeeCheckAt
+	order.LastExecutionCheckAt = runtime.LastExecutionCheckAt
+	order.LastBlockReason = runtime.LastBlockReason
+	order.SettledAmountOut = runtime.SettledAmountOut
+	order.SettledExecutorFee = runtime.SettledExecutorFee
+	order.SubmittedTxHash = runtime.SubmittedTxHash
+	order.ExecutedTxHash = runtime.ExecutedTxHash
+	order.CancelledTxHash = runtime.CancelledTxHash
+	order.LastCheckedBlock = runtime.LastCheckedBlock
+}
+
+func splitOrderAndRuntimeUpdates(updates map[string]interface{}) (map[string]interface{}, map[string]interface{}) {
+	orderUpdates := make(map[string]interface{})
+	runtimeUpdates := make(map[string]interface{})
+	for key, value := range updates {
+		if _, ok := orderRuntimeFieldNames[key]; ok {
+			runtimeUpdates[key] = value
+			continue
+		}
+		orderUpdates[key] = value
+	}
+	return orderUpdates, runtimeUpdates
 }
 

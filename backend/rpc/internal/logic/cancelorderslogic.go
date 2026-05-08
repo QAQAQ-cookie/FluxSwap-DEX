@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"time"
 
+	"fluxswap-backend/internal/app"
 	"fluxswap-backend/internal/chain"
 	"fluxswap-backend/internal/domain"
 	"fluxswap-backend/internal/repo"
 	"fluxswap-backend/rpc/executor"
 	"fluxswap-backend/rpc/internal/svc"
 
+	"gorm.io/gorm"
 	"github.com/zeromicro/go-zero/core/logx"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -211,19 +213,50 @@ func (l *CancelOrdersLogic) CancelOrders(in *executor.CancelOrdersRequest) (*exe
 			continue
 		}
 
-		updated, updateErr := orderRepo.UpdateFieldsIfStatusIn(
-			l.ctx,
-			order.ChainID,
-			order.SettlementAddress,
-			order.OrderHash,
-			[]string{"open"},
-			map[string]interface{}{
-				"status":            "pending_cancel",
-				"status_reason":     "cancel_tx_submitted_by_user",
-				"cancelled_tx_hash": cancelTxHash,
-				"updated_at":        now,
-			},
-		)
+		updated := false
+		updateErr := l.svcCtx.DB.WithContext(l.ctx).Transaction(func(tx *gorm.DB) error {
+			txOrderRepo := repo.NewOrderRepository(tx)
+			var err error
+			updated, err = txOrderRepo.UpdateFieldsIfStatusIn(
+				l.ctx,
+				order.ChainID,
+				order.SettlementAddress,
+				order.OrderHash,
+				[]string{"open"},
+				map[string]interface{}{
+					"status":            "pending_cancel",
+					"status_reason":     "cancel_tx_submitted_by_user",
+					"cancelled_tx_hash": cancelTxHash,
+					"updated_at":        now,
+				},
+			)
+			if err != nil || !updated {
+				return err
+			}
+
+			refreshedOrder, refreshErr := txOrderRepo.GetByOrderHash(l.ctx, order.ChainID, order.SettlementAddress, order.OrderHash)
+			if refreshErr != nil {
+				return refreshErr
+			}
+			order = refreshedOrder
+
+			return app.RecordOrderActivity(l.ctx, tx, app.RecordOrderActivityParams{
+				Order:        order,
+				ActivityType: domain.OrderActivityTypeCancelRequested,
+				FromStatus:   "open",
+				ToStatus:     "pending_cancel",
+				ReasonCode:   "cancel_tx_submitted_by_user",
+				ReasonDetail: "",
+				Source:       domain.OrderActivitySourceRPC,
+				ActorAddress: order.Maker,
+				TxHash:       cancelTxHash,
+				DedupeKey:    fmt.Sprintf("rpc:cancel:%d:%s:%s:%s", order.ChainID, order.SettlementAddress, order.OrderHash, cancelTxHash),
+				Payload: map[string]string{
+					"cancelTxHash": cancelTxHash,
+				},
+				OccurredAt: now,
+			})
+		})
 		if updateErr != nil {
 			l.Errorf("update pending_cancel order %s failed: %v", order.OrderHash, updateErr)
 			if result := findCancelResultByKey(results, resultKey); result != nil {
@@ -244,11 +277,6 @@ func (l *CancelOrdersLogic) CancelOrders(in *executor.CancelOrdersRequest) (*exe
 				result.Stage = "write"
 			}
 			continue
-		}
-
-		refreshedOrder, refreshErr := orderRepo.GetByOrderHash(l.ctx, order.ChainID, order.SettlementAddress, order.OrderHash)
-		if refreshErr == nil {
-			order = refreshedOrder
 		}
 
 		if result := findCancelResultByKey(results, resultKey); result != nil {
