@@ -726,7 +726,7 @@ export function SwapWidget({
     );
   const executableRoutePath =
     selectedExecutionPath ?? rateRouteState.executionPath;
-  const noRouteLabel = isZh ? "鏆傛棤鍙敤璺緞" : "No route";
+  const noRouteLabel = isZh ? "暂无可用路由" : "No route";
   const { data: allowance } = useReadFluxTokenAllowance({
     address: approvalTokenAddress ?? zeroAddress,
     chainId,
@@ -1774,7 +1774,7 @@ export function SwapWidget({
                 placeholder="30"
               />
               <span className="ml-1 text-sm font-medium text-gray-600 dark:text-gray-300">
-                {isZh ? "鍒嗛挓" : "minutes"}
+                {isZh ? "分钟" : "minutes"}
               </span>
               <div className="ml-2 flex w-5 shrink-0 flex-col overflow-hidden rounded-md border border-gray-200 dark:border-gray-700">
                 <button
