@@ -98,7 +98,7 @@ export default function Home() {
               <span>{isZh ? '立即交易' : 'Start Trading'}</span>
             </Link>
             <Link
-              href="/pool"
+              href="/portfolio/liquidity"
               className="inline-flex items-center gap-2 rounded-2xl border border-black/10 bg-white/50 px-8 py-4 text-lg font-bold text-gray-900 backdrop-blur-md transition-all hover:scale-105 hover:bg-white/80 dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
             >
               <Droplets size={20} />

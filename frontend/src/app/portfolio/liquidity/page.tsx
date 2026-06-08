@@ -33,6 +33,7 @@ import { useIsClient } from '@/hooks/useIsClient';
 import {
   DECIMAL_INPUT_REGEX,
   formatDisplayAmount,
+  formatDisplayAmountDown,
   parseAmount,
   parsePercentToBps,
 } from '@/lib/amounts';
@@ -257,7 +258,8 @@ export default function PortfolioLiquidityPage() {
   const router = useRouter();
   const mounted = useIsClient();
   const chainId = useChainId();
-  const publicClient = usePublicClient({ chainId });
+  const effectiveChainId = mounted ? chainId : undefined;
+  const publicClient = usePublicClient({ chainId: effectiveChainId });
   const { address, isConnected } = useAccount();
   const { openConnectModal } = useConnectModal();
   const {
@@ -268,15 +270,18 @@ export default function PortfolioLiquidityPage() {
   const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
     hash,
   });
-  const tokens = getSwapTokenOptions(chainId);
-  const initialTokenA = tokens.find((token) => token.symbol === 'ETH') ?? tokens[0];
-  const supportedChain = isFluxSupportedChain(chainId);
-  const routerAddress = getContractAddress('FluxSwapRouter', chainId);
-  const localGasOverride = getLocalGasOverride(chainId);
+  const tokens = useMemo(() => getSwapTokenOptions(effectiveChainId), [effectiveChainId]);
+  const initialTokenA = useMemo(
+    () => tokens.find((token) => token.symbol === 'ETH') ?? tokens[0],
+    [tokens],
+  );
+  const supportedChain = isFluxSupportedChain(effectiveChainId);
+  const routerAddress = getContractAddress('FluxSwapRouter', effectiveChainId);
+  const localGasOverride = getLocalGasOverride(effectiveChainId);
 
   const [step, setStep] = useState<Step>(1);
   const [feeTier] = useState<FeeTier>('0.3%');
-  const [tokenA, setTokenA] = useState<SwapTokenOption | undefined>(initialTokenA);
+  const [tokenA, setTokenA] = useState<SwapTokenOption | undefined>(undefined);
   const [tokenB, setTokenB] = useState<SwapTokenOption | undefined>(undefined);
   const [amountA, setAmountA] = useState('');
   const [amountB, setAmountB] = useState('');
@@ -310,6 +315,14 @@ export default function PortfolioLiquidityPage() {
     () => tokens.filter((token) => token.symbol !== tokenA?.symbol),
     [tokenA?.symbol, tokens],
   );
+
+  useEffect(() => {
+    if (!mounted || tokenA || !initialTokenA) {
+      return;
+    }
+
+    setTokenA(initialTokenA);
+  }, [initialTokenA, mounted, tokenA]);
 
   useEffect(() => {
     if (!supportedChain || !orderedTokenA || !orderedTokenB) {
@@ -353,9 +366,10 @@ export default function PortfolioLiquidityPage() {
       ? `${displayTokenA.symbol} / ${displayTokenB.symbol}`
       : '--';
   const canContinue = Boolean(tokenA && tokenB);
+  const baselineTokenA = tokenA ?? initialTokenA;
   const canReset =
     step !== 1 ||
-    tokenA?.symbol !== initialTokenA?.symbol ||
+    baselineTokenA?.symbol !== initialTokenA?.symbol ||
     tokenB !== undefined ||
     amountA.trim() !== '' ||
     amountB.trim() !== '' ||
@@ -368,8 +382,8 @@ export default function PortfolioLiquidityPage() {
   const parsedDeadlineMinutes = Math.max(1, Number.parseInt(deadline || '30', 10) || 30);
 
   const { data: pairAddress, refetch: refetchPairAddress } = useReadFluxSwapFactoryGetPair({
-    address: getContractAddress('FluxSwapFactory', chainId) ?? zeroAddress,
-    chainId,
+    address: getContractAddress('FluxSwapFactory', effectiveChainId) ?? zeroAddress,
+    chainId: effectiveChainId,
     args: pairArgs,
     query: {
       enabled: Boolean(supportedChain && orderedTokenA && orderedTokenB),
@@ -383,7 +397,7 @@ export default function PortfolioLiquidityPage() {
 
   const { data: reservesData, refetch: refetchReserves } = useReadFluxSwapPairGetReserves({
     address: normalizedPairAddress ?? zeroAddress,
-    chainId,
+    chainId: effectiveChainId,
     query: {
       enabled: Boolean(normalizedPairAddress),
       retry: false,
@@ -393,7 +407,7 @@ export default function PortfolioLiquidityPage() {
 
   const { data: token0, refetch: refetchToken0 } = useReadFluxSwapPairToken0({
     address: normalizedPairAddress ?? zeroAddress,
-    chainId,
+    chainId: effectiveChainId,
     query: {
       enabled: Boolean(normalizedPairAddress),
       retry: false,
@@ -425,7 +439,7 @@ export default function PortfolioLiquidityPage() {
 
   const { data: balanceAData, refetch: refetchBalanceA } = useBalance({
     address,
-    chainId,
+    chainId: effectiveChainId,
     token: orderedTokenA?.kind === 'erc20' ? orderedTokenA.address : undefined,
     query: {
       enabled: mounted && isConnected && !!address && !!orderedTokenA,
@@ -435,7 +449,7 @@ export default function PortfolioLiquidityPage() {
 
   const { data: balanceBData, refetch: refetchBalanceB } = useBalance({
     address,
-    chainId,
+    chainId: effectiveChainId,
     token: orderedTokenB?.kind === 'erc20' ? orderedTokenB.address : undefined,
     query: {
       enabled: mounted && isConnected && !!address && !!orderedTokenB,
@@ -445,7 +459,7 @@ export default function PortfolioLiquidityPage() {
 
   const { data: allowanceA, refetch: refetchAllowanceA } = useReadFluxSwapErc20Allowance({
     address: orderedTokenA?.address ?? zeroAddress,
-    chainId,
+    chainId: effectiveChainId,
     args: [address ?? zeroAddress, routerAddress ?? zeroAddress],
     query: {
       enabled:
@@ -461,7 +475,7 @@ export default function PortfolioLiquidityPage() {
 
   const { data: allowanceB, refetch: refetchAllowanceB } = useReadFluxSwapErc20Allowance({
     address: orderedTokenB?.address ?? zeroAddress,
-    chainId,
+    chainId: effectiveChainId,
     args: [address ?? zeroAddress, routerAddress ?? zeroAddress],
     query: {
       enabled:
@@ -491,11 +505,11 @@ export default function PortfolioLiquidityPage() {
 
   const minAmountADisplay =
     minAmountA !== undefined && orderedTokenA
-      ? formatDisplayAmount((Number(minAmountA) / 10 ** orderedTokenA.decimals).toString(), 6)
+      ? formatDisplayAmountDown(formatUnits(minAmountA, orderedTokenA.decimals), 6)
       : '--';
   const minAmountBDisplay =
     minAmountB !== undefined && orderedTokenB
-      ? formatDisplayAmount((Number(minAmountB) / 10 ** orderedTokenB.decimals).toString(), 6)
+      ? formatDisplayAmountDown(formatUnits(minAmountB, orderedTokenB.decimals), 6)
       : '--';
   const insufficientBalanceA =
     parsedAmountA !== undefined && balanceAData?.value !== undefined
@@ -1203,7 +1217,7 @@ export default function PortfolioLiquidityPage() {
                       <div className="space-y-5">
                         <div>
                           <div className="text-sm text-gray-400">
-                            {isZh ? '最小代币一' : 'Min token A'}
+                            {isZh ? '最少接受代币一' : 'Min accepted token A'}
                           </div>
                           <div className="mt-2 text-[1.15rem] font-semibold text-gray-950">
                             {minAmountADisplay}
@@ -1211,7 +1225,7 @@ export default function PortfolioLiquidityPage() {
                         </div>
                         <div>
                           <div className="text-sm text-gray-400">
-                            {isZh ? '最小代币二' : 'Min token B'}
+                            {isZh ? '最少接受代币二' : 'Min accepted token B'}
                           </div>
                           <div className="mt-2 text-[1.15rem] font-semibold text-gray-950">
                             {minAmountBDisplay}

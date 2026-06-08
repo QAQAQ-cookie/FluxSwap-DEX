@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useDeferredValue, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
 import {
@@ -15,6 +16,7 @@ import {
 import {
   AlertCircle,
   ArrowDown,
+  ArrowRightLeft,
   ChevronDown,
   ChevronUp,
   CheckCircle2,
@@ -22,7 +24,7 @@ import {
   Settings2,
   Info,
 } from "lucide-react";
-import { type Address, maxUint256, parseAbi, zeroAddress } from "viem";
+import { formatUnits, type Address, maxUint256, parseAbi, zeroAddress } from "viem";
 import { ActionButton } from "@/components/ActionButton";
 import {
   getContractAddress,
@@ -59,12 +61,17 @@ import {
   toSignedLimitOrderTokenAddress,
   type SignedLimitOrder,
 } from "@/lib/limitOrders";
+import {
+  syncLocalLimitOrdersWithChain,
+  upsertLocalLimitOrder,
+} from "@/lib/localLimitOrders";
 
 type SelectorTarget = "pay" | "receive" | null;
 type ActionKind = "approve" | "revoke" | "swap" | "limit" | "wrap" | null;
 type InputMode = "pay" | "receive";
 type TradeMode = "swap" | "limit";
-type LimitPricePreset = "market" | "0.1" | "0.5" | "1.0" | "custom";
+type LimitPricePreset = "market" | "1" | "5" | "10" | "custom";
+type LimitPriceUnit = "receive" | "pay";
 type SwapSlippageMode = "auto" | "custom";
 type ResultModalState = {
   kind: "success" | "error";
@@ -84,6 +91,7 @@ type BackendRouteState = {
   error?: string;
 };
 const MIN_CUSTOM_SLIPPAGE = "0.1";
+const LIMIT_MARKET_REFRESH_MS = 5000;
 
 function getTokenBySymbol(
   tokens: SwapTokenOption[],
@@ -96,12 +104,102 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
+function formatLimitRateValue(value: number, decimals = 8) {
+  return value.toFixed(decimals).replace(/\.?0+$/, "");
+}
+
+function canonicalLimitRateToDisplay(
+  canonicalRate: string,
+  unit: LimitPriceUnit,
+) {
+  if (canonicalRate.trim() === "") {
+    return "";
+  }
+
+  const numeric = Number(canonicalRate);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return "";
+  }
+
+  const displayValue = unit === "receive" ? numeric : 1 / numeric;
+  if (!Number.isFinite(displayValue) || displayValue <= 0) {
+    return "";
+  }
+
+  return formatLimitRateValue(displayValue);
+}
+
+function displayLimitRateToCanonical(
+  displayRate: string,
+  unit: LimitPriceUnit,
+) {
+  if (displayRate.trim() === "") {
+    return "";
+  }
+
+  const numeric = Number(displayRate);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return "";
+  }
+
+  const canonicalValue = unit === "receive" ? numeric : 1 / numeric;
+  if (!Number.isFinite(canonicalValue) || canonicalValue <= 0) {
+    return "";
+  }
+
+  return formatLimitRateValue(canonicalValue, 12);
+}
+
+function applyLimitPresetToCanonicalMarket(
+  marketRate: number,
+  displayPremiumPercent: number,
+  unit: LimitPriceUnit,
+) {
+  if (
+    !Number.isFinite(marketRate) ||
+    marketRate <= 0 ||
+    !Number.isFinite(displayPremiumPercent)
+  ) {
+    return undefined;
+  }
+
+  const factor = 1 + displayPremiumPercent / 100;
+  if (!Number.isFinite(factor) || factor <= 0) {
+    return undefined;
+  }
+
+  return unit === "receive" ? marketRate * factor : marketRate / factor;
+}
+
 function areAddressesEqual(left?: string, right?: string) {
   if (!left || !right) {
     return false;
   }
 
   return left.toLowerCase() === right.toLowerCase();
+}
+
+function areRoutePathsEqual(left?: RoutePath, right?: RoutePath) {
+  if (!left || !right) {
+    return left === right;
+  }
+
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((item, index) => areAddressesEqual(item, right[index]));
+}
+
+function isSameRouteState(left: BackendRouteState, right: BackendRouteState) {
+  return (
+    left.didFetch === right.didFetch &&
+    left.loading === right.loading &&
+    left.error === right.error &&
+    left.amountIn === right.amountIn &&
+    left.amountOut === right.amountOut &&
+    areRoutePathsEqual(left.executionPath, right.executionPath)
+  );
 }
 
 function normalizeCustomSlippage(value: string): string {
@@ -275,13 +373,26 @@ export function SwapWidget({
   hideDetails = false,
   enableModeSwitch = false,
   initialTradeMode = "swap",
+  launchHref,
+  initialPayTokenSymbol = "ETH",
+  initialReceiveTokenSymbol = "FLUX",
+  initialPayAmount = "",
+  initialReceiveAmount = "",
+  initialInputMode = "pay",
 }: {
   hideDetails?: boolean;
   enableModeSwitch?: boolean;
   initialTradeMode?: TradeMode;
+  launchHref?: string;
+  initialPayTokenSymbol?: SwapTokenSymbol;
+  initialReceiveTokenSymbol?: SwapTokenSymbol;
+  initialPayAmount?: string;
+  initialReceiveAmount?: string;
+  initialInputMode?: InputMode;
 }) {
   const { t, i18n } = useTranslation();
   const isZh = i18n.language.startsWith("zh");
+  const router = useRouter();
   const copy = {
     unsupportedChain: isZh
       ? "当前网络未同步合约地址"
@@ -327,9 +438,6 @@ export function SwapWidget({
     limitExpiry: isZh ? "有效期" : "Expiry",
     limitVsMarket: isZh ? "对比市场价" : "Vs market",
     marketPrice: isZh ? "市场价" : "Market",
-    limitMarketEstimate: isZh
-      ? "按当前市场价格估算的可买入数量"
-      : "Estimated at current market for this size",
     limitOrderNotice: isZh
       ? "限价单会签名一组链上可验证参数。执行时，执行器只能从超过最低买入数量的 surplus 中领取不超过比例上限的奖励。"
       : "Limit orders sign chain-verifiable parameters. At execution, the executor can only take a capped share of surplus above the minimum buy amount.",
@@ -382,30 +490,34 @@ export function SwapWidget({
 
   const effectiveChainId = mounted ? chainId : undefined;
   const tokenOptions = getSwapTokenOptions(effectiveChainId);
-  const [payTokenSymbol, setPayTokenSymbol] = useState<SwapTokenSymbol>("ETH");
+  const [payTokenSymbol, setPayTokenSymbol] = useState<SwapTokenSymbol>(
+    initialPayTokenSymbol,
+  );
   const [receiveTokenSymbol, setReceiveTokenSymbol] =
-    useState<SwapTokenSymbol>("FLUX");
-  const [payAmount, setPayAmount] = useState("");
-  const [receiveAmountInput, setReceiveAmountInput] = useState("");
+    useState<SwapTokenSymbol>(initialReceiveTokenSymbol);
+  const [payAmount, setPayAmount] = useState(initialPayAmount);
+  const [receiveAmountInput, setReceiveAmountInput] = useState(
+    initialReceiveAmount,
+  );
   const [slippage, setSlippage] = useState("0.5");
   const [slippageMode, setSlippageMode] = useState<SwapSlippageMode>("auto");
   const [deadline, setDeadline] = useState("30");
   const [swapSettingsOpen, setSwapSettingsOpen] = useState(false);
   const [openSelector, setOpenSelector] = useState<SelectorTarget>(null);
-  const [txError, setTxError] = useState<string | null>(null);
+  const [, setTxError] = useState<string | null>(null);
   const [resultModal, setResultModal] = useState<ResultModalState>(null);
-  const [lastLimitOrderHash, setLastLimitOrderHash] = useState<string | null>(
+  const [, setLastLimitOrderHash] = useState<string | null>(
     null,
   );
-  const [lastLimitOrderSignature, setLastLimitOrderSignature] = useState<
+  const [, setLastLimitOrderSignature] = useState<
     string | null
   >(null);
   const [lastAction, setLastAction] = useState<ActionKind>(null);
-  const [inputMode, setInputMode] = useState<InputMode>("pay");
+  const [inputMode, setInputMode] = useState<InputMode>(initialInputMode);
   const [tradeMode, setTradeMode] = useState<TradeMode>(initialTradeMode);
   const [limitRate, setLimitRate] = useState("");
   const [limitExpiry, setLimitExpiry] = useState("7");
-  const [limitPremium, setLimitPremium] = useState("0.0");
+  const [limitPriceUnit, setLimitPriceUnit] = useState<LimitPriceUnit>("receive");
   const [limitPricePreset, setLimitPricePreset] =
     useState<LimitPricePreset>("market");
   const [tradeRouteState, setTradeRouteState] = useState<BackendRouteState>({
@@ -416,6 +528,7 @@ export function SwapWidget({
     didFetch: false,
     loading: false,
   });
+  const [rateRefreshTick, setRateRefreshTick] = useState(0);
   const isLimitMode = enableModeSwitch && tradeMode === "limit";
   const swapWidgetRef = useRef<HTMLDivElement | null>(null);
   const swapSettingsButtonRef = useRef<HTMLDivElement | null>(null);
@@ -458,18 +571,32 @@ export function SwapWidget({
       : isLimitMode
         ? "WETH"
         : payToken?.symbol;
-  const approvalTokenDecimals =
-    payToken?.kind === "erc20"
-      ? payToken.decimals
-      : isLimitMode
-        ? 18
-        : (payToken?.decimals ?? 18);
   const payBalanceTokenAddress =
     payToken?.kind === "erc20"
       ? payToken.address
       : isLimitMode
         ? wrappedNativeAddress
         : undefined;
+
+  useEffect(() => {
+    if (tokenOptions.length === 0) {
+      return;
+    }
+
+    const hasPayToken = tokenOptions.some((token) => token.symbol === payTokenSymbol);
+    if (!hasPayToken) {
+      setPayTokenSymbol(tokenOptions[0].symbol);
+    }
+
+    const hasReceiveToken = tokenOptions.some(
+      (token) => token.symbol === receiveTokenSymbol,
+    );
+    if (!hasReceiveToken) {
+      const fallbackReceiveToken =
+        tokenOptions.find((token) => token.symbol !== payTokenSymbol) ?? tokenOptions[0];
+      setReceiveTokenSymbol(fallbackReceiveToken.symbol);
+    }
+  }, [payTokenSymbol, receiveTokenSymbol, tokenOptions]);
 
   const parsedPayAmount = parseAmount(
     deferredPayAmount,
@@ -569,6 +696,20 @@ export function SwapWidget({
     : undefined;
 
   useEffect(() => {
+    if (!isLimitMode || limitPricePreset === "custom") {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setRateRefreshTick((current) => current + 1);
+    }, LIMIT_MARKET_REFRESH_MS);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [isLimitMode, limitPricePreset]);
+
+  useEffect(() => {
     if (
       !supportedChain ||
       !effectiveChainId ||
@@ -658,10 +799,11 @@ export function SwapWidget({
     }
 
     let cancelled = false;
-    setRateRouteState({
-      didFetch: false,
-      loading: true,
-    });
+    setRateRouteState((current) => ({
+      ...current,
+      loading: !current.didFetch,
+      error: current.didFetch ? current.error : undefined,
+    }));
 
     fetchBestRoute({
       chainId: effectiveChainId,
@@ -673,17 +815,22 @@ export function SwapWidget({
     })
       .then((nextState) => {
         if (!cancelled) {
-          setRateRouteState(nextState);
+          setRateRouteState((current) =>
+            isSameRouteState(current, nextState) ? current : nextState,
+          );
         }
       })
       .catch((error) => {
         if (!cancelled) {
-          setRateRouteState({
+          const nextErrorState: BackendRouteState = {
             didFetch: true,
             loading: false,
             error:
               error instanceof Error ? error.message : "Get best route failed",
-          });
+          };
+          setRateRouteState((current) =>
+            isSameRouteState(current, nextErrorState) ? current : nextErrorState,
+          );
         }
       });
 
@@ -695,12 +842,12 @@ export function SwapWidget({
     isLimitMode,
     payBackendTokenAddress,
     rateQuoteAmountIn,
+    rateRefreshTick,
     receiveBackendTokenAddress,
     supportedChain,
   ]);
 
   const selectedExecutionPath = tradeRouteState.executionPath;
-  const selectedDisplayPath = tradeRouteState.displayPath;
   const quotedAmountOut = tradeRouteState.amountOut;
   const quotedAmountIn = tradeRouteState.amountIn;
   const quotedRateOut = rateRouteState.amountOut;
@@ -709,8 +856,6 @@ export function SwapWidget({
   );
   const displayedRoutePath =
     selectedExecutionPath ?? rateRouteState.executionPath ?? directPath;
-  const displayedRouteTokens =
-    selectedDisplayPath ?? rateRouteState.displayPath ?? displayedRoutePath;
   const canUseDirectReserveData =
     displayedRoutePath.length === 2 &&
     areAddressesEqual(displayedRoutePath[0], directPath[0]) &&
@@ -745,12 +890,6 @@ export function SwapWidget({
     receiveToken && quotedRateOut
       ? formatBigIntAmount(quotedRateOut, receiveToken.decimals, 8)
       : "";
-  const limitTargetRateDisplay =
-    payToken && receiveToken
-      ? limitRate
-        ? `1 ${payToken.symbol} = ${limitRate} ${receiveToken.symbol}`
-        : `1 ${payToken.symbol} = -- ${receiveToken.symbol}`
-      : "--";
   const payTokenIsToken0 =
     Boolean(token0 && payToken) &&
     token0?.toLowerCase() === payToken?.routeAddress.toLowerCase();
@@ -784,6 +923,17 @@ export function SwapWidget({
       : undefined;
   const limitRateNumeric = Number(limitRate);
   const payAmountNumeric = Number(payAmount);
+  const receiveAmountNumeric = Number(receiveAmountInput);
+  const displayLimitRate = canonicalLimitRateToDisplay(limitRate, limitPriceUnit);
+  const limitPriceBaseSymbol =
+    limitPriceUnit === "receive"
+      ? (payToken?.symbol ?? "--")
+      : (receiveToken?.symbol ?? "--");
+  const limitPriceQuoteSymbol =
+    limitPriceUnit === "receive"
+      ? (receiveToken?.symbol ?? "--")
+      : (payToken?.symbol ?? "--");
+  const limitPresetDirection = limitPriceUnit === "receive" ? 1 : -1;
   const limitReceiveAmount =
     isLimitMode &&
     limitRate !== "" &&
@@ -798,6 +948,22 @@ export function SwapWidget({
           Math.min(receiveToken.decimals, 8),
         )
       : "";
+  const limitPayAmount =
+    isLimitMode &&
+    limitRate !== "" &&
+    receiveAmountInput !== "" &&
+    Number.isFinite(limitRateNumeric) &&
+    limitRateNumeric > 0 &&
+    Number.isFinite(receiveAmountNumeric) &&
+    receiveAmountNumeric >= 0 &&
+    payToken
+      ? formatDisplayAmount(
+          String(receiveAmountNumeric / limitRateNumeric),
+          Math.min(payToken.decimals, 8),
+        )
+      : "";
+  const effectiveLimitPayAmount =
+    isLimitMode && inputMode === "receive" ? limitPayAmount : payAmount;
   const effectiveLimitReceiveAmount =
     isLimitMode && inputMode === "receive" ? receiveAmountInput : limitReceiveAmount;
   const payBalanceDisplay = displayedPayBalanceData?.formatted
@@ -806,49 +972,66 @@ export function SwapWidget({
   const receiveBalanceDisplay = receiveBalanceData?.formatted
     ? formatDisplayAmount(receiveBalanceData.formatted)
     : "0.00";
+  const quotedPayAmountRaw =
+    quotedAmountIn !== undefined && payToken
+      ? formatUnits(quotedAmountIn, payToken.decimals)
+      : "";
+  const quotedPayAmountDisplay =
+    quotedPayAmountRaw !== ""
+      ? formatDisplayAmount(quotedPayAmountRaw, Math.min(payToken?.decimals ?? 18, 8))
+      : "";
+  const resolvedLimitPayAmount =
+    effectiveLimitPayAmount ||
+    (isLimitMode && inputMode === "receive" ? quotedPayAmountRaw : "");
   const receiveAmount = isLimitMode
     ? effectiveLimitReceiveAmount
     : inputMode === "receive"
       ? receiveAmountInput
       : formatBigIntAmount(quotedAmountOut, receiveToken?.decimals ?? 18);
-  const limitMarketEstimateDisplay =
-    isLimitMode
-      ? formatBigIntAmount(quotedAmountOut, receiveToken?.decimals ?? 18)
-      : "";
+  const parsedLimitPayAmount =
+    isLimitMode && payToken
+      ? parseAmount(resolvedLimitPayAmount, payToken.decimals)
+      : undefined;
   const parsedLimitReceiveAmount =
     isLimitMode && receiveToken
       ? parseAmount(effectiveLimitReceiveAmount, receiveToken.decimals)
       : undefined;
-  const payAmountDisplay =
-    inputMode === "pay"
+  const payAmountDisplay = isLimitMode
+    ? (effectiveLimitPayAmount || quotedPayAmountDisplay)
+    : inputMode === "pay"
       ? payAmount
       : formatBigIntAmount(quotedAmountIn, payToken?.decimals ?? 18);
+  const limitHasInputValue =
+    inputMode === "pay"
+      ? payAmount.trim() !== ""
+      : receiveAmountInput.trim() !== "";
   const hasSwapInputValue =
     inputMode === "pay"
       ? payAmount.trim() !== ""
       : receiveAmountInput.trim() !== "";
+  const requiredInputAmount = isLimitMode ? parsedLimitPayAmount : quotedAmountIn;
   const insufficientBalance = Boolean(
-    quotedAmountIn &&
+    requiredInputAmount &&
     displayedPayBalanceData?.value !== undefined &&
-    quotedAmountIn > displayedPayBalanceData.value,
+    requiredInputAmount > displayedPayBalanceData.value,
   );
   const needsWrapForLimit = Boolean(
     isLimitMode &&
     payToken?.kind === "native" &&
-    parsedPayAmount &&
-    parsedPayAmount > BigInt(0) &&
+    parsedLimitPayAmount &&
+    parsedLimitPayAmount > BigInt(0) &&
     wrappedNativeAddress &&
     nativeBalanceData?.value !== undefined &&
     payBalanceData?.value !== undefined &&
-    parsedPayAmount > payBalanceData.value &&
-    parsedPayAmount <= nativeBalanceData.value,
+    parsedLimitPayAmount > payBalanceData.value &&
+    parsedLimitPayAmount <= nativeBalanceData.value,
   );
 
   const needsApproval = Boolean(
     approvalTokenAddress &&
-    quotedAmountIn &&
+    requiredInputAmount &&
     allowance !== undefined &&
-    quotedAmountIn > allowance,
+    requiredInputAmount > allowance,
   );
 
   const midPrice =
@@ -920,30 +1103,37 @@ export function SwapWidget({
       return;
     }
 
-    if (!limitMarketRateDisplay) {
+    const market = Number(limitMarketRateDisplay);
+    if (!Number.isFinite(market) || market <= 0) {
       setLimitRate("");
       return;
     }
 
     if (limitPricePreset === "market") {
-      setLimitPremium("0.0");
-      setLimitRate(limitMarketRateDisplay);
+      setLimitRate(formatLimitRateValue(market, 12));
       return;
     }
 
-    const market = Number(limitMarketRateDisplay);
-    const premium = Number(limitPricePreset);
+    const premium = Number(limitPricePreset) * limitPresetDirection;
+    const nextRate = applyLimitPresetToCanonicalMarket(
+      market,
+      premium,
+      limitPriceUnit,
+    );
 
-    if (!Number.isFinite(market) || !Number.isFinite(premium)) {
-      setLimitPremium("0.0");
-      setLimitRate(limitMarketRateDisplay);
+    if (nextRate === undefined) {
+      setLimitRate(formatLimitRateValue(market, 12));
       return;
     }
 
-    setLimitPremium(limitPricePreset);
-    const nextRate = market * (1 + premium / 100);
-    setLimitRate(nextRate.toFixed(8).replace(/\.?0+$/, ""));
-  }, [isLimitMode, limitMarketRateDisplay, limitPricePreset]);
+    setLimitRate(formatLimitRateValue(nextRate, 12));
+  }, [
+    isLimitMode,
+    limitMarketRateDisplay,
+    limitPricePreset,
+    limitPresetDirection,
+    limitPriceUnit,
+  ]);
 
   useEffect(() => {
     if (!swapSettingsOpen) {
@@ -982,15 +1172,6 @@ export function SwapWidget({
   let actionLabel = copy.readyToSwap;
   let actionDisabled = false;
   let actionKind: ActionKind = "swap";
-  const statusLabel =
-    lastAction === "approve" || lastAction === "revoke"
-      ? isConfirmed
-        ? copy.approvalConfirmed
-        : copy.approvalSubmitted
-      : isConfirmed
-        ? copy.txConfirmed
-        : copy.txSubmitted;
-
   if (isLimitMode) {
     actionLabel = isSigningLimitOrder
       ? copy.limitOrderPending
@@ -1008,16 +1189,16 @@ export function SwapWidget({
       actionLabel = copy.unsupportedPair;
       actionDisabled = true;
       actionKind = null;
-    } else if (!payAmount || !limitRate) {
+    } else if (!limitHasInputValue || !limitRate) {
       actionLabel = copy.enterAmount;
       actionDisabled = true;
       actionKind = null;
     } else if (
-      !parsedPayAmount ||
-      parsedPayAmount <= BigInt(0) ||
+      !parsedLimitPayAmount ||
+      parsedLimitPayAmount <= BigInt(0) ||
       !parsedLimitReceiveAmount ||
       calculateTriggerPriceX18(
-        parsedPayAmount,
+        parsedLimitPayAmount,
         parsedLimitReceiveAmount,
         payToken.decimals,
         receiveToken.decimals,
@@ -1152,60 +1333,25 @@ export function SwapWidget({
     setLastLimitOrderHash(null);
     setLastLimitOrderSignature(null);
 
-    if (isLimitMode) {
-      if (normalizedValue === "" || payAmount === "") {
-        setLimitRate("");
-      } else {
-        const nextReceiveNumeric = Number(normalizedValue);
-        const payAmountValue = Number(payAmount);
-
-        if (
-          Number.isFinite(nextReceiveNumeric) &&
-          nextReceiveNumeric >= 0 &&
-          Number.isFinite(payAmountValue) &&
-          payAmountValue > 0
-        ) {
-          setLimitRate(
-            (nextReceiveNumeric / payAmountValue)
-              .toFixed(8)
-              .replace(/\.?0+$/, ""),
-          );
-        }
-      }
-    }
-
     if (normalizedValue === "") {
       setPayAmount("");
     }
   };
 
-  const adjustLimitPremium = (delta: number) => {
-    const current = Number(limitPremium || "0");
-    const safeCurrent = Number.isFinite(current) && current >= 0 ? current : 0;
-    const nextValue = Math.max(
-      0,
-      Math.min(50, Math.round((safeCurrent + delta) * 10) / 10),
-    );
+  const handleLimitRateChange = (value: string) => {
+    if (!DECIMAL_INPUT_REGEX.test(value)) {
+      return;
+    }
 
-    const nextPremium = nextValue.toFixed(1);
-    setLimitPremium(nextPremium);
     setLimitPricePreset("custom");
+    setInputMode("pay");
     setLastLimitOrderHash(null);
     setLastLimitOrderSignature(null);
+    setLimitRate(displayLimitRateToCanonical(value, limitPriceUnit));
+  };
 
-    if (!limitMarketRateDisplay) {
-      setLimitRate("");
-      return;
-    }
-
-    const market = Number(limitMarketRateDisplay);
-    if (!Number.isFinite(market)) {
-      setLimitRate(limitMarketRateDisplay);
-      return;
-    }
-
-    const nextRate = market * (1 + nextValue / 100);
-    setLimitRate(nextRate.toFixed(8).replace(/\.?0+$/, ""));
+  const toggleLimitPriceUnit = () => {
+    setLimitPriceUnit((current) => (current === "receive" ? "pay" : "receive"));
   };
 
   const updateSwapSlippage = (nextValue: string) => {
@@ -1250,33 +1396,33 @@ export function SwapWidget({
 
   const applyLimitPreset = (preset: Exclude<LimitPricePreset, "custom">) => {
     setLimitPricePreset(preset);
+    setInputMode("pay");
     setLastLimitOrderHash(null);
     setLastLimitOrderSignature(null);
 
-    if (!limitMarketRateDisplay) {
-      setLimitPremium("0.0");
+    const market = Number(limitMarketRateDisplay);
+    if (!Number.isFinite(market) || market <= 0) {
       setLimitRate("");
       return;
     }
 
     if (preset === "market") {
-      setLimitPremium("0.0");
-      setLimitRate(limitMarketRateDisplay);
+      setLimitRate(formatLimitRateValue(market, 12));
       return;
     }
 
-    const market = Number(limitMarketRateDisplay);
-    const premium = Number(preset);
-
-    if (!Number.isFinite(market) || !Number.isFinite(premium)) {
-      setLimitPremium("0.0");
-      setLimitRate(limitMarketRateDisplay);
+    const premium = Number(preset) * limitPresetDirection;
+    const nextRate = applyLimitPresetToCanonicalMarket(
+      market,
+      premium,
+      limitPriceUnit,
+    );
+    if (nextRate === undefined) {
+      setLimitRate(formatLimitRateValue(market, 12));
       return;
     }
 
-    setLimitPremium(preset);
-    const nextRate = market * (1 + premium / 100);
-    setLimitRate(nextRate.toFixed(8).replace(/\.?0+$/, ""));
+    setLimitRate(formatLimitRateValue(nextRate, 12));
   };
 
   const handleSelectToken = (
@@ -1318,10 +1464,27 @@ export function SwapWidget({
     setReceiveAmountInput("");
     setInputMode("pay");
     setLimitRate("");
-    setLimitPremium("0.0");
     setLimitPricePreset("market");
     setLastLimitOrderHash(null);
     setLastLimitOrderSignature(null);
+  };
+
+  const handleLaunchSwapPage = () => {
+    const params = new URLSearchParams();
+    params.set("mode", "swap");
+    params.set("payToken", payTokenSymbol);
+    params.set("receiveToken", receiveTokenSymbol);
+    params.set("inputMode", inputMode);
+
+    if (payAmount.trim() !== "") {
+      params.set("payAmount", payAmount.trim());
+    }
+
+    if (receiveAmountInput.trim() !== "") {
+      params.set("receiveAmount", receiveAmountInput.trim());
+    }
+
+    router.push(`${launchHref ?? "/swap"}?${params.toString()}`);
   };
 
   const handleMaxPay = () => {
@@ -1351,8 +1514,8 @@ export function SwapWidget({
       if (actionKind === "wrap") {
         if (
           !wrappedNativeAddress ||
-          !parsedPayAmount ||
-          parsedPayAmount <= BigInt(0)
+          !parsedLimitPayAmount ||
+          parsedLimitPayAmount <= BigInt(0)
         ) {
           return;
         }
@@ -1361,7 +1524,7 @@ export function SwapWidget({
           address: wrappedNativeAddress,
           abi: parseAbi(["function deposit() payable"]),
           functionName: "deposit",
-          value: parsedPayAmount,
+          value: parsedLimitPayAmount,
           chainId,
           ...localGasOverride,
         });
@@ -1389,7 +1552,7 @@ export function SwapWidget({
         if (
           !settlementAddress ||
           !publicClient ||
-          !parsedPayAmount ||
+          !parsedLimitPayAmount ||
           !receiveToken
         ) {
           return;
@@ -1402,6 +1565,12 @@ export function SwapWidget({
         }
 
         const latestBlock = await publicClient.getBlock();
+        await syncLocalLimitOrdersWithChain({
+          publicClient,
+          chainId,
+          latestBlockNumber: latestBlock.number,
+          latestBlockHash: latestBlock.hash,
+        });
         const nonceSeed = new Uint32Array(2);
         globalThis.crypto.getRandomValues(nonceSeed);
         const nonce =
@@ -1417,11 +1586,11 @@ export function SwapWidget({
             receiveToken.address,
             receiveToken.kind === "native",
           ),
-          amountIn: parsedPayAmount,
+          amountIn: parsedLimitPayAmount,
           minAmountOut,
           maxExecutorRewardBps: LIMIT_ORDER_DEFAULT_MAX_EXECUTOR_REWARD_BPS,
           triggerPriceX18: calculateTriggerPriceX18(
-            parsedPayAmount,
+            parsedLimitPayAmount,
             minAmountOut,
             payToken.decimals,
             receiveToken.decimals,
@@ -1490,6 +1659,26 @@ export function SwapWidget({
 
         setLastLimitOrderHash(orderHash);
         setLastLimitOrderSignature(signature);
+        const nowIso = new Date().toISOString();
+        upsertLocalLimitOrder({
+          chainId,
+          settlementAddress,
+          orderHash,
+          maker: order.maker,
+          inputToken: order.inputToken,
+          outputToken: order.outputToken,
+          amountIn: order.amountIn.toString(),
+          minAmountOut: order.minAmountOut.toString(),
+          maxExecutorRewardBps: order.maxExecutorRewardBps.toString(),
+          triggerPriceX18: order.triggerPriceX18.toString(),
+          expiry: order.expiry.toString(),
+          nonce: order.nonce.toString(),
+          recipient: order.recipient,
+          source: "frontend",
+          status: "open",
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        });
         setTxError(null);
         setResultModal({
           kind: "success",
@@ -1671,8 +1860,23 @@ export function SwapWidget({
     setResultModal(null);
   };
 
-  const actionButton =
+  const actionButton = hideDetails ? (
     !mounted || !isConnected ? (
+      <ActionButton
+        label={t("swap.connectWallet")}
+        disabled={false}
+        onClick={() => openConnectModal?.()}
+        variant="ghost"
+        className="border-blue-200 bg-blue-100 text-blue-600 hover:bg-blue-200 dark:border-blue-900/50 dark:bg-blue-600/20 dark:text-blue-400 dark:hover:bg-blue-600/30"
+      />
+    ) : (
+      <ActionButton
+        label={isZh ? "开始使用" : "Get Started"}
+        disabled={false}
+        onClick={handleLaunchSwapPage}
+      />
+    )
+  ) : !mounted || !isConnected ? (
       <ActionButton
         label={t("swap.connectWallet")}
         disabled={false}
@@ -1799,7 +2003,7 @@ export function SwapWidget({
     ) : null;
 
   const modeSwitchControls = enableModeSwitch ? (
-    <div className="inline-flex items-center rounded-full border border-gray-200 bg-gray-100/90 p-1 shadow-sm dark:border-gray-700 dark:bg-gray-900/80">
+    <div className="inline-flex items-center gap-2">
       <button
         onClick={() => setTradeMode("swap")}
         className={`rounded-full px-5 py-2 text-sm font-semibold transition-all duration-200 ${
@@ -1976,21 +2180,76 @@ export function SwapWidget({
 
             {isLimitMode && (
               <div className="mb-4 space-y-4 rounded-3xl border border-sky-200 bg-sky-50/80 p-4 dark:border-sky-900/40 dark:bg-sky-500/10">
-                <div className="block">
-                  <span className="mb-2 block text-sm text-gray-500 dark:text-gray-400">
-                    {copy.limitTargetRate}
-                  </span>
-                  <div className="flex items-center justify-between rounded-2xl border border-gray-200 bg-white px-4 py-3 text-base font-medium text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white">
-                    <span>{limitTargetRateDisplay}</span>
-                  </div>
-                  {payAmount.trim() !== "" && receiveToken ? (
-                    <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                      {copy.limitMarketEstimate}:{" "}
-                      <span className="font-semibold text-gray-700 dark:text-gray-200">
-                        {limitMarketEstimateDisplay || "--"} {receiveToken.symbol}
-                      </span>
+                <div>
+                  <div className="rounded-[1.7rem] border border-gray-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-900">
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                      {isZh
+                        ? `当 1 个 ${limitPriceBaseSymbol} 的价值为`
+                        : `When 1 ${limitPriceBaseSymbol} is worth`}
                     </div>
-                  ) : null}
+                    <div className="mt-3 flex items-center gap-3">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={displayLimitRate}
+                        onChange={(event) =>
+                          handleLimitRateChange(event.target.value)
+                        }
+                        placeholder="0.0"
+                        className="min-w-0 flex-1 bg-transparent text-[2rem] font-semibold text-gray-950 outline-none placeholder:text-gray-400 dark:text-white dark:placeholder:text-gray-600"
+                      />
+                      <div className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-gray-50 px-3 py-2.5 dark:border-gray-700 dark:bg-gray-800">
+                        <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                          {limitPriceQuoteSymbol}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={toggleLimitPriceUnit}
+                          className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-gray-500 shadow-sm transition-colors hover:text-sky-600 dark:bg-gray-900 dark:text-gray-300 dark:hover:text-sky-300"
+                          aria-label={isZh ? "切换价格单位" : "Switch price unit"}
+                        >
+                          <ArrowRightLeft size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-4 gap-2">
+                    {[
+                      { value: "market", label: copy.marketPrice },
+                      {
+                        value: "1",
+                        label: `${limitPresetDirection > 0 ? "+" : "-"}1%`,
+                      },
+                      {
+                        value: "5",
+                        label: `${limitPresetDirection > 0 ? "+" : "-"}5%`,
+                      },
+                      {
+                        value: "10",
+                        label: `${limitPresetDirection > 0 ? "+" : "-"}10%`,
+                      },
+                    ].map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() =>
+                          applyLimitPreset(
+                            option.value as Exclude<
+                              LimitPricePreset,
+                              "custom"
+                            >,
+                          )
+                        }
+                        className={`rounded-2xl px-3 py-3 text-sm font-medium transition-colors ${
+                          limitPricePreset === option.value
+                            ? "bg-sky-600 text-white"
+                            : "bg-white text-gray-700 hover:bg-sky-100 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-sky-500/20"
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="block">
@@ -2017,96 +2276,6 @@ export function SwapWidget({
                         {option.label}
                       </button>
                     ))}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="mb-2 block text-sm text-gray-500 dark:text-gray-400">
-                    {copy.limitVsMarket}
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => applyLimitPreset("market")}
-                      className={`shrink-0 rounded-xl px-3 py-2 text-sm font-medium transition-colors ${
-                        limitPricePreset === "market"
-                          ? "bg-sky-600 text-white"
-                          : "bg-white text-gray-700 hover:bg-sky-100 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-sky-500/20"
-                      }`}
-                    >
-                      {copy.marketPrice}
-                    </button>
-                    {["0.1", "0.5", "1.0"].map((value) => (
-                      <button
-                        key={value}
-                        onClick={() => {
-                          applyLimitPreset(
-                            value as Exclude<
-                              LimitPricePreset,
-                              "market" | "custom"
-                            >,
-                          );
-                        }}
-                        className={`shrink-0 rounded-xl px-3 py-2 text-sm font-medium transition-colors ${
-                          limitPricePreset === value
-                            ? "bg-sky-600 text-white"
-                            : "bg-white text-gray-700 hover:bg-sky-100 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-sky-500/20"
-                        }`}
-                      >
-                        {value}%
-                      </button>
-                    ))}
-                    <div className="flex w-[100px] shrink-0 items-center rounded-xl border border-gray-200 bg-white px-2 dark:border-gray-700 dark:bg-gray-800">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={limitPremium}
-                        onChange={(event) => {
-                          const nextValue = event.target.value;
-                          setLimitPremium(nextValue === "" ? "" : nextValue);
-                          setLimitPricePreset("custom");
-
-                          if (nextValue === "") {
-                            setLimitRate(limitMarketRateDisplay);
-                            return;
-                          }
-
-                          const premium = Number(nextValue);
-                          const market = Number(limitMarketRateDisplay);
-
-                          if (
-                            !Number.isFinite(premium) ||
-                            premium < 0 ||
-                            !Number.isFinite(market)
-                          ) {
-                            return;
-                          }
-
-                          const nextRate = market * (1 + premium / 100);
-                          setLimitRate(
-                            nextRate.toFixed(8).replace(/\.?0+$/, ""),
-                          );
-                        }}
-                        className="min-w-0 flex-1 bg-transparent py-2 text-right text-gray-900 outline-none dark:text-white"
-                        placeholder="0.5"
-                      />
-                      <span className="ml-1 shrink-0 text-gray-500">%</span>
-                      <div className="ml-1.5 flex w-5 shrink-0 flex-col overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
-                        <button
-                          type="button"
-                          onClick={() => adjustLimitPremium(0.1)}
-                          className="flex h-4 w-full items-center justify-center bg-gray-50 text-gray-500 transition-colors hover:bg-sky-100 hover:text-sky-600 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-sky-500/20 dark:hover:text-sky-300"
-                        >
-                          <ChevronUp size={12} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => adjustLimitPremium(-0.1)}
-                          className="flex h-4 w-full items-center justify-center border-t border-gray-200 bg-gray-50 text-gray-500 transition-colors hover:bg-sky-100 hover:text-sky-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-sky-500/20 dark:hover:text-sky-300"
-                        >
-                          <ChevronDown size={12} />
-                        </button>
-                      </div>
-                    </div>
                   </div>
                 </div>
 

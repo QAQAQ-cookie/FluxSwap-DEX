@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowDownUp,
   ArrowRight,
+  ChevronDown,
+  ChevronUp,
   Clock3,
   Coins,
   Droplets,
@@ -13,18 +15,25 @@ import {
   ListOrdered,
   ShieldCheck,
   WalletCards,
+  X,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAccount, useBalance, useChainId, usePublicClient } from 'wagmi';
 
 import { getContractAddress, isFluxSupportedChain } from '@/config/contracts';
-import { getSwapTokenOptions } from '@/config/tokens';
+import { getSwapTokenOptions, type SwapTokenOption } from '@/config/tokens';
 import { formatBigIntAmount, formatBigIntAmountDown, formatDisplayAmount } from '@/lib/amounts';
 import { fluxSwapPairAbi } from '@/lib/contracts';
 import { fluxSwapErc20Abi } from '@/lib/contracts/generated/FluxSwapERC20';
+import {
+  LOCAL_LIMIT_ORDERS_UPDATED_EVENT,
+  listLocalLimitOrders,
+  syncLocalLimitOrdersWithChain,
+  type LocalLimitOrderRecord,
+} from '@/lib/localLimitOrders';
 import { getPools, type PoolViewModel } from '@/lib/subgraph/pools';
 import { getTrades, type TradeViewModel } from '@/lib/subgraph/trades';
-import { formatTimestamp } from '@/lib/wallet';
+import { formatTimestamp, truncateAddress } from '@/lib/wallet';
 
 function SummaryBlock({
   title,
@@ -94,14 +103,18 @@ function PortfolioSection({
   description,
   icon: Icon,
   emptyContent,
+  contentClassName,
+  children,
 }: {
   title: string;
   description: string;
   icon: typeof ListOrdered;
   emptyContent?: React.ReactNode;
+  contentClassName?: string;
+  children?: React.ReactNode;
 }) {
   return (
-    <section className="rounded-[2rem] border border-black/5 bg-white/72 p-6 shadow-xl shadow-sky-500/5 backdrop-blur-sm dark:border-white/10 dark:bg-white/[0.04] min-h-[360px]">
+    <section className="flex min-h-[360px] flex-col rounded-[2rem] border border-black/5 bg-white/72 p-6 shadow-xl shadow-sky-500/5 backdrop-blur-sm dark:border-white/10 dark:bg-white/[0.04]">
       <div className="flex items-center gap-3">
         <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gray-100 text-gray-700 dark:bg-white/[0.05] dark:text-gray-200">
           <Icon size={18} />
@@ -116,8 +129,13 @@ function PortfolioSection({
         </div>
       </div>
 
-      <div className="mt-6 rounded-[1.5rem] border border-dashed border-black/10 bg-gray-50/80 px-5 py-20 text-center dark:border-white/10 dark:bg-white/[0.03] min-h-[240px] flex items-center justify-center">
-        {emptyContent ?? (
+      <div
+        className={
+          contentClassName ??
+          'mt-6 flex flex-1 items-center justify-center rounded-[1.5rem] border border-dashed border-black/10 bg-gray-50/80 px-5 py-20 text-center dark:border-white/10 dark:bg-white/[0.03]'
+        }
+      >
+        {children ?? emptyContent ?? (
           <div className="text-sm text-gray-400 dark:text-gray-500">--</div>
         )}
       </div>
@@ -144,7 +162,31 @@ type WalletTokenRow = {
   rawAmount: bigint;
 };
 
+type LimitOrderTokenMeta = {
+  symbol: string;
+  name: string;
+  decimals: number;
+};
+
+type LimitOrderDisplayRow = {
+  order: LocalLimitOrderRecord;
+  pairLabel: string;
+  compactAmountLabel: string;
+  paySymbol: string;
+  receiveSymbol: string;
+  payAmountLabel: string;
+  receiveAmountLabel: string;
+  priceLabel: string;
+  statusLabel: string;
+  createdAtLabel: string;
+  expiryLabel: string;
+  recipientLabel: string;
+};
+
 type TokenSortDirection = 'desc' | 'asc';
+
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
+const ZERO_BIGINT = BigInt(0);
 
 function getTransactionHref(chainId: number | undefined, txHash: string): string | undefined {
   if (!txHash) {
@@ -182,6 +224,209 @@ function ActivityIcon({
       {isLiquidity ? <Droplets size={18} /> : <ArrowDownUp size={18} />}
     </span>
   );
+}
+
+function LimitOrderField({
+  label,
+  value,
+  className,
+  valueClassName,
+}: {
+  label: string;
+  value: React.ReactNode;
+  className?: string;
+  valueClassName?: string;
+}) {
+  return (
+    <div className={`min-w-0 ${className ?? ''}`}>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">
+        {label}
+      </div>
+      <div className={`mt-1.5 break-all text-sm font-semibold leading-5 text-gray-900 dark:text-white ${valueClassName ?? ''}`}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function LimitOrderExpandedDetails({
+  row,
+  isZh,
+}: {
+  row: LimitOrderDisplayRow;
+  isZh: boolean;
+}) {
+  return (
+    <div className="grid gap-x-8 gap-y-5 pt-1 sm:grid-cols-2 xl:mx-6 xl:grid-cols-8">
+      <div className="text-base font-black tracking-tight text-gray-900 dark:text-white sm:col-span-2 xl:col-span-4">
+        {isZh ? '订单详情' : 'Order Details'}
+      </div>
+      <div className="hidden xl:block xl:col-span-4" />
+
+      <LimitOrderField
+        label={isZh ? '订单哈希' : 'Order Hash'}
+        value={row.order.orderHash}
+        className="xl:col-span-4"
+        valueClassName="font-mono text-[13px]"
+      />
+      <LimitOrderField
+        label={isZh ? '接收地址' : 'Recipient'}
+        value={row.order.recipient}
+        className="xl:col-span-4"
+        valueClassName="font-mono text-[13px]"
+      />
+
+      <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 xl:col-span-4">
+        <LimitOrderField label={isZh ? '交易对' : 'Pair'} value={row.pairLabel} />
+        <LimitOrderField label={isZh ? '卖出数量' : 'Sell Amount'} value={row.payAmountLabel} />
+        <LimitOrderField label={isZh ? '限价值' : 'Limit Price'} value={row.priceLabel} />
+        <LimitOrderField label={isZh ? '创建时间' : 'Created At'} value={row.createdAtLabel} />
+      </div>
+
+      <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 xl:col-span-4">
+        <LimitOrderField label={isZh ? '状态' : 'Status'} value={row.statusLabel} />
+        <LimitOrderField label={isZh ? '最少买入' : 'Minimum Buy'} value={row.receiveAmountLabel} />
+        <LimitOrderField label={isZh ? '有效期' : 'Expiry'} value={row.expiryLabel} />
+        <LimitOrderField
+          label={isZh ? '执行奖励上限' : 'Executor Reward Cap'}
+          value={`${row.order.maxExecutorRewardBps} bps`}
+        />
+      </div>
+    </div>
+  );
+}
+
+function toggleWithKeyboard(event: React.KeyboardEvent<HTMLElement>, onToggle: () => void) {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    onToggle();
+  }
+}
+
+function parseOptionalBigInt(value: string): bigint | undefined {
+  try {
+    return BigInt(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function formatIsoDateTime(value: string | undefined, locale: string) {
+  if (!value) {
+    return '--';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '--';
+  }
+
+  return new Intl.DateTimeFormat(locale, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(date);
+}
+
+function splitDateTimeLabel(label: string) {
+  if (!label || label === '--') {
+    return { date: '--', time: '' };
+  }
+
+  const normalized = label.replace(',', '').trim();
+  const match = normalized.match(/^(.*?)(\d{1,2}:\d{2}:\d{2}(?:\s?[AP]M)?)$/i);
+  if (match) {
+    return {
+      date: match[1].trim(),
+      time: match[2].trim(),
+    };
+  }
+
+  const parts = normalized.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return {
+      date: parts.slice(0, -1).join(' '),
+      time: parts[parts.length - 1],
+    };
+  }
+
+  return { date: normalized, time: '' };
+}
+
+function getLimitOrderStatusLabel(status: string, isZh: boolean) {
+  switch (status.trim().toLowerCase()) {
+    case 'open':
+      return isZh ? '待执行' : 'Open';
+    case 'pending_execute':
+      return isZh ? '执行中' : 'Pending';
+    case 'executed':
+      return isZh ? '已执行' : 'Executed';
+    case 'pending_cancel':
+      return isZh ? '撤单中' : 'Cancelling';
+    case 'cancelled':
+      return isZh ? '已撤单' : 'Cancelled';
+    case 'expired':
+      return isZh ? '已过期' : 'Expired';
+    default:
+      return status || '--';
+  }
+}
+
+
+function getLimitOrderStatusBadgeClass(status: string) {
+  switch (status.trim().toLowerCase()) {
+    case 'executed':
+      return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300';
+    case 'cancelled':
+    case 'expired':
+      return 'bg-gray-100 text-gray-700 dark:bg-white/[0.06] dark:text-gray-300';
+    case 'pending_execute':
+    case 'pending_cancel':
+      return 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300';
+    default:
+      return 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300';
+  }
+}
+
+function canCancelLimitOrder(status: string) {
+  return status.trim().toLowerCase() === 'open';
+}
+
+function resolveLimitOrderTokenMeta(
+  tokenAddress: string,
+  tokenLookup: Map<string, SwapTokenOption>,
+  wrappedNativeAddress?: string,
+): LimitOrderTokenMeta {
+  const normalizedAddress = tokenAddress.trim().toLowerCase();
+
+  if (
+    normalizedAddress === ZERO_ADDRESS ||
+    (wrappedNativeAddress && normalizedAddress === wrappedNativeAddress.toLowerCase())
+  ) {
+    return {
+      symbol: 'ETH',
+      name: 'Ether',
+      decimals: 18,
+    };
+  }
+
+  const matchedToken = tokenLookup.get(normalizedAddress);
+  if (matchedToken) {
+    return {
+      symbol: matchedToken.symbol,
+      name: matchedToken.name,
+      decimals: matchedToken.decimals,
+    };
+  }
+
+  return {
+    symbol: truncateAddress(tokenAddress, 6, 4),
+    name: truncateAddress(tokenAddress, 6, 4),
+    decimals: 18,
+  };
 }
 
 function buildWalletActivityRow(
@@ -281,6 +526,7 @@ export default function PortfolioPage() {
   const supportedChain = isFluxSupportedChain(chainId);
   const fluxTokenAddress = getContractAddress('FluxToken', chainId);
   const wrappedNativeAddress = getContractAddress('MockWETH', chainId);
+  const limitSettlementAddress = getContractAddress('FluxSignedOrderSettlement', chainId);
   const trackedTokens = useMemo(() => getSwapTokenOptions(chainId), [chainId]);
   const [pairs, setPairs] = useState<PoolViewModel[]>([]);
   const [lpBalances, setLpBalances] = useState<Record<string, bigint>>({});
@@ -292,6 +538,10 @@ export default function PortfolioPage() {
   const [tokenLoading, setTokenLoading] = useState(false);
   const [tokenError, setTokenError] = useState<string | null>(null);
   const [tokenSortDirection, setTokenSortDirection] = useState<TokenSortDirection>('desc');
+  const [limitOrdersLoading, setLimitOrdersLoading] = useState(false);
+  const [walletLimitOrders, setWalletLimitOrders] = useState<LocalLimitOrderRecord[]>([]);
+  const [isLimitOrdersModalOpen, setIsLimitOrdersModalOpen] = useState(false);
+  const [expandedLimitOrderHash, setExpandedLimitOrderHash] = useState<string | null>(null);
 
   const { data: nativeBalance } = useBalance({
     address,
@@ -470,6 +720,79 @@ export default function PortfolioPage() {
   }, [address, isConnected, publicClient, trackedTokens]);
 
   useEffect(() => {
+    if (!supportedChain || !isConnected || !address) {
+      setLimitOrdersLoading(false);
+      setWalletLimitOrders([]);
+      setIsLimitOrdersModalOpen(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadLimitOrders = async () => {
+      if (cancelled) {
+        return;
+      }
+
+      setLimitOrdersLoading(true);
+
+      if (publicClient) {
+        try {
+          await syncLocalLimitOrdersWithChain({
+            publicClient,
+            chainId,
+          });
+        } catch {
+          // Ignore sync failures and fall back to current local cache.
+        }
+      }
+
+      const normalizedWallet = address.toLowerCase();
+      const normalizedSettlement = limitSettlementAddress?.toLowerCase();
+      const nextOrders = listLocalLimitOrders()
+        .filter((order) => {
+          if (order.chainId !== chainId) {
+            return false;
+          }
+          if (order.maker.toLowerCase() !== normalizedWallet) {
+            return false;
+          }
+          if (normalizedSettlement && order.settlementAddress.toLowerCase() !== normalizedSettlement) {
+            return false;
+          }
+          return true;
+        })
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+
+      if (!cancelled) {
+        setWalletLimitOrders(nextOrders);
+        setLimitOrdersLoading(false);
+      }
+    };
+
+    void loadLimitOrders();
+
+    const handleLimitOrdersUpdated = () => {
+      void loadLimitOrders();
+    };
+
+    window.addEventListener('storage', handleLimitOrdersUpdated);
+    window.addEventListener(
+      LOCAL_LIMIT_ORDERS_UPDATED_EVENT,
+      handleLimitOrdersUpdated as EventListener,
+    );
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('storage', handleLimitOrdersUpdated);
+      window.removeEventListener(
+        LOCAL_LIMIT_ORDERS_UPDATED_EVENT,
+        handleLimitOrdersUpdated as EventListener,
+      );
+    };
+  }, [address, chainId, isConnected, limitSettlementAddress, publicClient, supportedChain]);
+
+  useEffect(() => {
     if (!publicClient || trades.length === 0) {
       setWalletByTxHash({});
       return;
@@ -501,11 +824,11 @@ export default function PortfolioPage() {
   }, [publicClient, trades]);
 
   const totalLpBalance = useMemo(
-    () => Object.values(lpBalances).reduce((sum, balance) => sum + balance, 0n),
+    () => Object.values(lpBalances).reduce((sum, balance) => sum + balance, ZERO_BIGINT),
     [lpBalances],
   );
   const activePositionCount = useMemo(
-    () => Object.values(lpBalances).filter((balance) => balance > 0n).length,
+    () => Object.values(lpBalances).filter((balance) => balance > ZERO_BIGINT).length,
     [lpBalances],
   );
 
@@ -516,7 +839,7 @@ export default function PortfolioPage() {
   const lpDisplay = isConnected
     ? formatBigIntAmount(totalLpBalance, 18, 4)
     : '--';
-  const showLpHint = isConnected && totalLpBalance > 0n;
+  const showLpHint = isConnected && totalLpBalance > ZERO_BIGINT;
   const walletActivityRows = useMemo(() => {
     return trades.map((trade) =>
       buildWalletActivityRow(
@@ -538,8 +861,8 @@ export default function PortfolioPage() {
   const walletTokens = useMemo<WalletTokenRow[]>(() => {
     const rows: WalletTokenRow[] = [];
 
-    const nativeRawAmount = nativeBalance?.value ?? 0n;
-    if (nativeRawAmount > 0n) {
+    const nativeRawAmount = nativeBalance?.value ?? ZERO_BIGINT;
+    if (nativeRawAmount > ZERO_BIGINT) {
       rows.push({
         symbol: 'ETH',
         name: 'Ether',
@@ -551,8 +874,8 @@ export default function PortfolioPage() {
     trackedTokens
       .filter((token) => token.kind === 'erc20')
       .forEach((token) => {
-        const rawAmount = tokenBalances[token.symbol] ?? 0n;
-        if (rawAmount <= 0n) {
+        const rawAmount = tokenBalances[token.symbol] ?? ZERO_BIGINT;
+        if (rawAmount <= ZERO_BIGINT) {
           return;
         }
 
@@ -576,6 +899,83 @@ export default function PortfolioPage() {
       return left.rawAmount > right.rawAmount ? 1 : -1;
     });
   }, [nativeBalance?.value, tokenBalances, tokenSortDirection, trackedTokens]);
+  const tokenLookup = useMemo(() => {
+    const nextLookup = new Map<string, SwapTokenOption>();
+
+    trackedTokens.forEach((token) => {
+      if (token.address) {
+        nextLookup.set(token.address.toLowerCase(), token);
+      }
+      nextLookup.set(token.routeAddress.toLowerCase(), token);
+    });
+
+    return nextLookup;
+  }, [trackedTokens]);
+  const limitOrderRows = useMemo<LimitOrderDisplayRow[]>(() => {
+    const locale = isZh ? 'zh-CN' : 'en-US';
+
+    return walletLimitOrders.map((order) => {
+      const inputToken = resolveLimitOrderTokenMeta(
+        order.inputToken,
+        tokenLookup,
+        wrappedNativeAddress,
+      );
+      const outputToken = resolveLimitOrderTokenMeta(
+        order.outputToken,
+        tokenLookup,
+        wrappedNativeAddress,
+      );
+      const amountIn = parseOptionalBigInt(order.amountIn);
+      const minAmountOut = parseOptionalBigInt(order.minAmountOut);
+      const triggerPriceX18 = parseOptionalBigInt(order.triggerPriceX18);
+
+      return {
+        order,
+        pairLabel: `${inputToken.symbol} / ${outputToken.symbol}`,
+        compactAmountLabel: `${formatBigIntAmountDown(amountIn, inputToken.decimals, 6)} / ${formatBigIntAmountDown(minAmountOut, outputToken.decimals, 6)}`,
+        paySymbol: inputToken.symbol,
+        receiveSymbol: outputToken.symbol,
+        payAmountLabel: `${formatBigIntAmountDown(amountIn, inputToken.decimals, 6)} ${inputToken.symbol}`,
+        receiveAmountLabel: `${formatBigIntAmountDown(minAmountOut, outputToken.decimals, 6)} ${outputToken.symbol}`,
+        priceLabel: `1 ${inputToken.symbol} = ${formatBigIntAmountDown(triggerPriceX18, 18, 8)} ${outputToken.symbol}`,
+        statusLabel: getLimitOrderStatusLabel(order.status, isZh),
+        createdAtLabel: formatIsoDateTime(order.createdAt, locale),
+        expiryLabel: formatIsoDateTime(
+          parseOptionalBigInt(order.expiry) ? new Date(Number(order.expiry) * 1000).toISOString() : '',
+          locale,
+        ),
+        recipientLabel: truncateAddress(order.recipient, 8, 6),
+      };
+    });
+  }, [isZh, tokenLookup, walletLimitOrders, wrappedNativeAddress]);
+
+  useEffect(() => {
+    if (!isLimitOrdersModalOpen) {
+      return;
+    }
+
+    if (limitOrderRows.length === 0) {
+      setExpandedLimitOrderHash(null);
+      return;
+    }
+
+    setExpandedLimitOrderHash((current) => {
+      if (current && limitOrderRows.some((row) => row.order.orderHash === current)) {
+        return current;
+      }
+
+      return limitOrderRows[0]?.order.orderHash ?? null;
+    });
+  }, [isLimitOrdersModalOpen, limitOrderRows]);
+
+  const closeLimitOrdersModal = () => {
+    setIsLimitOrdersModalOpen(false);
+    setExpandedLimitOrderHash(null);
+  };
+
+  const toggleExpandedLimitOrder = (orderHash: string) => {
+    setExpandedLimitOrderHash((current) => (current === orderHash ? null : orderHash));
+  };
 
   return (
     <div className="px-4 py-10 lg:px-6">
@@ -603,7 +1003,7 @@ export default function PortfolioPage() {
             <div className="xl:flex-1 xl:-ml-3">
               <div className="mr-[320px] ml-auto grid w-fit items-center gap-2 md:grid-cols-[auto_120px_auto]">
                 <SummaryBlock
-                  title={isZh ? 'FLUX 数量' : 'FLUX Balance'}
+                  title={isZh ? 'FLUX 余额' : 'FLUX Balance'}
                   value={fluxDisplay}
                   suffix="FLUX"
                   icon={Coins}
@@ -612,11 +1012,11 @@ export default function PortfolioPage() {
                 <div className="px-2 py-2">
                   <div className="flex items-center gap-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
                     <Layers3 size={16} />
-                    <span>{isZh ? 'LP 数量' : 'LP Balance'}</span>
+                    <span>{isZh ? 'LP 余额' : 'LP Balance'}</span>
                     {showLpHint ? (
                       <span className="text-xs font-semibold text-gray-400 dark:text-gray-500">
                         {isZh
-                          ? `已汇总 ${activePositionCount} 个池子的 LP 余额`
+                          ? `汇总 ${activePositionCount} 个池子`
                           : `Aggregated across ${activePositionCount} pools`}
                       </span>
                     ) : null}
@@ -636,7 +1036,106 @@ export default function PortfolioPage() {
           </div>
         </section>
 
-        <div className="mt-8 grid gap-6 xl:grid-cols-3">
+        <div className="mt-8 grid gap-6 xl:grid-cols-3 [&>section:nth-child(2)]:hidden">
+          <PortfolioSection
+            title={isZh ? '限价单' : 'Limit Orders'}
+            description={
+              isZh
+                ? '展示当前钱包创建的限价单'
+                : 'Orders created by the connected wallet'
+            }
+            icon={ListOrdered}
+            contentClassName="mt-6 flex flex-1 overflow-hidden rounded-[1.5rem] border border-dashed border-black/10 bg-gray-50/80 dark:border-white/10 dark:bg-white/[0.03]"
+          >
+            {!isConnected || !address ? (
+              <div className="flex h-full w-full flex-1 flex-col items-center justify-center px-5 text-center">
+                <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                  {isZh ? '连接钱包后查看限价单' : 'Connect wallet to view limit orders'}
+                </div>
+                <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                  {isZh
+                    ? '这里会展示当前钱包创建的限价单'
+                    : 'Orders created by this wallet will appear here.'}
+                </div>
+              </div>
+            ) : limitOrdersLoading ? (
+              <div className="flex h-full w-full flex-1 flex-col items-center justify-center px-5 text-center">
+                <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                  {isZh ? '正在加载限价单' : 'Loading limit orders'}
+                </div>
+              </div>
+            ) : limitOrderRows.length > 0 ? (
+              <div className="flex h-full min-h-0 flex-col">
+                <div className="flex items-center justify-between border-b border-black/5 px-5 py-4 dark:border-white/10">
+                  <div>
+                    <div className="text-sm font-black tracking-tight text-gray-900 dark:text-white">
+                      {isZh ? '当前限价单' : 'Current limit orders'}
+                    </div>
+                    <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      {isZh ? '点击中间列表查看订单详情' : 'Click any order to open details'}
+                    </div>
+                  </div>
+                  <span className="inline-flex min-w-8 items-center justify-center rounded-full bg-sky-100 px-2.5 py-1 text-xs font-bold text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">
+                    {limitOrderRows.length}
+                  </span>
+                </div>
+
+                <div className="flex min-h-0 flex-1 flex-col px-5 pb-5 pt-1">
+                  <div className="grid grid-cols-[minmax(0,1.15fr)_118px_92px] items-center gap-x-4 border-b border-black/5 px-3 py-3 text-[13px] font-semibold text-gray-500 dark:border-white/10 dark:text-gray-400">
+                    <div className="min-w-0 whitespace-nowrap">{isZh ? '交易对' : 'Pair'}</div>
+                    <div className="min-w-0 whitespace-nowrap text-center">{isZh ? '卖出 / 买入' : 'Sell / Buy'}</div>
+                    <div className="whitespace-nowrap text-center">{isZh ? '状态' : 'Status'}</div>
+                  </div>
+
+                  <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1">
+                    {limitOrderRows.map((row) => (
+                      <button
+                        key={row.order.orderHash}
+                        type="button"
+                        onClick={() => {
+                          setExpandedLimitOrderHash(row.order.orderHash);
+                          setIsLimitOrdersModalOpen(true);
+                        }}
+                        className="grid w-full grid-cols-[minmax(0,1.15fr)_118px_92px] items-center gap-x-4 border-b border-black/5 px-3 py-4 text-left transition-colors last:border-b-0 hover:bg-sky-50/70 dark:border-white/10 dark:hover:bg-white/[0.08]"
+                      >
+                        <div className="min-w-0 truncate pr-2 text-[15px] font-semibold tracking-tight text-gray-900 dark:text-white">
+                          {row.pairLabel}
+                        </div>
+                        <div className="min-w-0 truncate text-center text-[14px] font-medium leading-5 tabular-nums text-gray-800 dark:text-gray-200">
+                          {row.compactAmountLabel}
+                        </div>
+                        <div className="flex justify-center">
+                          <span
+                            className={`inline-flex min-w-[72px] items-center justify-center rounded-full px-2.5 py-1 text-[11px] font-semibold leading-none ${getLimitOrderStatusBadgeClass(row.order.status)}`}
+                          >
+                            {row.statusLabel}
+                          </span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex h-full w-full flex-1 flex-col items-center justify-center px-5 text-center">
+                <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                  {isZh ? '还没创建限价单' : 'No limit orders yet'}
+                </div>
+                <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                  {isZh
+                    ? '先在交易页创建一笔限价单，这里就会显示出来。'
+                    : 'Create your first limit order from the trade page.'}
+                </div>
+                <Link
+                  href="/swap?mode=limit"
+                  className="mt-5 inline-flex items-center gap-2 rounded-full bg-gray-900 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
+                >
+                  <span>{isZh ? '去创建限价单' : 'Create limit order'}</span>
+                  <ArrowRight size={16} />
+                </Link>
+              </div>
+            )}
+          </PortfolioSection>
           <PortfolioSection
             title={isZh ? '限价单订单' : 'Limit Orders'}
             description={
@@ -652,7 +1151,7 @@ export default function PortfolioPage() {
                 </div>
                 <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
                   {isZh
-                    ? '去交易页面创建你的第一笔限价单。'
+                    ? '去交易页创建你的第一笔限价单。'
                     : 'Create your first limit order from the trade page.'}
                 </div>
                 <Link
@@ -666,21 +1165,21 @@ export default function PortfolioPage() {
             }
           />
           <PortfolioSection
-            title={isZh ? '你的头寸' : 'Your Positions'}
+            title={isZh ? '我的仓位' : 'Your Positions'}
             description={
               isZh
-                ? '展示当前用户持有的流动性与仓位'
+                ? '展示当前钱包的流动性仓位和持仓概览'
                 : 'Liquidity and position overview for the current wallet'
             }
             icon={WalletCards}
             emptyContent={
               <div className="flex flex-col items-center justify-center">
                 <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
-                  {isZh ? '还没有头寸' : 'No positions yet'}
+                  {isZh ? '还没有仓位' : 'No positions yet'}
                 </div>
                 <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
                   {isZh
-                    ? '去资金池页面添加流动性，建立你的第一笔头寸。'
+                    ? '去流动性页面添加流动性后，这里会显示你的仓位。'
                     : 'Add liquidity from the portfolio page to create your first position.'}
                 </div>
                 <Link
@@ -694,10 +1193,10 @@ export default function PortfolioPage() {
             }
           />
           <PortfolioSection
-            title={isZh ? '你的质押' : 'Your Staking'}
+            title={isZh ? '我的质押' : 'Your Staking'}
             description={
               isZh
-                ? '展示当前用户的质押与收益状态'
+                ? '展示当前钱包的质押余额和奖励状态'
                 : 'Staking balances and reward status'
             }
             icon={ShieldCheck}
@@ -708,14 +1207,14 @@ export default function PortfolioPage() {
                 </div>
                 <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
                   {isZh
-                    ? '去质押页面查看可用池子并开始质押。'
+                    ? '去赚币页面查看可用池子并开始质押。'
                     : 'Visit the earn page to view available pools and start staking.'}
                 </div>
                 <Link
                   href="/earn"
                   className="mt-5 inline-flex items-center gap-2 rounded-full bg-gray-900 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
                 >
-                  <span>{isZh ? '去查看质押' : 'View staking'}</span>
+                  <span>{isZh ? '查看质押' : 'View staking'}</span>
                   <ArrowRight size={16} />
                 </Link>
               </div>
@@ -735,7 +1234,7 @@ export default function PortfolioPage() {
                 </div>
                 <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                   {isZh
-                    ? '展示当前连接钱包发起的全部事件活动'
+                    ? '展示当前连接钱包发起的所有活动记录'
                     : 'All event activity initiated by the connected wallet'}
                 </div>
               </div>
@@ -749,7 +1248,7 @@ export default function PortfolioPage() {
                   </div>
                   <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
                     {isZh
-                      ? '这里会展示当前钱包的交换、添加流动性和移除流动性记录'
+                      ? '这里会展示当前钱包的交换、添加流动性和移除流动性记录。'
                       : 'Swap, add liquidity, and remove liquidity events for this wallet will appear here.'}
                   </div>
                 </div>
@@ -914,7 +1413,7 @@ export default function PortfolioPage() {
                   </div>
                   <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
                     {isZh
-                      ? '完成一次交换或流动性操作后，这里会显示对应事件'
+                      ? '完成一次交换或流动性操作后，这里会显示对应事件。'
                       : 'Your swaps and liquidity events will appear here after you make them.'}
                   </div>
                 </div>
@@ -1048,6 +1547,236 @@ export default function PortfolioPage() {
             </div>
           </section>
         </div>
+
+        {isLimitOrdersModalOpen && limitOrderRows.length > 0 ? (
+          <div
+            className="fixed inset-0 z-[90] flex items-center justify-center bg-black/35 p-4 backdrop-blur-sm"
+            onClick={closeLimitOrdersModal}
+          >
+            <div
+              className="flex h-[820px] max-h-[calc(100vh-2rem)] w-full max-w-[88rem] flex-col rounded-[1.75rem] border border-black/5 bg-white p-5 shadow-2xl dark:border-white/10 dark:bg-[#0f1726] xl:p-6"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-2xl font-black tracking-tight text-gray-900 dark:text-white">
+                    {isZh ? '限价订单' : 'Limit Orders'}
+                  </div>
+                  <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    {isZh ? `共 ${limitOrderRows.length} 笔限价单` : `${limitOrderRows.length} limit orders`}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeLimitOrdersModal}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-600 transition-colors hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.10]"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="mt-6 flex-1 overflow-hidden rounded-[1.5rem] border border-black/5 dark:border-white/10">
+                <div className="hidden h-full overflow-y-auto overflow-x-hidden xl:block">
+                  <div className="mx-auto w-full max-w-[82rem]">
+                    <div className="sticky top-0 z-10 grid w-full grid-cols-[1.5fr_1.5fr_1.5fr_1.5fr_1fr_1fr_1fr_1fr] items-center gap-x-3 border-b border-black/5 bg-white/95 px-4 py-3 text-[11px] font-bold tracking-[0.08em] text-gray-500 backdrop-blur-sm dark:border-white/10 dark:bg-[#0f1726]/95 dark:text-gray-400">
+                      <div className="text-center">{isZh ? '交易对' : 'Pair'}</div>
+                      <div className="text-center">{isZh ? '卖出' : 'Sell'}</div>
+                      <div className="text-center">{isZh ? '最少买入' : 'Minimum Buy'}</div>
+                      <div className="text-center">{isZh ? '限价值' : 'Limit Price'}</div>
+                      <div className="text-center">{isZh ? '创建时间' : 'Created At'}</div>
+                      <div className="text-center">{isZh ? '有效期' : 'Expiry'}</div>
+                      <div className="text-center">{isZh ? '状态' : 'Status'}</div>
+                      <div className="text-center">{isZh ? '操作' : 'Action'}</div>
+                    </div>
+
+                    <div className="divide-y divide-black/5 dark:divide-white/10">
+                      {limitOrderRows.map((row) => {
+                        const canCancel = canCancelLimitOrder(row.order.status);
+                        const createdAtParts = splitDateTimeLabel(row.createdAtLabel);
+                        const expiryParts = splitDateTimeLabel(row.expiryLabel);
+                        const isExpanded = expandedLimitOrderHash === row.order.orderHash;
+
+                        return (
+                          <div
+                            key={row.order.orderHash}
+                            className="overflow-hidden"
+                          >
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              aria-expanded={isExpanded}
+                              onClick={() => toggleExpandedLimitOrder(row.order.orderHash)}
+                              onKeyDown={(event) =>
+                                toggleWithKeyboard(event, () => toggleExpandedLimitOrder(row.order.orderHash))
+                              }
+                              className={`grid w-full cursor-pointer grid-cols-[1.5fr_1.5fr_1.5fr_1.5fr_1fr_1fr_1fr_1fr] items-center gap-x-3 px-4 py-4 text-sm leading-5 text-gray-700 transition-colors dark:text-gray-300 ${
+                                isExpanded
+                                  ? 'bg-sky-50/70 dark:bg-white/[0.06]'
+                                  : 'hover:bg-sky-50/50 dark:hover:bg-white/[0.05]'
+                              }`}
+                            >
+                              <div className="min-w-0 px-2">
+                                <div className="flex items-center justify-center gap-2">
+                                  <span className="truncate font-semibold text-gray-900 dark:text-white">{row.pairLabel}</span>
+                                  {isExpanded ? (
+                                    <ChevronUp size={16} className="shrink-0 text-gray-400 dark:text-gray-500" />
+                                  ) : (
+                                    <ChevronDown size={16} className="shrink-0 text-gray-400 dark:text-gray-500" />
+                                  )}
+                                </div>
+                              </div>
+                              <div className="min-w-0 text-center font-medium whitespace-nowrap">{row.payAmountLabel}</div>
+                              <div className="min-w-0 text-center font-medium whitespace-nowrap">{row.receiveAmountLabel}</div>
+                              <div className="min-w-0 text-center font-medium whitespace-nowrap text-[13px]">{row.priceLabel}</div>
+                              <div className="min-w-0 text-center font-medium tabular-nums leading-4">
+                                <div className="whitespace-nowrap">{createdAtParts.date}</div>
+                                {createdAtParts.time ? (
+                                  <div className="mt-1 whitespace-nowrap text-[12px] text-gray-500 dark:text-gray-400">
+                                    {createdAtParts.time}
+                                  </div>
+                                ) : null}
+                              </div>
+                              <div className="min-w-0 text-center font-medium tabular-nums leading-4">
+                                <div className="whitespace-nowrap">{expiryParts.date}</div>
+                                {expiryParts.time ? (
+                                  <div className="mt-1 whitespace-nowrap text-[12px] text-gray-500 dark:text-gray-400">
+                                    {expiryParts.time}
+                                  </div>
+                                ) : null}
+                              </div>
+                              <div className="flex justify-center">
+                                <span
+                                  className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${getLimitOrderStatusBadgeClass(row.order.status)}`}
+                                >
+                                  {row.statusLabel}
+                                </span>
+                              </div>
+                              <div className="flex justify-center">
+                                <button
+                                  type="button"
+                                  disabled={!canCancel}
+                                  title={canCancel ? (isZh ? '撤单功能待接入' : 'Cancel action coming soon') : undefined}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                  }}
+                                  className={`inline-flex min-w-[68px] items-center justify-center rounded-full px-3 py-2 text-xs font-semibold transition-colors ${
+                                    canCancel
+                                      ? 'bg-gray-900 text-white hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200'
+                                      : 'cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-white/[0.06] dark:text-gray-500'
+                                  }`}
+                                >
+                                  {isZh ? '撤单' : 'Cancel'}
+                                </button>
+                              </div>
+                            </div>
+
+                            {isExpanded ? (
+                              <div className="border-t border-black/5 bg-black/[0.02] px-4 py-4 dark:border-white/10 dark:bg-white/[0.03]">
+                                <LimitOrderExpandedDetails row={row} isZh={isZh} />
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="h-full space-y-3 overflow-y-auto p-4 xl:hidden">
+                  {limitOrderRows.map((row) => {
+                    const canCancel = canCancelLimitOrder(row.order.status);
+                    const isExpanded = expandedLimitOrderHash === row.order.orderHash;
+
+                    return (
+                      <div
+                        key={row.order.orderHash}
+                        role="button"
+                        tabIndex={0}
+                        aria-expanded={isExpanded}
+                        onClick={() => toggleExpandedLimitOrder(row.order.orderHash)}
+                        onKeyDown={(event) =>
+                          toggleWithKeyboard(event, () => toggleExpandedLimitOrder(row.order.orderHash))
+                        }
+                        className={`rounded-[1.35rem] border border-black/5 p-4 transition-colors dark:border-white/10 ${
+                          isExpanded
+                            ? 'bg-sky-50/70 dark:bg-white/[0.05]'
+                            : 'bg-gray-50/80 dark:bg-white/[0.03]'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <div className="text-base font-black tracking-tight text-gray-900 dark:text-white">
+                              {row.pairLabel}
+                            </div>
+                            {isExpanded ? (
+                              <ChevronUp size={16} className="shrink-0 text-gray-400 dark:text-gray-500" />
+                            ) : (
+                              <ChevronDown size={16} className="shrink-0 text-gray-400 dark:text-gray-500" />
+                            )}
+                          </div>
+                          <span
+                            className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${getLimitOrderStatusBadgeClass(row.order.status)}`}
+                          >
+                            {row.statusLabel}
+                          </span>
+                        </div>
+
+                        <div className="mt-4 rounded-[1rem] bg-black/[0.02] px-3.5 py-3 dark:bg-white/[0.04]">
+                          <div className="grid gap-2.5">
+                            <div className="grid grid-cols-[88px_minmax(0,1fr)] items-start gap-3 text-sm">
+                              <div className="text-gray-500 dark:text-gray-400">{isZh ? '卖出' : 'Sell'}</div>
+                              <div className="min-w-0 text-right font-medium text-gray-700 dark:text-gray-300">{row.payAmountLabel}</div>
+                            </div>
+                            <div className="grid grid-cols-[88px_minmax(0,1fr)] items-start gap-3 text-sm">
+                              <div className="text-gray-500 dark:text-gray-400">{isZh ? '最少买入' : 'Minimum Buy'}</div>
+                              <div className="min-w-0 text-right font-medium text-gray-700 dark:text-gray-300">{row.receiveAmountLabel}</div>
+                            </div>
+                            <div className="grid grid-cols-[88px_minmax(0,1fr)] items-start gap-3 text-sm">
+                              <div className="text-gray-500 dark:text-gray-400">{isZh ? '限价值' : 'Limit Price'}</div>
+                              <div className="min-w-0 text-right font-medium text-gray-700 dark:text-gray-300">{row.priceLabel}</div>
+                            </div>
+                            <div className="grid grid-cols-[88px_minmax(0,1fr)] items-start gap-3 text-sm">
+                              <div className="text-gray-500 dark:text-gray-400">{isZh ? '创建时间' : 'Created At'}</div>
+                              <div className="min-w-0 text-right font-medium text-gray-700 dark:text-gray-300">{row.createdAtLabel}</div>
+                            </div>
+                            <div className="grid grid-cols-[88px_minmax(0,1fr)] items-start gap-3 text-sm">
+                              <div className="text-gray-500 dark:text-gray-400">{isZh ? '有效期' : 'Expiry'}</div>
+                              <div className="min-w-0 text-right font-medium text-gray-700 dark:text-gray-300">{row.expiryLabel}</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 flex justify-end">
+                          <button
+                            type="button"
+                            disabled={!canCancel}
+                            title={canCancel ? (isZh ? '撤单功能待接入' : 'Cancel action coming soon') : undefined}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                            }}
+                            className={`inline-flex min-w-[88px] items-center justify-center rounded-full px-3.5 py-2 text-sm font-semibold transition-colors ${
+                              canCancel
+                                ? 'bg-gray-900 text-white hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200'
+                                : 'cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-white/[0.06] dark:text-gray-500'
+                            }`}
+                          >
+                            {isZh ? '撤单' : 'Cancel'}
+                          </button>
+                        </div>
+
+                        {isExpanded ? (
+                          <div className="mt-4">
+                            <LimitOrderExpandedDetails row={row} isZh={isZh} />
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

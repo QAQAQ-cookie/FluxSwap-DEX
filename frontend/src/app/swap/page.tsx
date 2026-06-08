@@ -1,36 +1,62 @@
 'use client';
 
+import { Suspense } from 'react';
 import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
+
+function SwapWidgetSkeleton() {
+  return (
+    <div className="w-full rounded-[2rem] border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-700 dark:bg-gray-800">
+      <div className="animate-pulse space-y-4">
+        <div className="h-7 w-32 rounded-xl bg-gray-200 dark:bg-gray-700" />
+        <div className="h-36 rounded-3xl bg-gray-100 dark:bg-gray-900" />
+        <div className="mx-auto h-5 w-12 rounded-xl bg-gray-200 dark:bg-gray-700" />
+        <div className="h-36 rounded-3xl bg-gray-100 dark:bg-gray-900" />
+        <div className="h-28 rounded-2xl bg-gray-50 dark:bg-gray-900/60" />
+        <div className="h-12 rounded-xl bg-gray-200 dark:bg-gray-700" />
+      </div>
+    </div>
+  );
+}
 
 const SwapWidget = dynamic(
   () => import('@/components/SwapWidget').then((mod) => mod.SwapWidget),
   {
     ssr: false,
-    loading: () => (
-      <div className="w-full rounded-[2rem] border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-700 dark:bg-gray-800">
-        <div className="animate-pulse space-y-4">
-          <div className="h-7 w-32 rounded-xl bg-gray-200 dark:bg-gray-700" />
-          <div className="h-36 rounded-3xl bg-gray-100 dark:bg-gray-900" />
-          <div className="mx-auto h-5 w-12 rounded-xl bg-gray-200 dark:bg-gray-700" />
-          <div className="h-36 rounded-3xl bg-gray-100 dark:bg-gray-900" />
-          <div className="h-28 rounded-2xl bg-gray-50 dark:bg-gray-900/60" />
-          <div className="h-12 rounded-xl bg-gray-200 dark:bg-gray-700" />
-        </div>
-      </div>
-    ),
+    loading: () => <SwapWidgetSkeleton />,
   },
 );
 
-export default function SwapPage() {
+function SwapPageContent() {
   const searchParams = useSearchParams();
   const initialTradeMode = searchParams.get('mode') === 'limit' ? 'limit' : 'swap';
+  const initialPayTokenSymbol = searchParams.get('payToken') ?? 'ETH';
+  const initialReceiveTokenSymbol = searchParams.get('receiveToken') ?? 'FLUX';
+  const initialPayAmount = searchParams.get('payAmount') ?? '';
+  const initialReceiveAmount = searchParams.get('receiveAmount') ?? '';
+  const initialInputMode = searchParams.get('inputMode') === 'receive' ? 'receive' : 'pay';
 
   return (
     <div className="min-h-[calc(100vh-80px)] px-4 pt-10 pb-20 transition-colors duration-300">
       <div className="mx-auto flex w-full max-w-6xl flex-col">
-        <SwapWidget enableModeSwitch initialTradeMode={initialTradeMode} />
+        <SwapWidget
+          enableModeSwitch
+          initialTradeMode={initialTradeMode}
+          initialPayTokenSymbol={initialPayTokenSymbol}
+          initialReceiveTokenSymbol={initialReceiveTokenSymbol}
+          initialPayAmount={initialPayAmount}
+          initialReceiveAmount={initialReceiveAmount}
+          initialInputMode={initialInputMode}
+        />
       </div>
     </div>
+  );
+}
+
+export default function SwapPage() {
+  return (
+    <Suspense fallback={<SwapWidgetSkeleton />}>
+      <SwapPageContent />
+    </Suspense>
   );
 }
