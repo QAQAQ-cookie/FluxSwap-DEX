@@ -129,12 +129,17 @@ var postgresColumnComments = map[string]map[string]string{
 }
 
 var postgresIndexComments = map[string]string{
-	"idx_order_hash_unique":      "订单业务唯一索引：同一链、同一结算合约、同一订单哈希只能出现一次",
-	"idx_order_activity_order":   "订单活动查询索引：按链、结算合约、订单哈希定位活动流",
-	"idx_order_events_unique":    "链上事件唯一索引：同一链上同一交易哈希和日志索引只能入库一次",
-	"idx_sync_cursor_unique":     "同步游标唯一索引：同一消费者在同一链上只有一个游标",
-	"idx_order_runtime_order_id": "订单运行态唯一索引：每个订单只允许一条运行态快照",
+	"idx_order_hash_unique":           "订单业务唯一索引：同一链、同一结算合约、同一订单哈希只能出现一次",
+	"idx_order_activity_order":        "订单活动查询索引：按链、结算合约、订单哈希定位活动流",
+	"idx_order_events_unique":         "链上事件唯一索引：同一链上同一交易哈希和日志索引只能入库一次",
+	"idx_sync_cursor_unique":          "同步游标唯一索引：同一消费者在同一链上只有一个游标",
+	"idx_order_runtime_order_id":      "订单运行态唯一索引：每个订单只允许一条运行态快照",
 	"idx_order_activities_dedupe_key": "订单活动唯一索引：同一业务活动只记录一次",
+}
+
+func init() {
+	postgresIndexComments["idx_order_list_by_maker_created"] = "order list query index by chain, maker, created_at, id"
+	postgresIndexComments["idx_order_list_by_maker_settlement_created"] = "order list query index by chain, maker, settlement_address, created_at, id"
 }
 
 type legacyOrderRecord struct {

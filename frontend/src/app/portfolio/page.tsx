@@ -1,10 +1,13 @@
 'use client';
 
+import { useConnectModal } from '@rainbow-me/rainbowkit';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import {
+  AlertCircle,
   ArrowDownUp,
   ArrowRight,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
   Clock3,
@@ -18,17 +21,21 @@ import {
   X,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useAccount, useBalance, useChainId, usePublicClient } from 'wagmi';
+import type { Address } from 'viem';
+import { useAccount, useBalance, useChainId, usePublicClient, useSignTypedData, useWriteContract } from 'wagmi';
 
-import { getContractAddress, isFluxSupportedChain } from '@/config/contracts';
+import { getContractAddress, getLocalGasOverride, isFluxSupportedChain } from '@/config/contracts';
 import { getSwapTokenOptions, type SwapTokenOption } from '@/config/tokens';
 import { formatBigIntAmount, formatBigIntAmountDown, formatDisplayAmount } from '@/lib/amounts';
-import { fluxSwapPairAbi } from '@/lib/contracts';
+import { fluxSignedOrderSettlementAbi, fluxSwapPairAbi } from '@/lib/contracts';
 import { fluxSwapErc20Abi } from '@/lib/contracts/generated/FluxSwapERC20';
+import { formatErrorMessage } from '@/lib/errors';
+import { buildInvalidateNoncesTypedData } from '@/lib/limitOrders';
 import {
   LOCAL_LIMIT_ORDERS_UPDATED_EVENT,
   listLocalLimitOrders,
   syncLocalLimitOrdersWithChain,
+  upsertLocalLimitOrder,
   type LocalLimitOrderRecord,
 } from '@/lib/localLimitOrders';
 import { getPools, type PoolViewModel } from '@/lib/subgraph/pools';
@@ -178,15 +185,219 @@ type LimitOrderDisplayRow = {
   receiveAmountLabel: string;
   priceLabel: string;
   statusLabel: string;
+  statusDetailLabel: string;
   createdAtLabel: string;
   expiryLabel: string;
   recipientLabel: string;
+  cancelTxHash: string;
+  cancelTxHref?: string;
+};
+
+type LimitOrdersApiResponse = {
+  orders?: LocalLimitOrderRecord[];
+  nextCursor?: string;
+  hasMore?: boolean;
+  updatesCursor?: string;
+  notice?: {
+    success?: boolean;
+    code?: string;
+    message?: string;
+    hint?: string;
+    stage?: string;
+  };
+};
+
+type CancelOrdersApiResponse = {
+  total?: number;
+  cancelledCount?: number;
+  results?: Array<{
+    chainId?: number;
+    settlementAddress?: string;
+    orderHash?: string;
+    cancelled?: boolean;
+    error?: string;
+    code?: string;
+    message?: string;
+    hint?: string;
+    stage?: string;
+    order?: LocalLimitOrderRecord | null;
+  }>;
+  notice?: {
+    success?: boolean;
+    code?: string;
+    message?: string;
+    hint?: string;
+    stage?: string;
+  };
+};
+
+type FetchLimitOrdersParams = {
+  chainId: number;
+  maker: string;
+  settlementAddress?: string;
+  statuses?: string[];
+  limit?: number;
+  cursor?: string;
+  view?: 'orders' | 'updates';
 };
 
 type TokenSortDirection = 'desc' | 'asc';
 
+type LimitOrderResultModalState =
+  | {
+      kind: 'success' | 'error';
+      title: string;
+      message: string;
+    }
+  | null;
+
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 const ZERO_BIGINT = BigInt(0);
+const LIMIT_ORDER_PAGE_SIZE = 100;
+const LIMIT_ORDER_MAX_PAGES = 10;
+const LIMIT_ORDER_POLL_LIMIT = 100;
+const LIMIT_ORDER_REFRESH_INTERVAL_MS = 8000;
+const LIMIT_ORDER_CANCEL_DEADLINE_SECONDS = BigInt(30 * 60);
+const LIMIT_ORDER_CANCEL_REGISTER_RETRIES = 6;
+const LIMIT_ORDER_CANCEL_REGISTER_RETRY_MS = 1500;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+function buildLimitOrderKey(order: Pick<LocalLimitOrderRecord, 'chainId' | 'settlementAddress' | 'orderHash'>) {
+  return `${order.chainId}:${order.settlementAddress.trim().toLowerCase()}:${order.orderHash.trim().toLowerCase()}`;
+}
+
+function sortLimitOrders(orders: LocalLimitOrderRecord[]) {
+  return [...orders].sort((left, right) => {
+    const createdAtCompare = right.createdAt.localeCompare(left.createdAt);
+    if (createdAtCompare !== 0) {
+      return createdAtCompare;
+    }
+
+    const updatedAtCompare = right.updatedAt.localeCompare(left.updatedAt);
+    if (updatedAtCompare !== 0) {
+      return updatedAtCompare;
+    }
+
+    return right.orderHash.localeCompare(left.orderHash);
+  });
+}
+
+function mergeLimitOrders(...lists: LocalLimitOrderRecord[][]) {
+  const merged = new Map<string, LocalLimitOrderRecord>();
+
+  for (const list of lists) {
+    for (const order of list) {
+      const key = buildLimitOrderKey(order);
+      const previous = merged.get(key);
+
+      merged.set(key, previous ? { ...previous, ...order } : order);
+    }
+  }
+
+  return sortLimitOrders(Array.from(merged.values()));
+}
+
+function filterWalletLimitOrders(
+  orders: LocalLimitOrderRecord[],
+  {
+    chainId,
+    maker,
+    settlementAddress,
+  }: {
+    chainId: number;
+    maker: string;
+    settlementAddress?: string;
+  },
+) {
+  const normalizedMaker = maker.trim().toLowerCase();
+  const normalizedSettlement = settlementAddress?.trim().toLowerCase();
+
+  return sortLimitOrders(
+    orders.filter((order) => {
+      if (order.chainId !== chainId) {
+        return false;
+      }
+      if (order.maker.trim().toLowerCase() !== normalizedMaker) {
+        return false;
+      }
+      if (normalizedSettlement && order.settlementAddress.trim().toLowerCase() !== normalizedSettlement) {
+        return false;
+      }
+      return true;
+    }),
+  );
+}
+
+async function fetchLimitOrdersPage(params: FetchLimitOrdersParams) {
+  const searchParams = new URLSearchParams();
+  searchParams.set('chainId', String(params.chainId));
+  searchParams.set('maker', params.maker);
+
+  if (params.settlementAddress) {
+    searchParams.set('settlementAddress', params.settlementAddress);
+  }
+  if (params.limit) {
+    searchParams.set('limit', String(params.limit));
+  }
+  if (params.cursor) {
+    searchParams.set('cursor', params.cursor);
+  }
+  if (params.view === 'updates') {
+    searchParams.set('view', 'updates');
+  }
+  for (const status of params.statuses ?? []) {
+    const normalizedStatus = status.trim();
+    if (normalizedStatus) {
+      searchParams.append('status', normalizedStatus);
+    }
+  }
+
+  const response = await fetch(`/api/orders?${searchParams.toString()}`, {
+    cache: 'no-store',
+  });
+  const payload = (await response.json().catch(() => null)) as LimitOrdersApiResponse | null;
+
+  if (!response.ok || payload?.notice?.success === false) {
+    const message = payload?.notice?.message ?? 'Failed to load limit orders';
+    const hint = payload?.notice?.hint;
+    throw new Error(hint ? `${message}: ${hint}` : message);
+  }
+
+  return {
+    orders: payload?.orders ?? [],
+    nextCursor: payload?.nextCursor ?? '',
+    hasMore: payload?.hasMore === true,
+    updatesCursor: payload?.updatesCursor ?? '',
+  };
+}
+
+async function fetchAllLimitOrders(params: Omit<FetchLimitOrdersParams, 'cursor' | 'view'>) {
+  const collected: LocalLimitOrderRecord[] = [];
+  let cursor = '';
+  let hasMore = true;
+  let pageCount = 0;
+
+  while (hasMore && pageCount < LIMIT_ORDER_MAX_PAGES) {
+    const page = await fetchLimitOrdersPage({
+      ...params,
+      limit: params.limit ?? LIMIT_ORDER_PAGE_SIZE,
+      cursor,
+      view: 'orders',
+    });
+
+    collected.push(...page.orders);
+    hasMore = page.hasMore && !!page.nextCursor;
+    cursor = page.nextCursor;
+    pageCount += 1;
+  }
+
+  return mergeLimitOrders(collected);
+}
 
 function getTransactionHref(chainId: number | undefined, txHash: string): string | undefined {
   if (!txHash) {
@@ -292,6 +503,37 @@ function LimitOrderExpandedDetails({
           value={`${row.order.maxExecutorRewardBps} bps`}
         />
       </div>
+
+      {row.statusDetailLabel ? (
+        <LimitOrderField
+          label={isZh ? '当前进度' : 'Current Progress'}
+          value={row.statusDetailLabel}
+          className="sm:col-span-2 xl:col-span-8"
+          valueClassName="break-words font-medium text-gray-700 dark:text-gray-300"
+        />
+      ) : null}
+
+      {row.cancelTxHash ? (
+        <LimitOrderField
+          label={isZh ? '撤单交易哈希' : 'Cancel Tx Hash'}
+          value={
+            row.cancelTxHref ? (
+              <a
+                href={row.cancelTxHref}
+                target="_blank"
+                rel="noreferrer"
+                className="text-sky-600 underline decoration-sky-200 underline-offset-4 transition-colors hover:text-sky-500 dark:text-sky-300 dark:decoration-sky-400/30 dark:hover:text-sky-200"
+              >
+                {row.cancelTxHash}
+              </a>
+            ) : (
+              row.cancelTxHash
+            )
+          }
+          className="sm:col-span-2 xl:col-span-8"
+          valueClassName="font-mono text-[13px]"
+        />
+      ) : null}
     </div>
   );
 }
@@ -391,8 +633,125 @@ function getLimitOrderStatusBadgeClass(status: string) {
   }
 }
 
-function canCancelLimitOrder(status: string) {
-  return status.trim().toLowerCase() === 'open';
+function getLimitOrderStatusDetailLabel(
+  order: Pick<LocalLimitOrderRecord, 'status' | 'statusReason' | 'cancelledTxHash'>,
+  isZh: boolean,
+) {
+  const status = order.status.trim().toLowerCase();
+  const statusReason = order.statusReason?.trim().toLowerCase() ?? '';
+
+  if (status === 'pending_cancel') {
+    switch (statusReason) {
+      case 'cancel_tx_submitted_by_user':
+      case 'cancel_tx_pending_on_chain':
+        return isZh ? '撤单交易已提交，等待链上确认' : 'Cancel transaction submitted and waiting for chain confirmation';
+      case 'cancel_tx_confirmed_waiting_for_indexer':
+        return isZh ? '链上已确认，等待索引回写' : 'Confirmed on-chain and waiting for indexer sync';
+      case 'cancel_tx_missing_from_chain_retryable':
+        return isZh ? '暂未从节点查到撤单交易，系统会继续重试' : 'Cancel transaction is not indexed by the node yet, and the system will keep retrying';
+      case 'cancel_tx_reverted_retryable':
+        return isZh ? '撤单交易已回退，系统正在重新校验状态' : 'Cancel transaction reverted and the system is re-checking the order state';
+      case 'confirmed_by_chain_state':
+        return isZh ? '链上状态已确认，等待页面同步最终结果' : 'Chain state is confirmed and the page is waiting to sync the final result';
+      default:
+        return isZh ? '撤单处理中' : 'Cancellation in progress';
+    }
+  }
+
+  if (status === 'cancelled') {
+    if (statusReason === 'confirmed_by_chain_state' && !order.cancelledTxHash) {
+      return isZh ? '链上已确认撤单，撤单哈希稍后补齐' : 'Cancellation is confirmed on-chain and the cancel transaction hash will sync later';
+    }
+
+    return isZh ? '订单已撤单完成' : 'The order has been cancelled';
+  }
+
+  if (status === 'pending_execute') {
+    return isZh ? '执行交易已提交，等待链上确认' : 'Execution transaction submitted and waiting for chain confirmation';
+  }
+
+  if (status === 'submitting_execute') {
+    return isZh ? '执行器正在提交执行交易' : 'Executor is submitting the execution transaction';
+  }
+
+  return '';
+}
+
+function getLimitOrderActionMeta(
+  order: Pick<LocalLimitOrderRecord, 'status' | 'statusReason' | 'cancelledTxHash'>,
+  isZh: boolean,
+  isProcessingCurrent: boolean,
+  isAnotherActionRunning: boolean,
+) {
+  const status = order.status.trim().toLowerCase();
+  const statusDetailLabel = getLimitOrderStatusDetailLabel(order, isZh);
+
+  if (isProcessingCurrent) {
+    return {
+      label: isZh ? '处理中...' : 'Processing...',
+      title: isZh ? '正在提交撤单请求，请稍候' : 'Submitting cancel request. Please wait.',
+      disabled: true,
+    };
+  }
+
+  if (isAnotherActionRunning) {
+    return {
+      label: isZh ? '撤单' : 'Cancel',
+      title: isZh ? '当前有另一笔撤单正在处理' : 'Another cancel request is currently being processed.',
+      disabled: true,
+    };
+  }
+
+  switch (status.trim().toLowerCase()) {
+    case 'open':
+      return {
+        label: isZh ? '撤单' : 'Cancel',
+        title: isZh ? '发起链上撤单并登记到后端' : 'Submit on-chain cancellation and register it with the backend.',
+        disabled: false,
+      };
+    case 'pending_cancel':
+      return {
+        label: isZh ? '撤单中' : 'Cancelling',
+        title: statusDetailLabel || (isZh ? '撤单交易已提交，等待链上确认和状态回写' : 'Cancel transaction submitted. Waiting for chain confirmation and status sync.'),
+        disabled: true,
+      };
+    case 'submitting_execute':
+      return {
+        label: isZh ? '执行中' : 'Executing',
+        title: isZh ? '订单正在提交执行，暂时不能撤单' : 'The order is being submitted for execution and cannot be cancelled right now.',
+        disabled: true,
+      };
+    case 'pending_execute':
+      return {
+        label: isZh ? '执行中' : 'Executing',
+        title: isZh ? '订单执行交易已在链上处理中，暂时不能撤单' : 'The execution transaction is pending on-chain and cannot be cancelled right now.',
+        disabled: true,
+      };
+    case 'executed':
+      return {
+        label: isZh ? '已执行' : 'Executed',
+        title: isZh ? '已执行的订单不能撤单' : 'Executed orders cannot be cancelled.',
+        disabled: true,
+      };
+    case 'cancelled':
+      return {
+        label: isZh ? '已撤单' : 'Cancelled',
+        title: isZh ? '这笔订单已经撤单' : 'This order has already been cancelled.',
+        disabled: true,
+      };
+    case 'expired':
+      return {
+        label: isZh ? '已过期' : 'Expired',
+        title: isZh ? '已过期的订单不能撤单' : 'Expired orders cannot be cancelled.',
+        disabled: true,
+      };
+    default:
+      return {
+        label: isZh ? '不可撤单' : 'Unavailable',
+        title: isZh ? '当前状态暂不支持撤单' : 'Cancellation is not available in the current state.',
+        disabled: true,
+      };
+  }
 }
 
 function resolveLimitOrderTokenMeta(
@@ -522,6 +881,10 @@ export default function PortfolioPage() {
   const chainId = useChainId();
   const publicClient = usePublicClient({ chainId });
   const { address, isConnected } = useAccount();
+  const { openConnectModal } = useConnectModal();
+  const { signTypedDataAsync } = useSignTypedData();
+  const { writeContractAsync } = useWriteContract();
+  const localGasOverride = getLocalGasOverride(chainId);
 
   const supportedChain = isFluxSupportedChain(chainId);
   const fluxTokenAddress = getContractAddress('FluxToken', chainId);
@@ -539,9 +902,13 @@ export default function PortfolioPage() {
   const [tokenError, setTokenError] = useState<string | null>(null);
   const [tokenSortDirection, setTokenSortDirection] = useState<TokenSortDirection>('desc');
   const [limitOrdersLoading, setLimitOrdersLoading] = useState(false);
+  const [limitOrdersError, setLimitOrdersError] = useState<string | null>(null);
   const [walletLimitOrders, setWalletLimitOrders] = useState<LocalLimitOrderRecord[]>([]);
   const [isLimitOrdersModalOpen, setIsLimitOrdersModalOpen] = useState(false);
   const [expandedLimitOrderHash, setExpandedLimitOrderHash] = useState<string | null>(null);
+  const [limitOrderResultModal, setLimitOrderResultModal] = useState<LimitOrderResultModalState>(null);
+  const [selectedLimitOrderKeys, setSelectedLimitOrderKeys] = useState<string[]>([]);
+  const [cancellingOrderKeys, setCancellingOrderKeys] = useState<string[]>([]);
 
   const { data: nativeBalance } = useBalance({
     address,
@@ -722,19 +1089,31 @@ export default function PortfolioPage() {
   useEffect(() => {
     if (!supportedChain || !isConnected || !address) {
       setLimitOrdersLoading(false);
+      setLimitOrdersError(null);
       setWalletLimitOrders([]);
       setIsLimitOrdersModalOpen(false);
       return;
     }
 
     let cancelled = false;
+    const normalizedWallet = address.toLowerCase();
+    const normalizedSettlement = limitSettlementAddress?.toLowerCase();
 
-    const loadLimitOrders = async () => {
+    const readLocalWalletOrders = () =>
+      filterWalletLimitOrders(listLocalLimitOrders(), {
+        chainId,
+        maker: normalizedWallet,
+        settlementAddress: normalizedSettlement,
+      });
+
+    const loadLimitOrders = async ({ background = false }: { background?: boolean } = {}) => {
       if (cancelled) {
         return;
       }
 
-      setLimitOrdersLoading(true);
+      if (!background) {
+        setLimitOrdersLoading(true);
+      }
 
       if (publicClient) {
         try {
@@ -747,34 +1126,67 @@ export default function PortfolioPage() {
         }
       }
 
-      const normalizedWallet = address.toLowerCase();
-      const normalizedSettlement = limitSettlementAddress?.toLowerCase();
-      const nextOrders = listLocalLimitOrders()
-        .filter((order) => {
-          if (order.chainId !== chainId) {
-            return false;
-          }
-          if (order.maker.toLowerCase() !== normalizedWallet) {
-            return false;
-          }
-          if (normalizedSettlement && order.settlementAddress.toLowerCase() !== normalizedSettlement) {
-            return false;
-          }
-          return true;
-        })
-        .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+      const localOrders = readLocalWalletOrders();
 
-      if (!cancelled) {
-        setWalletLimitOrders(nextOrders);
-        setLimitOrdersLoading(false);
+      try {
+        const backendOrders = await fetchAllLimitOrders({
+          chainId,
+          maker: normalizedWallet,
+          settlementAddress: normalizedSettlement,
+          limit: LIMIT_ORDER_PAGE_SIZE,
+        });
+
+        if (!cancelled) {
+          setWalletLimitOrders(mergeLimitOrders(localOrders, backendOrders));
+          setLimitOrdersError(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setWalletLimitOrders((current) => (background ? mergeLimitOrders(localOrders, current) : localOrders));
+          if (!background && localOrders.length === 0) {
+            setLimitOrdersError(
+              error instanceof Error ? error.message : 'Failed to load limit orders',
+            );
+          }
+        }
+      } finally {
+        if (!cancelled && !background) {
+          setLimitOrdersLoading(false);
+        }
+      }
+    };
+
+    const refreshLimitOrderUpdates = async () => {
+      const localOrders = readLocalWalletOrders();
+
+      try {
+        const page = await fetchLimitOrdersPage({
+          chainId,
+          maker: normalizedWallet,
+          settlementAddress: normalizedSettlement,
+          limit: LIMIT_ORDER_POLL_LIMIT,
+          view: 'updates',
+        });
+
+        if (!cancelled) {
+          setWalletLimitOrders((current) => mergeLimitOrders(localOrders, current, page.orders));
+          setLimitOrdersError(null);
+        }
+      } catch {
+        if (!cancelled) {
+          setWalletLimitOrders((current) => mergeLimitOrders(localOrders, current));
+        }
       }
     };
 
     void loadLimitOrders();
 
     const handleLimitOrdersUpdated = () => {
-      void loadLimitOrders();
+      void loadLimitOrders({ background: true });
     };
+    const refreshTimer = window.setInterval(() => {
+      void refreshLimitOrderUpdates();
+    }, LIMIT_ORDER_REFRESH_INTERVAL_MS);
 
     window.addEventListener('storage', handleLimitOrdersUpdated);
     window.addEventListener(
@@ -784,6 +1196,7 @@ export default function PortfolioPage() {
 
     return () => {
       cancelled = true;
+      window.clearInterval(refreshTimer);
       window.removeEventListener('storage', handleLimitOrdersUpdated);
       window.removeEventListener(
         LOCAL_LIMIT_ORDERS_UPDATED_EVENT,
@@ -939,15 +1352,529 @@ export default function PortfolioPage() {
         receiveAmountLabel: `${formatBigIntAmountDown(minAmountOut, outputToken.decimals, 6)} ${outputToken.symbol}`,
         priceLabel: `1 ${inputToken.symbol} = ${formatBigIntAmountDown(triggerPriceX18, 18, 8)} ${outputToken.symbol}`,
         statusLabel: getLimitOrderStatusLabel(order.status, isZh),
+        statusDetailLabel: getLimitOrderStatusDetailLabel(order, isZh),
         createdAtLabel: formatIsoDateTime(order.createdAt, locale),
         expiryLabel: formatIsoDateTime(
           parseOptionalBigInt(order.expiry) ? new Date(Number(order.expiry) * 1000).toISOString() : '',
           locale,
         ),
         recipientLabel: truncateAddress(order.recipient, 8, 6),
+        cancelTxHash: order.cancelledTxHash?.trim() ?? '',
+        cancelTxHref: getTransactionHref(order.chainId, order.cancelledTxHash?.trim() ?? ''),
       };
     });
   }, [isZh, tokenLookup, walletLimitOrders, wrappedNativeAddress]);
+  const selectedLimitOrderKeySet = useMemo(() => new Set(selectedLimitOrderKeys), [selectedLimitOrderKeys]);
+  const cancellingOrderKeySet = useMemo(() => new Set(cancellingOrderKeys), [cancellingOrderKeys]);
+  const isCancellingLimitOrders = cancellingOrderKeys.length > 0;
+  const selectableLimitOrderRows = useMemo(
+    () =>
+      limitOrderRows.filter(
+        (row) =>
+          !getLimitOrderActionMeta(
+            row.order,
+            isZh,
+            cancellingOrderKeySet.has(buildLimitOrderKey(row.order)),
+            isCancellingLimitOrders && !cancellingOrderKeySet.has(buildLimitOrderKey(row.order)),
+          ).disabled,
+      ),
+    [cancellingOrderKeySet, isCancellingLimitOrders, isZh, limitOrderRows],
+  );
+  const selectedLimitOrders = useMemo(() => {
+    if (selectedLimitOrderKeySet.size === 0) {
+      return [];
+    }
+
+    return limitOrderRows
+      .filter((row) => selectedLimitOrderKeySet.has(buildLimitOrderKey(row.order)))
+      .map((row) => row.order);
+  }, [limitOrderRows, selectedLimitOrderKeySet]);
+  const allSelectableLimitOrdersSelected =
+    selectableLimitOrderRows.length > 0 &&
+    selectableLimitOrderRows.every((row) => selectedLimitOrderKeySet.has(buildLimitOrderKey(row.order)));
+
+  const toggleLimitOrderSelection = (order: LocalLimitOrderRecord) => {
+    const key = buildLimitOrderKey(order);
+    setSelectedLimitOrderKeys((current) =>
+      current.includes(key) ? current.filter((item) => item !== key) : [...current, key],
+    );
+  };
+
+  const toggleAllSelectableLimitOrders = () => {
+    const selectableKeys = selectableLimitOrderRows.map((row) => buildLimitOrderKey(row.order));
+    if (selectableKeys.length === 0) {
+      return;
+    }
+
+    setSelectedLimitOrderKeys((current) => {
+      const currentSet = new Set(current);
+      const allSelected = selectableKeys.every((key) => currentSet.has(key));
+
+      if (allSelected) {
+        return current.filter((key) => !selectableKeys.includes(key));
+      }
+
+      const next = new Set(current);
+      selectableKeys.forEach((key) => next.add(key));
+      return Array.from(next);
+    });
+  };
+
+  const clearSelectedLimitOrders = () => {
+    setSelectedLimitOrderKeys([]);
+  };
+  const cancellingOrderHash = useMemo(() => {
+    const firstKey = cancellingOrderKeys[0];
+    if (!firstKey) {
+      return null;
+    }
+
+    return limitOrderRows.find((row) => buildLimitOrderKey(row.order) === firstKey)?.order.orderHash ?? null;
+  }, [cancellingOrderKeys, limitOrderRows]);
+  const setCancellingOrderHash = (orderHash: string | null) => {
+    if (!orderHash) {
+      setCancellingOrderKeys([]);
+      return;
+    }
+
+    const normalizedOrderHash = orderHash.trim().toLowerCase();
+    const row = limitOrderRows.find((item) => item.order.orderHash.trim().toLowerCase() === normalizedOrderHash);
+    setCancellingOrderKeys([row ? buildLimitOrderKey(row.order) : normalizedOrderHash]);
+  };
+
+  const syncLimitOrderRecord = (nextOrder: LocalLimitOrderRecord) => {
+    upsertLocalLimitOrder(nextOrder);
+    setWalletLimitOrders((current) => mergeLimitOrders(current, [nextOrder]));
+  };
+
+  const closeLimitOrderResultModal = () => {
+    setLimitOrderResultModal(null);
+  };
+
+  const handleCancelLimitOrder = async (order: LocalLimitOrderRecord) => {
+    if (!isConnected || !address) {
+      openConnectModal?.();
+      return;
+    }
+
+    if (cancellingOrderHash) {
+      return;
+    }
+
+    const actionMeta = getLimitOrderActionMeta(order, isZh, false, false);
+    if (actionMeta.disabled) {
+      setLimitOrderResultModal({
+        kind: 'error',
+        title: isZh ? '当前不能撤单' : 'Cancellation unavailable',
+        message: actionMeta.title,
+      });
+      return;
+    }
+
+    if (!limitSettlementAddress || !publicClient || !supportedChain) {
+      setLimitOrderResultModal({
+        kind: 'error',
+        title: isZh ? '撤单失败' : 'Cancel failed',
+        message: isZh ? '当前链路尚未准备好，请确认钱包网络和结算合约配置。' : 'The current network path is not ready. Please verify the connected network and settlement contract configuration.',
+      });
+      return;
+    }
+
+    const nonce = parseOptionalBigInt(order.nonce);
+    if (nonce === undefined || nonce < ZERO_BIGINT) {
+      setLimitOrderResultModal({
+        kind: 'error',
+        title: isZh ? '撤单失败' : 'Cancel failed',
+        message: isZh ? '订单 nonce 无效，暂时无法发起撤单。' : 'The order nonce is invalid, so cancellation cannot be submitted.',
+      });
+      return;
+    }
+
+    setLimitOrderResultModal(null);
+    setCancellingOrderHash(order.orderHash);
+
+    try {
+      const latestBlock = await publicClient.getBlock();
+      const cancelDeadline = latestBlock.timestamp + LIMIT_ORDER_CANCEL_DEADLINE_SECONDS;
+      const cancelSignature = await signTypedDataAsync(
+        buildInvalidateNoncesTypedData(
+          chainId,
+          limitSettlementAddress,
+          order.maker as Address,
+          [nonce],
+          cancelDeadline,
+        ),
+      );
+
+      const cancelTxHash = await writeContractAsync({
+        address: limitSettlementAddress,
+        abi: fluxSignedOrderSettlementAbi,
+        functionName: 'invalidateNoncesBySig',
+        args: [order.maker as Address, [nonce], cancelDeadline, cancelSignature],
+        chainId,
+        ...localGasOverride,
+      });
+
+      syncLimitOrderRecord({
+        ...order,
+        status: 'pending_cancel',
+        statusReason: 'cancel_tx_pending_on_chain',
+        cancelledTxHash: cancelTxHash,
+        updatedAt: new Date().toISOString(),
+      });
+
+      const receipt = await publicClient.waitForTransactionReceipt({
+        hash: cancelTxHash,
+      });
+
+      if (receipt.status !== 'success') {
+        syncLimitOrderRecord({
+          ...order,
+          updatedAt: new Date().toISOString(),
+        });
+        throw new Error(isZh ? '链上撤单交易执行失败。' : 'The on-chain cancellation transaction failed.');
+      }
+
+      syncLimitOrderRecord({
+        ...order,
+        status: 'pending_cancel',
+        statusReason: 'cancel_tx_confirmed_waiting_for_indexer',
+        cancelledTxHash: cancelTxHash,
+        updatedAt: new Date().toISOString(),
+      });
+
+      let didRegister = false;
+      let finalMessage = '';
+      let lastRetryableMessage = '';
+
+      for (let attempt = 0; attempt < LIMIT_ORDER_CANCEL_REGISTER_RETRIES; attempt += 1) {
+        const response = await fetch('/api/orders', {
+          method: 'DELETE',
+          headers: {
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            cancelTxHash,
+            orders: [
+              {
+                chainId,
+                settlementAddress: order.settlementAddress,
+                orderHash: order.orderHash,
+                maker: order.maker,
+                reason: 'user_requested_cancel',
+              },
+            ],
+          }),
+        });
+        const payload = (await response.json().catch(() => null)) as CancelOrdersApiResponse | null;
+        const result = payload?.results?.[0];
+        const returnedOrder = result?.order ?? null;
+
+        if (returnedOrder) {
+          syncLimitOrderRecord(returnedOrder);
+        }
+
+        const message = [result?.message ?? payload?.notice?.message, result?.hint ?? payload?.notice?.hint]
+          .map((item) => item?.trim())
+          .filter(Boolean)
+          .join(' ');
+
+        if (
+          (response.ok && payload?.notice?.success !== false && result?.cancelled) ||
+          (returnedOrder && ['pending_cancel', 'cancelled'].includes(returnedOrder.status.trim().toLowerCase()))
+        ) {
+          didRegister = true;
+          finalMessage =
+            message ||
+            (isZh ? '撤单请求已登记，订单状态会在链上确认后自动刷新。' : 'The cancel request has been registered and the order status will refresh after chain confirmation.');
+          break;
+        }
+
+        if (result?.code === 'CANCEL_TX_NOT_INDEXED_YET') {
+          lastRetryableMessage =
+            message ||
+            (isZh ? '链上撤单已确认，后端正在等待索引这笔交易。' : 'The on-chain cancellation is confirmed and the backend is waiting to index the transaction.');
+
+          if (attempt < LIMIT_ORDER_CANCEL_REGISTER_RETRIES - 1) {
+            await sleep(LIMIT_ORDER_CANCEL_REGISTER_RETRY_MS);
+            continue;
+          }
+
+          break;
+        }
+
+        throw new Error(
+          message ||
+            (isZh ? '撤单登记失败，请稍后刷新订单状态后重试。' : 'Failed to register the cancellation. Please refresh the order state and try again later.'),
+        );
+      }
+
+      setLimitOrderResultModal({
+        kind: 'success',
+        title: isZh ? '撤单已提交' : 'Cancel submitted',
+        message:
+          didRegister
+            ? finalMessage
+            : lastRetryableMessage ||
+              (isZh ? '链上撤单已确认，页面稍后会自动同步最新状态。' : 'The on-chain cancellation is confirmed and the page will sync the latest status shortly.'),
+      });
+    } catch (error) {
+      setLimitOrderResultModal({
+        kind: 'error',
+        title: isZh ? '撤单失败' : 'Cancel failed',
+        message: formatErrorMessage(error, {
+          rejectedMessage: isZh ? '你已取消本次撤单签名或钱包交易。' : 'You cancelled the cancellation signature or wallet transaction.',
+        }),
+      });
+    } finally {
+      setCancellingOrderHash(null);
+    }
+  };
+
+  const handleBatchCancelLimitOrders = async () => {
+    const uniqueOrders = Array.from(
+      new Map(selectedLimitOrders.map((order) => [buildLimitOrderKey(order), order])).values(),
+    );
+
+    if (uniqueOrders.length === 0) {
+      setLimitOrderResultModal({
+        kind: 'error',
+        title: isZh ? '请选择订单' : 'Select orders',
+        message: isZh ? '请先选择需要撤单的限价单。' : 'Please select limit orders to cancel first.',
+      });
+      return;
+    }
+
+    if (!isConnected || !address) {
+      openConnectModal?.();
+      return;
+    }
+
+    if (isCancellingLimitOrders) {
+      return;
+    }
+
+    if (!limitSettlementAddress || !publicClient || !supportedChain) {
+      setLimitOrderResultModal({
+        kind: 'error',
+        title: isZh ? '批量撤单失败' : 'Batch cancel failed',
+        message: isZh ? '当前链路尚未准备好，请确认钱包网络和结算合约配置。' : 'The current network path is not ready. Please verify the connected network and settlement contract configuration.',
+      });
+      return;
+    }
+
+    const firstOrder = uniqueOrders[0];
+    const normalizedMaker = firstOrder.maker.trim().toLowerCase();
+    const normalizedSettlement = firstOrder.settlementAddress.trim().toLowerCase();
+    const invalidScopeOrder = uniqueOrders.find(
+      (order) =>
+        order.chainId !== firstOrder.chainId ||
+        order.maker.trim().toLowerCase() !== normalizedMaker ||
+        order.settlementAddress.trim().toLowerCase() !== normalizedSettlement,
+    );
+    if (invalidScopeOrder) {
+      setLimitOrderResultModal({
+        kind: 'error',
+        title: isZh ? '批量撤单失败' : 'Batch cancel failed',
+        message: isZh ? '批量撤单只能处理同一钱包、同一条链、同一个结算合约下的订单。' : 'Batch cancellation can only include orders from the same wallet, chain, and settlement contract.',
+      });
+      return;
+    }
+
+    const disabledOrder = uniqueOrders.find((order) => getLimitOrderActionMeta(order, isZh, false, false).disabled);
+    if (disabledOrder) {
+      const actionMeta = getLimitOrderActionMeta(disabledOrder, isZh, false, false);
+      setLimitOrderResultModal({
+        kind: 'error',
+        title: isZh ? '当前不能撤单' : 'Cancellation unavailable',
+        message: actionMeta.title,
+      });
+      return;
+    }
+
+    const nonces = uniqueOrders.map((order) => parseOptionalBigInt(order.nonce));
+    if (nonces.some((nonce) => nonce === undefined || nonce < ZERO_BIGINT)) {
+      setLimitOrderResultModal({
+        kind: 'error',
+        title: isZh ? '批量撤单失败' : 'Batch cancel failed',
+        message: isZh ? '存在 nonce 无效的订单，暂时无法发起批量撤单。' : 'At least one order has an invalid nonce, so batch cancellation cannot be submitted.',
+      });
+      return;
+    }
+
+    const uniqueNonces = Array.from(new Set(nonces.map((nonce) => nonce?.toString() ?? ''))).map((nonce) => BigInt(nonce));
+    const orderKeys = uniqueOrders.map((order) => buildLimitOrderKey(order));
+    setLimitOrderResultModal(null);
+    setCancellingOrderKeys(orderKeys);
+
+    try {
+      const latestBlock = await publicClient.getBlock();
+      const cancelDeadline = latestBlock.timestamp + LIMIT_ORDER_CANCEL_DEADLINE_SECONDS;
+      const cancelSignature = await signTypedDataAsync(
+        buildInvalidateNoncesTypedData(
+          chainId,
+          limitSettlementAddress,
+          firstOrder.maker as Address,
+          uniqueNonces,
+          cancelDeadline,
+        ),
+      );
+
+      const cancelTxHash = await writeContractAsync({
+        address: limitSettlementAddress,
+        abi: fluxSignedOrderSettlementAbi,
+        functionName: 'invalidateNoncesBySig',
+        args: [firstOrder.maker as Address, uniqueNonces, cancelDeadline, cancelSignature],
+        chainId,
+        ...localGasOverride,
+      });
+
+      uniqueOrders.forEach((order) => {
+        syncLimitOrderRecord({
+          ...order,
+          status: 'pending_cancel',
+          statusReason: 'cancel_tx_pending_on_chain',
+          cancelledTxHash: cancelTxHash,
+          updatedAt: new Date().toISOString(),
+        });
+      });
+
+      const receipt = await publicClient.waitForTransactionReceipt({
+        hash: cancelTxHash,
+      });
+
+      if (receipt.status !== 'success') {
+        uniqueOrders.forEach((order) => {
+          syncLimitOrderRecord({
+            ...order,
+            updatedAt: new Date().toISOString(),
+          });
+        });
+        throw new Error(isZh ? '链上批量撤单交易执行失败。' : 'The on-chain batch cancellation transaction failed.');
+      }
+
+      uniqueOrders.forEach((order) => {
+        syncLimitOrderRecord({
+          ...order,
+          status: 'pending_cancel',
+          statusReason: 'cancel_tx_confirmed_waiting_for_indexer',
+          cancelledTxHash: cancelTxHash,
+          updatedAt: new Date().toISOString(),
+        });
+      });
+
+      let didRegister = false;
+      let finalMessage = '';
+      let lastRetryableMessage = '';
+      let successfulKeys: string[] = [];
+
+      for (let attempt = 0; attempt < LIMIT_ORDER_CANCEL_REGISTER_RETRIES; attempt += 1) {
+        const response = await fetch('/api/orders', {
+          method: 'DELETE',
+          headers: {
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            cancelTxHash,
+            orders: uniqueOrders.map((order) => ({
+              chainId,
+              settlementAddress: order.settlementAddress,
+              orderHash: order.orderHash,
+              maker: order.maker,
+              reason: 'user_requested_batch_cancel',
+            })),
+          }),
+        });
+        const payload = (await response.json().catch(() => null)) as CancelOrdersApiResponse | null;
+        const results = payload?.results ?? [];
+
+        results.forEach((result) => {
+          if (result.order) {
+            syncLimitOrderRecord(result.order);
+          }
+        });
+
+        successfulKeys = results
+          .filter(
+            (result) =>
+              result.cancelled === true ||
+              (result.order && ['pending_cancel', 'cancelled'].includes(result.order.status.trim().toLowerCase())),
+          )
+          .map((result) =>
+            buildLimitOrderKey({
+              chainId: result.chainId ?? chainId,
+              settlementAddress: result.settlementAddress ?? firstOrder.settlementAddress,
+              orderHash: result.orderHash ?? '',
+            }),
+          )
+          .filter((key) => !key.endsWith(':'));
+
+        const message = [payload?.notice?.message, payload?.notice?.hint]
+          .map((item) => item?.trim())
+          .filter(Boolean)
+          .join(' ');
+
+        if (response.ok && payload?.notice?.success !== false && successfulKeys.length > 0) {
+          const failedCount = Math.max(0, uniqueOrders.length - successfulKeys.length);
+          didRegister = true;
+          finalMessage =
+            message ||
+            (failedCount > 0
+              ? isZh
+                ? `已登记 ${successfulKeys.length} 笔撤单，${failedCount} 笔未登记，请刷新后查看原因。`
+                : `${successfulKeys.length} cancellation(s) registered, ${failedCount} failed. Please refresh to inspect the reason.`
+              : isZh
+                ? `已登记 ${successfulKeys.length} 笔撤单，订单状态会在链上确认后自动刷新。`
+                : `${successfulKeys.length} cancellation(s) registered. Order status will refresh after chain confirmation.`);
+          break;
+        }
+
+        if (results.some((result) => result.code === 'CANCEL_TX_NOT_INDEXED_YET')) {
+          lastRetryableMessage =
+            message ||
+            (isZh ? '链上批量撤单已确认，后端正在等待索引这笔交易。' : 'The on-chain batch cancellation is confirmed and the backend is waiting to index the transaction.');
+
+          if (attempt < LIMIT_ORDER_CANCEL_REGISTER_RETRIES - 1) {
+            await sleep(LIMIT_ORDER_CANCEL_REGISTER_RETRY_MS);
+            continue;
+          }
+
+          break;
+        }
+
+        throw new Error(
+          message ||
+            (isZh ? '批量撤单登记失败，请稍后刷新订单状态后重试。' : 'Failed to register the batch cancellation. Please refresh order state and try again later.'),
+        );
+      }
+
+      setSelectedLimitOrderKeys((current) =>
+        successfulKeys.length > 0
+          ? current.filter((key) => !successfulKeys.includes(key))
+          : current.filter((key) => !orderKeys.includes(key)),
+      );
+
+      setLimitOrderResultModal({
+        kind: 'success',
+        title: isZh ? '批量撤单已提交' : 'Batch cancel submitted',
+        message:
+          didRegister
+            ? finalMessage
+            : lastRetryableMessage ||
+              (isZh ? '链上批量撤单已确认，页面稍后会自动同步最新状态。' : 'The on-chain batch cancellation is confirmed and the page will sync the latest status shortly.'),
+      });
+    } catch (error) {
+      setLimitOrderResultModal({
+        kind: 'error',
+        title: isZh ? '批量撤单失败' : 'Batch cancel failed',
+        message: formatErrorMessage(error, {
+          rejectedMessage: isZh ? '你已取消本次批量撤单签名或钱包交易。' : 'You cancelled the batch cancellation signature or wallet transaction.',
+        }),
+      });
+    } finally {
+      setCancellingOrderKeys([]);
+    }
+  };
 
   useEffect(() => {
     if (!isLimitOrdersModalOpen) {
@@ -968,9 +1895,15 @@ export default function PortfolioPage() {
     });
   }, [isLimitOrdersModalOpen, limitOrderRows]);
 
+  useEffect(() => {
+    const validKeys = new Set(selectableLimitOrderRows.map((row) => buildLimitOrderKey(row.order)));
+    setSelectedLimitOrderKeys((current) => current.filter((key) => validKeys.has(key)));
+  }, [selectableLimitOrderRows]);
+
   const closeLimitOrdersModal = () => {
     setIsLimitOrdersModalOpen(false);
     setExpandedLimitOrderHash(null);
+    setSelectedLimitOrderKeys([]);
   };
 
   const toggleExpandedLimitOrder = (orderHash: string) => {
@@ -1045,7 +1978,7 @@ export default function PortfolioPage() {
                 : 'Orders created by the connected wallet'
             }
             icon={ListOrdered}
-            contentClassName="mt-6 flex flex-1 overflow-hidden rounded-[1.5rem] border border-dashed border-black/10 bg-gray-50/80 dark:border-white/10 dark:bg-white/[0.03]"
+            contentClassName="mt-6 flex h-[360px] min-h-0 overflow-hidden rounded-[1.5rem] border border-dashed border-black/10 bg-gray-50/80 dark:border-white/10 dark:bg-white/[0.03]"
           >
             {!isConnected || !address ? (
               <div className="flex h-full w-full flex-1 flex-col items-center justify-center px-5 text-center">
@@ -1064,8 +1997,15 @@ export default function PortfolioPage() {
                   {isZh ? '正在加载限价单' : 'Loading limit orders'}
                 </div>
               </div>
+            ) : limitOrdersError ? (
+              <div className="flex h-full w-full flex-1 flex-col items-center justify-center px-5 text-center">
+                <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                  {isZh ? '限价单加载失败' : 'Failed to load limit orders'}
+                </div>
+                <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">{limitOrdersError}</div>
+              </div>
             ) : limitOrderRows.length > 0 ? (
-              <div className="flex h-full min-h-0 flex-col">
+              <div className="flex h-full min-h-0 w-full flex-col">
                 <div className="flex items-center justify-between border-b border-black/5 px-5 py-4 dark:border-white/10">
                   <div>
                     <div className="text-sm font-black tracking-tight text-gray-900 dark:text-white">
@@ -1087,7 +2027,7 @@ export default function PortfolioPage() {
                     <div className="whitespace-nowrap text-center">{isZh ? '状态' : 'Status'}</div>
                   </div>
 
-                  <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1">
+                  <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1 [scrollbar-gutter:stable]">
                     {limitOrderRows.map((row) => (
                       <button
                         key={row.order.orderHash}
@@ -1575,10 +2515,74 @@ export default function PortfolioPage() {
                 </button>
               </div>
 
-              <div className="mt-6 flex-1 overflow-hidden rounded-[1.5rem] border border-black/5 dark:border-white/10">
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-[1.25rem] border border-black/5 bg-gray-50/80 px-4 py-3 dark:border-white/10 dark:bg-white/[0.04]">
+                <div className="flex flex-wrap items-center gap-3 pl-[36px] text-sm text-gray-600 dark:text-gray-300">
+                  <span>
+                    {isZh
+                      ? `已选择 ${selectedLimitOrders.length} 笔，可撤 ${selectableLimitOrderRows.length} 笔`
+                      : `${selectedLimitOrders.length} selected, ${selectableLimitOrderRows.length} cancellable`}
+                  </span>
+                </div>
+
+                <div className="mr-[36px] flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={clearSelectedLimitOrders}
+                    disabled={selectedLimitOrders.length === 0 || isCancellingLimitOrders}
+                    className={`inline-flex h-9 items-center justify-center rounded-full px-3 text-sm font-semibold transition-colors ${
+                      selectedLimitOrders.length > 0 && !isCancellingLimitOrders
+                        ? 'text-gray-600 hover:bg-white dark:text-gray-300 dark:hover:bg-white/[0.08]'
+                        : 'cursor-not-allowed text-gray-400 dark:text-gray-600'
+                    }`}
+                  >
+                    {isZh ? '清空' : 'Clear'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleBatchCancelLimitOrders();
+                    }}
+                    disabled={selectedLimitOrders.length === 0 || isCancellingLimitOrders}
+                    className={`inline-flex h-9 min-w-[112px] items-center justify-center rounded-full px-4 text-sm font-semibold transition-colors ${
+                      selectedLimitOrders.length > 0 && !isCancellingLimitOrders
+                        ? 'bg-gray-900 text-white hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200'
+                        : 'cursor-not-allowed bg-gray-200 text-gray-400 dark:bg-white/[0.06] dark:text-gray-500'
+                    }`}
+                  >
+                    {isCancellingLimitOrders
+                      ? isZh
+                        ? '处理中...'
+                        : 'Processing...'
+                      : isZh
+                        ? '批量撤单'
+                        : 'Batch Cancel'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4 flex-1 overflow-hidden rounded-[1.5rem] border border-black/5 dark:border-white/10">
                 <div className="hidden h-full overflow-y-auto overflow-x-hidden xl:block">
                   <div className="mx-auto w-full max-w-[82rem]">
-                    <div className="sticky top-0 z-10 grid w-full grid-cols-[1.5fr_1.5fr_1.5fr_1.5fr_1fr_1fr_1fr_1fr] items-center gap-x-3 border-b border-black/5 bg-white/95 px-4 py-3 text-[11px] font-bold tracking-[0.08em] text-gray-500 backdrop-blur-sm dark:border-white/10 dark:bg-[#0f1726]/95 dark:text-gray-400">
+                    <div className="sticky top-0 z-10 grid w-full grid-cols-[44px_1.35fr_1.35fr_1.35fr_1.35fr_0.9fr_0.9fr_0.9fr_0.9fr] items-center gap-x-2 border-b border-black/5 bg-white/95 px-4 py-3 text-[11px] font-bold tracking-[0.08em] text-gray-500 backdrop-blur-sm dark:border-white/10 dark:bg-[#0f1726]/95 dark:text-gray-400">
+                      <div className="flex justify-center">
+                        <button
+                          type="button"
+                          onClick={toggleAllSelectableLimitOrders}
+                          disabled={selectableLimitOrderRows.length === 0 || isCancellingLimitOrders}
+                          className={`flex h-5 w-5 items-center justify-center rounded border transition-colors ${
+                            allSelectableLimitOrdersSelected
+                              ? 'border-sky-600 bg-sky-600 text-white'
+                              : 'border-gray-300 bg-white hover:border-gray-400 dark:border-gray-600 dark:bg-transparent'
+                          } ${
+                            selectableLimitOrderRows.length === 0 || isCancellingLimitOrders
+                              ? 'cursor-not-allowed opacity-50'
+                              : ''
+                          }`}
+                          aria-label={isZh ? '全选可撤单订单' : 'Select all cancellable orders'}
+                        >
+                          {allSelectableLimitOrdersSelected ? <CheckCircle2 size={13} /> : null}
+                        </button>
+                      </div>
                       <div className="text-center">{isZh ? '交易对' : 'Pair'}</div>
                       <div className="text-center">{isZh ? '卖出' : 'Sell'}</div>
                       <div className="text-center">{isZh ? '最少买入' : 'Minimum Buy'}</div>
@@ -1591,10 +2595,20 @@ export default function PortfolioPage() {
 
                     <div className="divide-y divide-black/5 dark:divide-white/10">
                       {limitOrderRows.map((row) => {
-                        const canCancel = canCancelLimitOrder(row.order.status);
                         const createdAtParts = splitDateTimeLabel(row.createdAtLabel);
                         const expiryParts = splitDateTimeLabel(row.expiryLabel);
                         const isExpanded = expandedLimitOrderHash === row.order.orderHash;
+                        const orderKey = buildLimitOrderKey(row.order);
+                        const isProcessingCurrent = cancellingOrderKeySet.has(orderKey);
+                        const isAnotherActionRunning = isCancellingLimitOrders && !isProcessingCurrent;
+                        const actionMeta = getLimitOrderActionMeta(
+                          row.order,
+                          isZh,
+                          isProcessingCurrent,
+                          isAnotherActionRunning,
+                        );
+                        const isSelected = selectedLimitOrderKeySet.has(orderKey);
+                        const canSelect = !actionMeta.disabled && !isCancellingLimitOrders;
 
                         return (
                           <div
@@ -1609,12 +2623,32 @@ export default function PortfolioPage() {
                               onKeyDown={(event) =>
                                 toggleWithKeyboard(event, () => toggleExpandedLimitOrder(row.order.orderHash))
                               }
-                              className={`grid w-full cursor-pointer grid-cols-[1.5fr_1.5fr_1.5fr_1.5fr_1fr_1fr_1fr_1fr] items-center gap-x-3 px-4 py-4 text-sm leading-5 text-gray-700 transition-colors dark:text-gray-300 ${
+                              className={`grid w-full cursor-pointer grid-cols-[44px_1.35fr_1.35fr_1.35fr_1.35fr_0.9fr_0.9fr_0.9fr_0.9fr] items-center gap-x-2 px-4 py-4 text-sm leading-5 text-gray-700 transition-colors dark:text-gray-300 ${
                                 isExpanded
                                   ? 'bg-sky-50/70 dark:bg-white/[0.06]'
                                   : 'hover:bg-sky-50/50 dark:hover:bg-white/[0.05]'
                               }`}
                             >
+                              <div className="flex justify-center">
+                                <button
+                                  type="button"
+                                  disabled={!canSelect}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    if (canSelect) {
+                                      toggleLimitOrderSelection(row.order);
+                                    }
+                                  }}
+                                  className={`flex h-5 w-5 items-center justify-center rounded border transition-colors ${
+                                    isSelected
+                                      ? 'border-sky-600 bg-sky-600 text-white'
+                                      : 'border-gray-300 bg-white hover:border-gray-400 dark:border-gray-600 dark:bg-transparent'
+                                  } ${!canSelect ? 'cursor-not-allowed opacity-40' : ''}`}
+                                  aria-label={isZh ? '选择订单' : 'Select order'}
+                                >
+                                  {isSelected ? <CheckCircle2 size={13} /> : null}
+                                </button>
+                              </div>
                               <div className="min-w-0 px-2">
                                 <div className="flex items-center justify-center gap-2">
                                   <span className="truncate font-semibold text-gray-900 dark:text-white">{row.pairLabel}</span>
@@ -1654,18 +2688,21 @@ export default function PortfolioPage() {
                               <div className="flex justify-center">
                                 <button
                                   type="button"
-                                  disabled={!canCancel}
-                                  title={canCancel ? (isZh ? '撤单功能待接入' : 'Cancel action coming soon') : undefined}
+                                  disabled={actionMeta.disabled}
+                                  title={actionMeta.title}
                                   onClick={(event) => {
                                     event.stopPropagation();
+                                    if (!actionMeta.disabled) {
+                                      void handleCancelLimitOrder(row.order);
+                                    }
                                   }}
                                   className={`inline-flex min-w-[68px] items-center justify-center rounded-full px-3 py-2 text-xs font-semibold transition-colors ${
-                                    canCancel
+                                    !actionMeta.disabled
                                       ? 'bg-gray-900 text-white hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200'
                                       : 'cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-white/[0.06] dark:text-gray-500'
                                   }`}
                                 >
-                                  {isZh ? '撤单' : 'Cancel'}
+                                  {actionMeta.label}
                                 </button>
                               </div>
                             </div>
@@ -1684,8 +2721,18 @@ export default function PortfolioPage() {
 
                 <div className="h-full space-y-3 overflow-y-auto p-4 xl:hidden">
                   {limitOrderRows.map((row) => {
-                    const canCancel = canCancelLimitOrder(row.order.status);
                     const isExpanded = expandedLimitOrderHash === row.order.orderHash;
+                    const orderKey = buildLimitOrderKey(row.order);
+                    const isProcessingCurrent = cancellingOrderKeySet.has(orderKey);
+                    const isAnotherActionRunning = isCancellingLimitOrders && !isProcessingCurrent;
+                    const actionMeta = getLimitOrderActionMeta(
+                      row.order,
+                      isZh,
+                      isProcessingCurrent,
+                      isAnotherActionRunning,
+                    );
+                    const isSelected = selectedLimitOrderKeySet.has(orderKey);
+                    const canSelect = !actionMeta.disabled && !isCancellingLimitOrders;
 
                     return (
                       <div
@@ -1704,7 +2751,25 @@ export default function PortfolioPage() {
                         }`}
                       >
                         <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-center gap-2">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <button
+                              type="button"
+                              disabled={!canSelect}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (canSelect) {
+                                  toggleLimitOrderSelection(row.order);
+                                }
+                              }}
+                              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors ${
+                                isSelected
+                                  ? 'border-sky-600 bg-sky-600 text-white'
+                                  : 'border-gray-300 bg-white hover:border-gray-400 dark:border-gray-600 dark:bg-transparent'
+                              } ${!canSelect ? 'cursor-not-allowed opacity-40' : ''}`}
+                              aria-label={isZh ? '选择订单' : 'Select order'}
+                            >
+                              {isSelected ? <CheckCircle2 size={13} /> : null}
+                            </button>
                             <div className="text-base font-black tracking-tight text-gray-900 dark:text-white">
                               {row.pairLabel}
                             </div>
@@ -1749,18 +2814,21 @@ export default function PortfolioPage() {
                         <div className="mt-4 flex justify-end">
                           <button
                             type="button"
-                            disabled={!canCancel}
-                            title={canCancel ? (isZh ? '撤单功能待接入' : 'Cancel action coming soon') : undefined}
+                            disabled={actionMeta.disabled}
+                            title={actionMeta.title}
                             onClick={(event) => {
                               event.stopPropagation();
+                              if (!actionMeta.disabled) {
+                                void handleCancelLimitOrder(row.order);
+                              }
                             }}
                             className={`inline-flex min-w-[88px] items-center justify-center rounded-full px-3.5 py-2 text-sm font-semibold transition-colors ${
-                              canCancel
+                              !actionMeta.disabled
                                 ? 'bg-gray-900 text-white hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200'
                                 : 'cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-white/[0.06] dark:text-gray-500'
                             }`}
                           >
-                            {isZh ? '撤单' : 'Cancel'}
+                            {actionMeta.label}
                           </button>
                         </div>
 
@@ -1773,6 +2841,62 @@ export default function PortfolioPage() {
                     );
                   })}
                 </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+        {limitOrderResultModal ? (
+          <div
+            className="fixed inset-0 z-[95] flex items-center justify-center bg-black/30 p-4 backdrop-blur-[2px]"
+            onClick={closeLimitOrderResultModal}
+          >
+            <div
+              className="w-full max-w-[460px] rounded-[1.7rem] bg-white px-5 py-5 shadow-2xl dark:bg-gray-900"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-start justify-end">
+                <button
+                  type="button"
+                  onClick={closeLimitOrderResultModal}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                  aria-label={isZh ? '关闭' : 'Close'}
+                >
+                  <X size={22} />
+                </button>
+              </div>
+
+              <div className="flex flex-col items-center px-3 pb-1 pt-1 text-center">
+                <div
+                  className={`flex h-14 w-14 items-center justify-center rounded-[1rem] ${
+                    limitOrderResultModal.kind === 'success'
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-rose-100 text-rose-700'
+                  }`}
+                >
+                  {limitOrderResultModal.kind === 'success' ? (
+                    <CheckCircle2 size={26} />
+                  ) : (
+                    <AlertCircle size={26} />
+                  )}
+                </div>
+
+                <h3 className="mt-5 text-[1.65rem] font-semibold tracking-tight text-gray-950 dark:text-white">
+                  {limitOrderResultModal.title}
+                </h3>
+
+                <p className="mt-2.5 text-base leading-7 text-gray-500 dark:text-gray-300">
+                  {limitOrderResultModal.message}
+                </p>
+              </div>
+
+              <div className="mt-6">
+                <button
+                  type="button"
+                  onClick={closeLimitOrderResultModal}
+                  className="inline-flex h-11 w-full items-center justify-center rounded-[1rem] bg-[#232323] text-base font-medium text-white transition-colors hover:bg-black dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
+                >
+                  {isZh ? '确定' : 'Confirm'}
+                </button>
               </div>
             </div>
           </div>

@@ -1,31 +1,13 @@
 'use client';
 
-import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useTranslation } from 'react-i18next';
 import { useChainId } from 'wagmi';
 import { Droplets, Repeat2, Sparkles, Zap } from 'lucide-react';
 
+import { SwapWidget } from '@/components/SwapWidget';
 import { isFluxSupportedChain } from '@/config/contracts';
 import { useIsClient } from '@/hooks/useIsClient';
-
-const SwapWidget = dynamic(
-  () => import('@/components/SwapWidget').then((mod) => mod.SwapWidget),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="w-full rounded-[2rem] border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-700 dark:bg-gray-800">
-        <div className="animate-pulse space-y-4">
-          <div className="h-7 w-32 rounded-xl bg-gray-200 dark:bg-gray-700" />
-          <div className="h-36 rounded-3xl bg-gray-100 dark:bg-gray-900" />
-          <div className="mx-auto h-5 w-12 rounded-xl bg-gray-200 dark:bg-gray-700" />
-          <div className="h-36 rounded-3xl bg-gray-100 dark:bg-gray-900" />
-          <div className="h-12 rounded-xl bg-gray-200 dark:bg-gray-700" />
-        </div>
-      </div>
-    ),
-  },
-);
 
 export default function Home() {
   const mounted = useIsClient();

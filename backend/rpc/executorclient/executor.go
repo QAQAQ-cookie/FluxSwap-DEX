@@ -14,30 +14,30 @@ import (
 )
 
 type (
-	CancelOrderItem            = executor.CancelOrderItem
-	CancelOrdersRequest        = executor.CancelOrdersRequest
-	CancelOrdersResponse       = executor.CancelOrdersResponse
-	CancelOrdersResult         = executor.CancelOrdersResult
-	CreateOrderRequest         = executor.CreateOrderRequest
-	CreateOrderResponse        = executor.CreateOrderResponse
-	GetBestRouteRequest        = executor.GetBestRouteRequest
-	GetBestRouteResponse       = executor.GetBestRouteResponse
-	GetOrderActivitiesRequest  = executor.GetOrderActivitiesRequest
-	GetOrderActivitiesResponse = executor.GetOrderActivitiesResponse
-	GetOrderRequest            = executor.GetOrderRequest
-	GetOrderResponse           = executor.GetOrderResponse
-	OrderActivityView          = executor.OrderActivityView
-	ResponseNotice             = executor.ResponseNotice
-	RouteExecution             = executor.RouteExecution
-	RoutePath                  = executor.RoutePath
-	RouteQuote                 = executor.RouteQuote
-	RouteView                  = executor.RouteView
+	CancelOrderItem          = executor.CancelOrderItem
+	CancelOrdersRequest      = executor.CancelOrdersRequest
+	CancelOrdersResponse     = executor.CancelOrdersResponse
+	CancelOrdersResult       = executor.CancelOrdersResult
+	CreateOrderRequest       = executor.CreateOrderRequest
+	CreateOrderResponse      = executor.CreateOrderResponse
+	GetBestRouteRequest      = executor.GetBestRouteRequest
+	GetBestRouteResponse     = executor.GetBestRouteResponse
+	GetOrderResponse         = executor.GetOrderResponse
+	ListOrderUpdatesRequest  = executor.ListOrderUpdatesRequest
+	ListOrderUpdatesResponse = executor.ListOrderUpdatesResponse
+	ListOrdersRequest        = executor.ListOrdersRequest
+	ListOrdersResponse       = executor.ListOrdersResponse
+	ResponseNotice           = executor.ResponseNotice
+	RouteExecution           = executor.RouteExecution
+	RoutePath                = executor.RoutePath
+	RouteQuote               = executor.RouteQuote
+	RouteView                = executor.RouteView
 
 	Executor interface {
 		CreateOrder(ctx context.Context, in *CreateOrderRequest, opts ...grpc.CallOption) (*CreateOrderResponse, error)
 		CancelOrders(ctx context.Context, in *CancelOrdersRequest, opts ...grpc.CallOption) (*CancelOrdersResponse, error)
-		GetOrder(ctx context.Context, in *GetOrderRequest, opts ...grpc.CallOption) (*GetOrderResponse, error)
-		GetOrderActivities(ctx context.Context, in *GetOrderActivitiesRequest, opts ...grpc.CallOption) (*GetOrderActivitiesResponse, error)
+		ListOrders(ctx context.Context, in *ListOrdersRequest, opts ...grpc.CallOption) (*ListOrdersResponse, error)
+		ListOrderUpdates(ctx context.Context, in *ListOrderUpdatesRequest, opts ...grpc.CallOption) (*ListOrderUpdatesResponse, error)
 		GetBestRoute(ctx context.Context, in *GetBestRouteRequest, opts ...grpc.CallOption) (*GetBestRouteResponse, error)
 	}
 
@@ -62,14 +62,14 @@ func (m *defaultExecutor) CancelOrders(ctx context.Context, in *CancelOrdersRequ
 	return client.CancelOrders(ctx, in, opts...)
 }
 
-func (m *defaultExecutor) GetOrder(ctx context.Context, in *GetOrderRequest, opts ...grpc.CallOption) (*GetOrderResponse, error) {
+func (m *defaultExecutor) ListOrders(ctx context.Context, in *ListOrdersRequest, opts ...grpc.CallOption) (*ListOrdersResponse, error) {
 	client := executor.NewExecutorClient(m.cli.Conn())
-	return client.GetOrder(ctx, in, opts...)
+	return client.ListOrders(ctx, in, opts...)
 }
 
-func (m *defaultExecutor) GetOrderActivities(ctx context.Context, in *GetOrderActivitiesRequest, opts ...grpc.CallOption) (*GetOrderActivitiesResponse, error) {
+func (m *defaultExecutor) ListOrderUpdates(ctx context.Context, in *ListOrderUpdatesRequest, opts ...grpc.CallOption) (*ListOrderUpdatesResponse, error) {
 	client := executor.NewExecutorClient(m.cli.Conn())
-	return client.GetOrderActivities(ctx, in, opts...)
+	return client.ListOrderUpdates(ctx, in, opts...)
 }
 
 func (m *defaultExecutor) GetBestRoute(ctx context.Context, in *GetBestRouteRequest, opts ...grpc.CallOption) (*GetBestRouteResponse, error) {

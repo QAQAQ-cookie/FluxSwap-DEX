@@ -16,7 +16,6 @@
 
 - `Executor/CreateOrder`：创建限价单
 - `Executor/CancelOrders`：批量登记用户已提交的撤单交易
-- `Executor/GetOrder`：查询单笔订单
 - `Executor/GetBestRoute`：获取普通兑换的最优路径
 
 ## CreateOrder
@@ -58,21 +57,6 @@
 - 撤单交易是否覆盖目标 nonce
 
 校验成功后，订单会进入 `pending_cancel`，最终状态由 indexer 或 executor 回执轮询收口。
-
-## GetOrder
-
-按 `chainId + settlementAddress + orderHash` 查询订单。
-
-返回的执行奖励相关字段包括：
-
-- `maxExecutorRewardBps`：签名订单允许执行器领取的最大 surplus 比例
-- `executorFeeToken`：当前按输出代币口径记录
-- `estimatedGasUsed`：创建或执行检查时使用的预估 gas
-- `gasPriceAtQuote`：最近一次奖励快照使用的 gasPrice
-- `rewardQuoteAt`：最近一次奖励快照时间
-- `lastRequiredExecutorReward`：最近一次估算出的执行器成本，按输出代币计价
-- `lastRewardCheckAt`：最近一次执行奖励检查时间
-- `settledExecutorReward`：订单实际成交后链上事件回写的实际执行奖励
 
 ## GetBestRoute
 

@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.1
 // - protoc             v3.19.4
-// source: proto/executor.proto
+// source: rpc/proto/executor.proto
 
 package executor
 
@@ -19,11 +19,11 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Executor_CreateOrder_FullMethodName        = "/executor.Executor/CreateOrder"
-	Executor_CancelOrders_FullMethodName       = "/executor.Executor/CancelOrders"
-	Executor_GetOrder_FullMethodName           = "/executor.Executor/GetOrder"
-	Executor_GetOrderActivities_FullMethodName = "/executor.Executor/GetOrderActivities"
-	Executor_GetBestRoute_FullMethodName       = "/executor.Executor/GetBestRoute"
+	Executor_CreateOrder_FullMethodName      = "/executor.Executor/CreateOrder"
+	Executor_CancelOrders_FullMethodName     = "/executor.Executor/CancelOrders"
+	Executor_ListOrders_FullMethodName       = "/executor.Executor/ListOrders"
+	Executor_ListOrderUpdates_FullMethodName = "/executor.Executor/ListOrderUpdates"
+	Executor_GetBestRoute_FullMethodName     = "/executor.Executor/GetBestRoute"
 )
 
 // ExecutorClient is the client API for Executor service.
@@ -32,8 +32,8 @@ const (
 type ExecutorClient interface {
 	CreateOrder(ctx context.Context, in *CreateOrderRequest, opts ...grpc.CallOption) (*CreateOrderResponse, error)
 	CancelOrders(ctx context.Context, in *CancelOrdersRequest, opts ...grpc.CallOption) (*CancelOrdersResponse, error)
-	GetOrder(ctx context.Context, in *GetOrderRequest, opts ...grpc.CallOption) (*GetOrderResponse, error)
-	GetOrderActivities(ctx context.Context, in *GetOrderActivitiesRequest, opts ...grpc.CallOption) (*GetOrderActivitiesResponse, error)
+	ListOrders(ctx context.Context, in *ListOrdersRequest, opts ...grpc.CallOption) (*ListOrdersResponse, error)
+	ListOrderUpdates(ctx context.Context, in *ListOrderUpdatesRequest, opts ...grpc.CallOption) (*ListOrderUpdatesResponse, error)
 	GetBestRoute(ctx context.Context, in *GetBestRouteRequest, opts ...grpc.CallOption) (*GetBestRouteResponse, error)
 }
 
@@ -65,20 +65,20 @@ func (c *executorClient) CancelOrders(ctx context.Context, in *CancelOrdersReque
 	return out, nil
 }
 
-func (c *executorClient) GetOrder(ctx context.Context, in *GetOrderRequest, opts ...grpc.CallOption) (*GetOrderResponse, error) {
+func (c *executorClient) ListOrders(ctx context.Context, in *ListOrdersRequest, opts ...grpc.CallOption) (*ListOrdersResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetOrderResponse)
-	err := c.cc.Invoke(ctx, Executor_GetOrder_FullMethodName, in, out, cOpts...)
+	out := new(ListOrdersResponse)
+	err := c.cc.Invoke(ctx, Executor_ListOrders_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *executorClient) GetOrderActivities(ctx context.Context, in *GetOrderActivitiesRequest, opts ...grpc.CallOption) (*GetOrderActivitiesResponse, error) {
+func (c *executorClient) ListOrderUpdates(ctx context.Context, in *ListOrderUpdatesRequest, opts ...grpc.CallOption) (*ListOrderUpdatesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetOrderActivitiesResponse)
-	err := c.cc.Invoke(ctx, Executor_GetOrderActivities_FullMethodName, in, out, cOpts...)
+	out := new(ListOrderUpdatesResponse)
+	err := c.cc.Invoke(ctx, Executor_ListOrderUpdates_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -101,8 +101,8 @@ func (c *executorClient) GetBestRoute(ctx context.Context, in *GetBestRouteReque
 type ExecutorServer interface {
 	CreateOrder(context.Context, *CreateOrderRequest) (*CreateOrderResponse, error)
 	CancelOrders(context.Context, *CancelOrdersRequest) (*CancelOrdersResponse, error)
-	GetOrder(context.Context, *GetOrderRequest) (*GetOrderResponse, error)
-	GetOrderActivities(context.Context, *GetOrderActivitiesRequest) (*GetOrderActivitiesResponse, error)
+	ListOrders(context.Context, *ListOrdersRequest) (*ListOrdersResponse, error)
+	ListOrderUpdates(context.Context, *ListOrderUpdatesRequest) (*ListOrderUpdatesResponse, error)
 	GetBestRoute(context.Context, *GetBestRouteRequest) (*GetBestRouteResponse, error)
 	mustEmbedUnimplementedExecutorServer()
 }
@@ -120,11 +120,11 @@ func (UnimplementedExecutorServer) CreateOrder(context.Context, *CreateOrderRequ
 func (UnimplementedExecutorServer) CancelOrders(context.Context, *CancelOrdersRequest) (*CancelOrdersResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CancelOrders not implemented")
 }
-func (UnimplementedExecutorServer) GetOrder(context.Context, *GetOrderRequest) (*GetOrderResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetOrder not implemented")
+func (UnimplementedExecutorServer) ListOrders(context.Context, *ListOrdersRequest) (*ListOrdersResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListOrders not implemented")
 }
-func (UnimplementedExecutorServer) GetOrderActivities(context.Context, *GetOrderActivitiesRequest) (*GetOrderActivitiesResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetOrderActivities not implemented")
+func (UnimplementedExecutorServer) ListOrderUpdates(context.Context, *ListOrderUpdatesRequest) (*ListOrderUpdatesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListOrderUpdates not implemented")
 }
 func (UnimplementedExecutorServer) GetBestRoute(context.Context, *GetBestRouteRequest) (*GetBestRouteResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetBestRoute not implemented")
@@ -186,38 +186,38 @@ func _Executor_CancelOrders_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Executor_GetOrder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetOrderRequest)
+func _Executor_ListOrders_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListOrdersRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ExecutorServer).GetOrder(ctx, in)
+		return srv.(ExecutorServer).ListOrders(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Executor_GetOrder_FullMethodName,
+		FullMethod: Executor_ListOrders_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExecutorServer).GetOrder(ctx, req.(*GetOrderRequest))
+		return srv.(ExecutorServer).ListOrders(ctx, req.(*ListOrdersRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Executor_GetOrderActivities_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetOrderActivitiesRequest)
+func _Executor_ListOrderUpdates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListOrderUpdatesRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ExecutorServer).GetOrderActivities(ctx, in)
+		return srv.(ExecutorServer).ListOrderUpdates(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Executor_GetOrderActivities_FullMethodName,
+		FullMethod: Executor_ListOrderUpdates_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExecutorServer).GetOrderActivities(ctx, req.(*GetOrderActivitiesRequest))
+		return srv.(ExecutorServer).ListOrderUpdates(ctx, req.(*ListOrderUpdatesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -256,12 +256,12 @@ var Executor_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Executor_CancelOrders_Handler,
 		},
 		{
-			MethodName: "GetOrder",
-			Handler:    _Executor_GetOrder_Handler,
+			MethodName: "ListOrders",
+			Handler:    _Executor_ListOrders_Handler,
 		},
 		{
-			MethodName: "GetOrderActivities",
-			Handler:    _Executor_GetOrderActivities_Handler,
+			MethodName: "ListOrderUpdates",
+			Handler:    _Executor_ListOrderUpdates_Handler,
 		},
 		{
 			MethodName: "GetBestRoute",
@@ -269,5 +269,5 @@ var Executor_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "proto/executor.proto",
+	Metadata: "rpc/proto/executor.proto",
 }

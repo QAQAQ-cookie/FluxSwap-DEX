@@ -46,6 +46,14 @@ export const signedLimitOrderTypes = {
   ],
 } as const
 
+export const invalidateNoncesTypes = {
+  InvalidateNonces: [
+    { name: 'maker', type: 'address' },
+    { name: 'noncesHash', type: 'bytes32' },
+    { name: 'deadline', type: 'uint256' },
+  ],
+} as const
+
 export function buildSignedLimitOrderDomain(
   chainId: number,
   settlementAddress: Address,
@@ -88,6 +96,37 @@ export function buildSignedLimitOrderTypedData(
     types: signedLimitOrderTypes,
     primaryType: 'SignedOrder',
     message: order,
+  } as const
+}
+
+export function hashInvalidateNonces(nonces: readonly bigint[]): Hex {
+  if (nonces.length === 0) {
+    return keccak256('0x')
+  }
+
+  const packed = nonces
+    .map((nonce) => nonce.toString(16).padStart(64, '0'))
+    .join('')
+
+  return keccak256(`0x${packed}`)
+}
+
+export function buildInvalidateNoncesTypedData(
+  chainId: number,
+  settlementAddress: Address,
+  maker: Address,
+  nonces: readonly bigint[],
+  deadline: bigint,
+) {
+  return {
+    domain: buildSignedLimitOrderDomain(chainId, settlementAddress),
+    types: invalidateNoncesTypes,
+    primaryType: 'InvalidateNonces',
+    message: {
+      maker,
+      noncesHash: hashInvalidateNonces(nonces),
+      deadline,
+    },
   } as const
 }
 

@@ -365,6 +365,28 @@ func (c *SettlementClient) CheckMakerFunding(ctx context.Context, order Settleme
 // 这里不会等待交易最终成功，但会验证目标合约、方法名、maker、nonces、
 // deadline 和 maker 签名是否与当前撤单登记请求一致。
 func (c *SettlementClient) ValidateCancelTransaction(ctx context.Context, txHash string, maker string, nonce *big.Int) (*CancelTxValidationResult, error) {
+	if nonce == nil || nonce.Sign() < 0 {
+		return nil, fmt.Errorf("nonce must be a non-negative integer")
+	}
+
+	result, err := c.ValidateCancelTransactionBatch(ctx, txHash, maker)
+	if err != nil {
+		return nil, err
+	}
+
+	if !cancelValidationIncludesNonce(result.RegisteredNonces, nonce) {
+		return nil, fmt.Errorf("cancel transaction does not cover target nonce")
+	}
+
+	result.TargetsRequestedNonce = true
+	return result, nil
+}
+
+// ValidateCancelTransactionBatch 校验一笔 invalidateNoncesBySig 交易并返回其覆盖的 nonce 集合。
+//
+// 批量撤单时，同一个 cancelTxHash 只需要解析 ABI、校验 deadline 和验签一次，
+// 调用方再按返回的 nonce 集合判断每笔订单是否被覆盖。
+func (c *SettlementClient) ValidateCancelTransactionBatch(ctx context.Context, txHash string, maker string) (*CancelTxValidationResult, error) {
 	if c == nil {
 		return nil, fmt.Errorf("settlement client is nil")
 	}
@@ -373,9 +395,6 @@ func (c *SettlementClient) ValidateCancelTransaction(ctx context.Context, txHash
 	}
 	if !common.IsHexAddress(strings.TrimSpace(maker)) {
 		return nil, fmt.Errorf("maker must be a valid address")
-	}
-	if nonce == nil || nonce.Sign() < 0 {
-		return nil, fmt.Errorf("nonce must be a non-negative integer")
 	}
 
 	tx, _, err := c.ethClient.TransactionByHash(ctx, common.HexToHash(strings.TrimSpace(txHash)))
@@ -430,17 +449,6 @@ func (c *SettlementClient) ValidateCancelTransaction(ctx context.Context, txHash
 		return nil, fmt.Errorf("cancel transaction nonces type mismatch")
 	}
 
-	targetFound := false
-	for _, candidate := range rawNonces {
-		if candidate != nil && candidate.Cmp(nonce) == 0 {
-			targetFound = true
-			break
-		}
-	}
-	if !targetFound {
-		return nil, fmt.Errorf("cancel transaction does not cover target nonce")
-	}
-
 	deadline, ok := args[2].(*big.Int)
 	if !ok {
 		return nil, fmt.Errorf("cancel transaction deadline type mismatch")
@@ -476,8 +484,20 @@ func (c *SettlementClient) ValidateCancelTransaction(ctx context.Context, txHash
 		To:                    *to,
 		RegisteredMaker:       registeredMaker,
 		RegisteredNonces:      rawNonces,
-		TargetsRequestedNonce: true,
+		TargetsRequestedNonce: false,
 	}, nil
+}
+
+func cancelValidationIncludesNonce(nonces []*big.Int, nonce *big.Int) bool {
+	if nonce == nil {
+		return false
+	}
+	for _, candidate := range nonces {
+		if candidate != nil && candidate.Cmp(nonce) == 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // cancelValidationTimestamp 返回撤单 deadline 校验使用的时间。

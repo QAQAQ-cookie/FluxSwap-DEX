@@ -7,40 +7,40 @@ import "time"
 // 业务唯一键为 chain_id + settlement_address + order_hash。
 // 合约里的大整数统一用十进制字符串保存，避免在 JSON、gRPC、PostgreSQL 和 Go 之间传递时丢失精度。
 type Order struct {
-	ID                uint64    `gorm:"primaryKey"`
-	ChainID           int64     `gorm:"not null;index:idx_order_hash_unique,unique"`
-	SettlementAddress string    `gorm:"size:42;not null;index:idx_order_hash_unique,unique"`
-	OrderHash         string    `gorm:"size:66;not null;index:idx_order_hash_unique,unique"`
-	Maker             string    `gorm:"size:42;not null;index"`
-	InputToken        string    `gorm:"size:42;not null"`
-	OutputToken       string    `gorm:"size:42;not null"`
-	AmountIn          string    `gorm:"type:numeric(78,0);not null"`
-	MinAmountOut      string    `gorm:"type:numeric(78,0);not null"`
-	ExecutorFee       string    `gorm:"type:numeric(78,0);not null;default:'0'"`
-	ExecutorFeeToken  string    `gorm:"size:42;not null;default:''"`
-	TriggerPriceX18   string    `gorm:"type:numeric(78,0);not null"`
-	Expiry            string    `gorm:"type:numeric(78,0);not null"`
-	Nonce             string    `gorm:"type:numeric(78,0);not null"`
-	Recipient         string    `gorm:"size:42;not null"`
-	Signature         string    `gorm:"type:text;not null"`
-	Source            string    `gorm:"size:32;not null;default:'rpc'"`
-	Status            string    `gorm:"size:32;not null;index"`
-	StatusReason      string    `gorm:"-"`
-	EstimatedGasUsed  string    `gorm:"-"`
-	GasPriceAtQuote   string    `gorm:"-"`
-	FeeQuoteAt        time.Time `gorm:"-"`
+	ID                      uint64    `gorm:"primaryKey;index:idx_order_list_by_maker_created,priority:4,sort:desc;index:idx_order_list_by_maker_settlement_created,priority:5,sort:desc"`
+	ChainID                 int64     `gorm:"not null;index:idx_order_hash_unique,unique;index:idx_order_list_by_maker_created,priority:1;index:idx_order_list_by_maker_settlement_created,priority:1"`
+	SettlementAddress       string    `gorm:"size:42;not null;index:idx_order_hash_unique,unique;index:idx_order_list_by_maker_settlement_created,priority:3"`
+	OrderHash               string    `gorm:"size:66;not null;index:idx_order_hash_unique,unique"`
+	Maker                   string    `gorm:"size:42;not null;index;index:idx_order_list_by_maker_created,priority:2;index:idx_order_list_by_maker_settlement_created,priority:2"`
+	InputToken              string    `gorm:"size:42;not null"`
+	OutputToken             string    `gorm:"size:42;not null"`
+	AmountIn                string    `gorm:"type:numeric(78,0);not null"`
+	MinAmountOut            string    `gorm:"type:numeric(78,0);not null"`
+	ExecutorFee             string    `gorm:"type:numeric(78,0);not null;default:'0'"`
+	ExecutorFeeToken        string    `gorm:"size:42;not null;default:''"`
+	TriggerPriceX18         string    `gorm:"type:numeric(78,0);not null"`
+	Expiry                  string    `gorm:"type:numeric(78,0);not null"`
+	Nonce                   string    `gorm:"type:numeric(78,0);not null"`
+	Recipient               string    `gorm:"size:42;not null"`
+	Signature               string    `gorm:"type:text;not null"`
+	Source                  string    `gorm:"size:32;not null;default:'rpc'"`
+	Status                  string    `gorm:"size:32;not null;index"`
+	StatusReason            string    `gorm:"-"`
+	EstimatedGasUsed        string    `gorm:"-"`
+	GasPriceAtQuote         string    `gorm:"-"`
+	FeeQuoteAt              time.Time `gorm:"-"`
 	LastRequiredExecutorFee string    `gorm:"-"`
-	LastFeeCheckAt    time.Time `gorm:"-"`
-	LastExecutionCheckAt time.Time `gorm:"-"`
-	LastBlockReason   string    `gorm:"-"`
-	SettledAmountOut  string    `gorm:"-"`
-	SettledExecutorFee string   `gorm:"-"`
-	SubmittedTxHash   string    `gorm:"-"`
-	ExecutedTxHash    string    `gorm:"-"`
-	CancelledTxHash   string    `gorm:"-"`
-	LastCheckedBlock  int64     `gorm:"-"`
-	CreatedAt         time.Time `gorm:"not null"`
-	UpdatedAt         time.Time `gorm:"not null"`
+	LastFeeCheckAt          time.Time `gorm:"-"`
+	LastExecutionCheckAt    time.Time `gorm:"-"`
+	LastBlockReason         string    `gorm:"-"`
+	SettledAmountOut        string    `gorm:"-"`
+	SettledExecutorFee      string    `gorm:"-"`
+	SubmittedTxHash         string    `gorm:"-"`
+	ExecutedTxHash          string    `gorm:"-"`
+	CancelledTxHash         string    `gorm:"-"`
+	LastCheckedBlock        int64     `gorm:"-"`
+	CreatedAt               time.Time `gorm:"not null;index:idx_order_list_by_maker_created,priority:3,sort:desc;index:idx_order_list_by_maker_settlement_created,priority:4,sort:desc"`
+	UpdatedAt               time.Time `gorm:"not null"`
 }
 
 // TableName 固定 orders 表名，避免 Gorm 版本变化带来表名漂移。

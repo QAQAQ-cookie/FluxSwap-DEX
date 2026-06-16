@@ -22,6 +22,8 @@ export type LocalLimitOrderRecord = {
   recipient: string
   source: string
   status: string
+  statusReason?: string
+  cancelledTxHash?: string
   createdAt: string
   updatedAt: string
 }
@@ -279,6 +281,27 @@ export function upsertLocalLimitOrder(order: LocalLimitOrderRecord) {
     }
   } else {
     nextOrders.unshift(order)
+  }
+
+  writeStoredLimitOrders(nextOrders)
+}
+
+export function patchLocalLimitOrder(
+  order: Pick<LocalLimitOrderRecord, 'chainId' | 'settlementAddress' | 'orderHash'>,
+  updates: Partial<LocalLimitOrderRecord>,
+) {
+  const orders = readStoredLimitOrders()
+  const orderKey = buildOrderKey(order)
+  const nextOrders = [...orders]
+  const existingIndex = nextOrders.findIndex((item) => buildOrderKey(item) === orderKey)
+
+  if (existingIndex < 0) {
+    return
+  }
+
+  nextOrders[existingIndex] = {
+    ...nextOrders[existingIndex],
+    ...updates,
   }
 
   writeStoredLimitOrders(nextOrders)

@@ -3,7 +3,7 @@
 import { useDeferredValue, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
-import { useConnectModal } from "@rainbow-me/rainbowkit";
+import { ConnectButton, useConnectModal } from "@rainbow-me/rainbowkit";
 import {
   useAccount,
   useBalance,
@@ -24,7 +24,14 @@ import {
   Settings2,
   Info,
 } from "lucide-react";
-import { formatUnits, type Address, maxUint256, parseAbi, zeroAddress } from "viem";
+import {
+  formatUnits,
+  type Address,
+  type Hash,
+  maxUint256,
+  parseAbi,
+  zeroAddress,
+} from "viem";
 import { ActionButton } from "@/components/ActionButton";
 import {
   getContractAddress,
@@ -75,6 +82,7 @@ type LimitPriceUnit = "receive" | "pay";
 type SwapSlippageMode = "auto" | "custom";
 type ResultModalState = {
   kind: "success" | "error";
+  title?: string;
   message: string;
 } | null;
 type RoutePath = readonly Address[];
@@ -476,17 +484,9 @@ export function SwapWidget({
   const publicClient = usePublicClient({ chainId });
   const { address, isConnected } = useAccount();
   const { openConnectModal } = useConnectModal();
-  const {
-    writeContractAsync,
-    data: hash,
-    isPending: isWritePending,
-  } = useWriteContract();
+  const { writeContractAsync, isPending: isWritePending } = useWriteContract();
   const { signTypedDataAsync, isPending: isSigningLimitOrder } =
     useSignTypedData();
-  const { isLoading: isConfirming, isSuccess: isConfirmed } =
-    useWaitForTransactionReceipt({
-      hash,
-    });
 
   const effectiveChainId = mounted ? chainId : undefined;
   const tokenOptions = getSwapTokenOptions(effectiveChainId);
@@ -513,6 +513,17 @@ export function SwapWidget({
     string | null
   >(null);
   const [lastAction, setLastAction] = useState<ActionKind>(null);
+  const [submittedTx, setSubmittedTx] = useState<{
+    hash: Hash;
+    action: Exclude<ActionKind, null>;
+  } | null>(null);
+  const {
+    data: submittedReceipt,
+    isLoading: isConfirming,
+    isSuccess: isConfirmed,
+  } = useWaitForTransactionReceipt({
+    hash: submittedTx?.hash,
+  });
   const [inputMode, setInputMode] = useState<InputMode>(initialInputMode);
   const [tradeMode, setTradeMode] = useState<TradeMode>(initialTradeMode);
   const [limitRate, setLimitRate] = useState("");
@@ -1079,20 +1090,37 @@ export function SwapWidget({
       ? (quotedAmountIn * (BigInt(10000) + slippageBps)) / BigInt(10000)
       : undefined;
   const isSubmitting = isWritePending || isConfirming || isSigningLimitOrder;
+  const pendingAction = submittedTx?.action ?? lastAction;
   const localGasOverride = getLocalGasOverride(chainId);
   const limitExpirySeconds = BigInt(
     Math.max(1, Number.parseInt(limitExpiry, 10) || 7) * 24 * 60 * 60,
   );
 
   useEffect(() => {
-    if (!isConfirmed || lastAction !== "swap") {
+    if (!isConfirmed || submittedTx?.action !== "swap") {
+      return;
+    }
+
+    if (submittedReceipt?.status === "reverted") {
+      setResultModal({
+        kind: "error",
+        title: isZh ? "交易失败" : "Transaction failed",
+        message: isZh
+          ? "交易已提交，但链上执行失败，请检查滑点、余额或池子状态后重试。"
+          : "The transaction was submitted but failed on-chain. Check slippage, balance, or pool state and try again.",
+      });
       return;
     }
 
     setPayAmount("");
     setReceiveAmountInput("");
     setTxError(null);
-  }, [isConfirmed, lastAction]);
+    setResultModal({
+      kind: "success",
+      title: isZh ? "交易成功" : "Transaction successful",
+      message: isZh ? "交易已确认。" : "Transaction confirmed.",
+    });
+  }, [isConfirmed, isZh, submittedReceipt?.status, submittedTx?.action]);
 
   useEffect(() => {
     if (!isLimitMode) {
@@ -1105,34 +1133,37 @@ export function SwapWidget({
 
     const market = Number(limitMarketRateDisplay);
     if (!Number.isFinite(market) || market <= 0) {
-      setLimitRate("");
+      if (rateRouteState.didFetch && !rateRouteState.loading) {
+        setLimitRate("");
+      }
+
       return;
     }
 
+    let nextRate: number | undefined;
     if (limitPricePreset === "market") {
-      setLimitRate(formatLimitRateValue(market, 12));
-      return;
+      nextRate = market;
+    } else {
+      const premium = Number(limitPricePreset) * limitPresetDirection;
+      nextRate = applyLimitPresetToCanonicalMarket(
+        market,
+        premium,
+        limitPriceUnit,
+      );
     }
 
-    const premium = Number(limitPricePreset) * limitPresetDirection;
-    const nextRate = applyLimitPresetToCanonicalMarket(
-      market,
-      premium,
-      limitPriceUnit,
+    const nextLimitRate = formatLimitRateValue(nextRate ?? market, 12);
+    setLimitRate((current) =>
+      current === nextLimitRate ? current : nextLimitRate,
     );
-
-    if (nextRate === undefined) {
-      setLimitRate(formatLimitRateValue(market, 12));
-      return;
-    }
-
-    setLimitRate(formatLimitRateValue(nextRate, 12));
   }, [
     isLimitMode,
     limitMarketRateDisplay,
     limitPricePreset,
     limitPresetDirection,
     limitPriceUnit,
+    rateRouteState.didFetch,
+    rateRouteState.loading,
   ]);
 
   useEffect(() => {
@@ -1271,11 +1302,11 @@ export function SwapWidget({
     actionKind = null;
   } else if (isSubmitting) {
     actionLabel =
-      lastAction === "approve" || lastAction === "revoke"
+      pendingAction === "approve" || pendingAction === "revoke"
         ? copy.approving
-        : lastAction === "wrap"
+        : pendingAction === "wrap"
           ? copy.wrapping
-          : lastAction === "limit"
+          : pendingAction === "limit"
             ? copy.limitOrderPending
             : copy.swapping;
     actionDisabled = true;
@@ -1402,27 +1433,25 @@ export function SwapWidget({
 
     const market = Number(limitMarketRateDisplay);
     if (!Number.isFinite(market) || market <= 0) {
-      setLimitRate("");
       return;
     }
 
+    let nextRate: number | undefined;
     if (preset === "market") {
-      setLimitRate(formatLimitRateValue(market, 12));
-      return;
+      nextRate = market;
+    } else {
+      const premium = Number(preset) * limitPresetDirection;
+      nextRate = applyLimitPresetToCanonicalMarket(
+        market,
+        premium,
+        limitPriceUnit,
+      );
     }
 
-    const premium = Number(preset) * limitPresetDirection;
-    const nextRate = applyLimitPresetToCanonicalMarket(
-      market,
-      premium,
-      limitPriceUnit,
+    const nextLimitRate = formatLimitRateValue(nextRate ?? market, 12);
+    setLimitRate((current) =>
+      current === nextLimitRate ? current : nextLimitRate,
     );
-    if (nextRate === undefined) {
-      setLimitRate(formatLimitRateValue(market, 12));
-      return;
-    }
-
-    setLimitRate(formatLimitRateValue(nextRate, 12));
   };
 
   const handleSelectToken = (
@@ -1463,7 +1492,6 @@ export function SwapWidget({
     setPayAmount("");
     setReceiveAmountInput("");
     setInputMode("pay");
-    setLimitRate("");
     setLimitPricePreset("market");
     setLastLimitOrderHash(null);
     setLastLimitOrderSignature(null);
@@ -1509,6 +1537,7 @@ export function SwapWidget({
     setTxError(null);
     setResultModal(null);
     setLastAction(actionKind);
+    setSubmittedTx(null);
 
     try {
       if (actionKind === "wrap") {
@@ -1520,7 +1549,7 @@ export function SwapWidget({
           return;
         }
 
-        await writeContractAsync({
+        const txHash = await writeContractAsync({
           address: wrappedNativeAddress,
           abi: parseAbi(["function deposit() payable"]),
           functionName: "deposit",
@@ -1528,6 +1557,7 @@ export function SwapWidget({
           chainId,
           ...localGasOverride,
         });
+        setSubmittedTx({ hash: txHash, action: actionKind });
         return;
       }
 
@@ -1537,7 +1567,7 @@ export function SwapWidget({
           return;
         }
 
-        await writeContractAsync({
+        const txHash = await writeContractAsync({
           address: approvalTokenAddress,
           abi: fluxTokenAbi,
           functionName: "approve",
@@ -1545,6 +1575,7 @@ export function SwapWidget({
           chainId,
           ...localGasOverride,
         });
+        setSubmittedTx({ hash: txHash, action: actionKind });
         return;
       }
 
@@ -1709,7 +1740,7 @@ export function SwapWidget({
           return;
         }
 
-        await writeContractAsync({
+        const txHash = await writeContractAsync({
           address: routerAddress,
           abi: fluxSwapRouterAbi,
           functionName: "swapExactETHForTokens",
@@ -1723,6 +1754,7 @@ export function SwapWidget({
           chainId,
           ...localGasOverride,
         });
+        setSubmittedTx({ hash: txHash, action: actionKind });
         return;
       }
 
@@ -1731,7 +1763,7 @@ export function SwapWidget({
           return;
         }
 
-        await writeContractAsync({
+        const txHash = await writeContractAsync({
           address: routerAddress,
           abi: fluxSwapRouterAbi,
           functionName: "swapETHForExactTokens",
@@ -1745,6 +1777,7 @@ export function SwapWidget({
           chainId,
           ...localGasOverride,
         });
+        setSubmittedTx({ hash: txHash, action: actionKind });
         return;
       }
 
@@ -1757,7 +1790,7 @@ export function SwapWidget({
           return;
         }
 
-        await writeContractAsync({
+        const txHash = await writeContractAsync({
           address: routerAddress,
           abi: fluxSwapRouterAbi,
           functionName: "swapTokensForExactETH",
@@ -1771,6 +1804,7 @@ export function SwapWidget({
           chainId,
           ...localGasOverride,
         });
+        setSubmittedTx({ hash: txHash, action: actionKind });
         return;
       }
 
@@ -1779,7 +1813,7 @@ export function SwapWidget({
           return;
         }
 
-        await writeContractAsync({
+        const txHash = await writeContractAsync({
           address: routerAddress,
           abi: fluxSwapRouterAbi,
           functionName: "swapExactTokensForETH",
@@ -1793,6 +1827,7 @@ export function SwapWidget({
           chainId,
           ...localGasOverride,
         });
+        setSubmittedTx({ hash: txHash, action: actionKind });
         return;
       }
 
@@ -1801,7 +1836,7 @@ export function SwapWidget({
           return;
         }
 
-        await writeContractAsync({
+        const txHash = await writeContractAsync({
           address: routerAddress,
           abi: fluxSwapRouterAbi,
           functionName: "swapTokensForExactTokens",
@@ -1815,6 +1850,7 @@ export function SwapWidget({
           chainId,
           ...localGasOverride,
         });
+        setSubmittedTx({ hash: txHash, action: actionKind });
         return;
       }
 
@@ -1822,7 +1858,7 @@ export function SwapWidget({
         return;
       }
 
-      await writeContractAsync({
+      const txHash = await writeContractAsync({
         address: routerAddress,
         abi: fluxSwapRouterAbi,
         functionName: "swapExactTokensForTokens",
@@ -1836,6 +1872,7 @@ export function SwapWidget({
         chainId,
         ...localGasOverride,
       });
+      setSubmittedTx({ hash: txHash, action: actionKind });
     } catch (error) {
       setResultModal(null);
       const errorMessage = formatErrorMessage(error, {
@@ -1850,6 +1887,13 @@ export function SwapWidget({
       if (actionKind === "limit") {
         setResultModal({
           kind: "error",
+          title: isZh ? "创建失败" : "Create failed",
+          message: errorMessage,
+        });
+      } else if (actionKind === "swap") {
+        setResultModal({
+          kind: "error",
+          title: isZh ? "交易失败" : "Transaction failed",
           message: errorMessage,
         });
       }
@@ -1860,15 +1904,27 @@ export function SwapWidget({
     setResultModal(null);
   };
 
+  const renderConnectWalletButton = () => (
+    <ConnectButton.Custom>
+      {({ mounted: rainbowMounted, openConnectModal: openRainbowConnectModal }) => (
+        <ActionButton
+          label={t("swap.connectWallet")}
+          disabled={false}
+          onClick={() => {
+            if (rainbowMounted) {
+              openRainbowConnectModal?.();
+            }
+          }}
+          variant="ghost"
+          className="border-blue-200 bg-blue-100 text-blue-600 hover:bg-blue-200 dark:border-blue-900/50 dark:bg-blue-600/20 dark:text-blue-400 dark:hover:bg-blue-600/30"
+        />
+      )}
+    </ConnectButton.Custom>
+  );
+
   const actionButton = hideDetails ? (
     !mounted || !isConnected ? (
-      <ActionButton
-        label={t("swap.connectWallet")}
-        disabled={false}
-        onClick={() => openConnectModal?.()}
-        variant="ghost"
-        className="border-blue-200 bg-blue-100 text-blue-600 hover:bg-blue-200 dark:border-blue-900/50 dark:bg-blue-600/20 dark:text-blue-400 dark:hover:bg-blue-600/30"
-      />
+      renderConnectWalletButton()
     ) : (
       <ActionButton
         label={isZh ? "开始使用" : "Get Started"}
@@ -1877,13 +1933,7 @@ export function SwapWidget({
       />
     )
   ) : !mounted || !isConnected ? (
-      <ActionButton
-        label={t("swap.connectWallet")}
-        disabled={false}
-        onClick={() => openConnectModal?.()}
-        variant="ghost"
-        className="border-blue-200 bg-blue-100 text-blue-600 hover:bg-blue-200 dark:border-blue-900/50 dark:bg-blue-600/20 dark:text-blue-400 dark:hover:bg-blue-600/30"
-      />
+      renderConnectWalletButton()
     ) : (
       <ActionButton
         label={actionLabel}
@@ -2125,7 +2175,6 @@ export function SwapWidget({
             <div className="relative z-10 -mb-1 -mt-1 flex h-5 items-center justify-center">
               <button
                 onClick={handleFlip}
-                disabled={!receiveToken}
                 className="rounded-2xl border-4 border-white bg-gray-100 p-2.5 text-gray-500 shadow-lg shadow-black/5 transition-colors hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 dark:hover:text-blue-400"
               >
                 <ArrowDown size={16} />
@@ -2330,13 +2379,14 @@ export function SwapWidget({
               </div>
 
               <h3 className="mt-5 text-[1.65rem] font-semibold tracking-tight text-gray-950 dark:text-white">
-                {resultModal.kind === "success"
-                  ? isZh
-                    ? "创建成功"
-                    : "Success"
-                  : isZh
-                    ? "创建失败"
-                    : "Failed"}
+                {resultModal.title ??
+                  (resultModal.kind === "success"
+                    ? isZh
+                      ? "创建成功"
+                      : "Success"
+                    : isZh
+                      ? "创建失败"
+                      : "Failed")}
               </h3>
 
               <p className="mt-2.5 text-base leading-7 text-gray-500 dark:text-gray-300">

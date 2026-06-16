@@ -305,6 +305,57 @@ func TestGetBestRouteSupportsNativeTokenSemantics(t *testing.T) {
 	require.Equal(t, "best_multihop_after_gas", resp.SelectionReason)
 }
 
+func TestGetBestRouteFallsBackToRawQuoteWhenGasQuoteMissing(t *testing.T) {
+	store := &stubRouteStore{
+		neighbors: map[string]graphrepo.TokenNeighbors{
+			"0x0000000000000000000000000000000000000011": {
+				ChainID: 31337,
+				Token:   "0x0000000000000000000000000000000000000011",
+				Neighbors: []string{
+					"0x0000000000000000000000000000000000000022",
+				},
+			},
+		},
+	}
+	client := &stubRouteChainClient{
+		quotes: map[string]string{
+			"0x0000000000000000000000000000000000000011->0x0000000000000000000000000000000000000022": "997000",
+		},
+		reverseQuotes: map[string]string{},
+		gasPrice:      big.NewInt(1),
+		wethAddress:   common.HexToAddress("0x0000000000000000000000000000000000000009"),
+	}
+
+	logic := NewGetBestRouteLogic(context.Background(), &svc.ServiceContext{
+		RouterGraph: store,
+		RouteQuotes: map[string]svc.RouterQuoteClient{
+			"31337": client,
+		},
+	})
+
+	resp, err := logic.GetBestRoute(&executor.GetBestRouteRequest{
+		ChainId:   31337,
+		TokenIn:   "0x0000000000000000000000000000000000000011",
+		TokenOut:  "0x0000000000000000000000000000000000000022",
+		Amount:    "1000000",
+		MaxHops:   1,
+		QuoteType: executor.RouteQuoteType_ROUTE_QUOTE_TYPE_EXACT_INPUT,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.NotNil(t, resp.SelectedRoute)
+	require.Equal(t, "1000000", resp.SelectedRoute.AmountIn)
+	require.Equal(t, "997000", resp.SelectedRoute.AmountOut)
+	require.Equal(t, "997000", resp.SelectedRoute.RankingMetric)
+	require.Equal(t, "best_direct", resp.SelectionReason)
+	require.False(t, resp.UsedGasAdjustedRanking)
+	require.Equal(t, []string{
+		"0x0000000000000000000000000000000000000011",
+		"0x0000000000000000000000000000000000000022",
+	}, resp.Execution.RouterPath)
+}
+
 type stubRouteStore struct {
 	neighbors map[string]graphrepo.TokenNeighbors
 }

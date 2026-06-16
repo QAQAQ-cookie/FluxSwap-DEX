@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"time"
 
 	"fluxswap-backend/internal/app"
@@ -13,10 +14,10 @@ import (
 	"fluxswap-backend/rpc/executor"
 	"fluxswap-backend/rpc/internal/svc"
 
-	"gorm.io/gorm"
 	"github.com/zeromicro/go-zero/core/logx"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"gorm.io/gorm"
 )
 
 // CancelOrdersLogic 统一处理撤单登记请求。
@@ -52,6 +53,7 @@ func (l *CancelOrdersLogic) CancelOrders(in *executor.CancelOrdersRequest) (*exe
 	orderRepo := repo.NewOrderRepository(l.svcCtx.DB)
 	results := make([]*executor.CancelOrdersResult, 0, len(in.GetOrders()))
 	cancelTargets := make([]*domain.Order, 0, len(in.GetOrders()))
+	cancelTargetNonces := make(map[string]*big.Int, len(in.GetOrders()))
 	seenOrders := make(map[string]struct{})
 	cancelTxHash := normalizeHash(in.GetCancelTxHash())
 	registeredCount := uint32(0)
@@ -144,7 +146,18 @@ func (l *CancelOrdersLogic) CancelOrders(in *executor.CancelOrdersRequest) (*exe
 
 		result.Order = orderToResponse(order)
 		results = append(results, result)
+		nonceValue, nonceErr := parseUintStrict(order.Nonce, "nonce")
+		if nonceErr != nil {
+			result.Error = nonceErr.Error()
+			result.Code = "ORDER_NONCE_INVALID_IN_RECORD"
+			result.Message = "订单本地记录里的 nonce 无法用于校验撤单交易"
+			result.Hint = "这通常表示数据库中的订单记录异常，建议重新创建订单或联系管理员修复数据。"
+			result.Stage = "verify_cancel_tx"
+			continue
+		}
+
 		cancelTargets = append(cancelTargets, order)
+		cancelTargetNonces[buildBatchOrderKey(order.ChainID, order.SettlementAddress, order.OrderHash)] = nonceValue
 	}
 
 	if len(cancelTargets) == 0 {
@@ -180,22 +193,10 @@ func (l *CancelOrdersLogic) CancelOrders(in *executor.CancelOrdersRequest) (*exe
 		return nil, status.Error(codes.FailedPrecondition, "settlement chain client is not initialized for requested chain")
 	}
 
-	now := time.Now().UTC()
-	for _, order := range cancelTargets {
-		resultKey := buildBatchOrderKey(order.ChainID, order.SettlementAddress, order.OrderHash)
-		nonceValue, nonceErr := parseUintStrict(order.Nonce, "nonce")
-		if nonceErr != nil {
-			if result := findCancelResultByKey(results, resultKey); result != nil {
-				result.Error = nonceErr.Error()
-				result.Code = "ORDER_NONCE_INVALID_IN_RECORD"
-				result.Message = "订单本地记录里的 nonce 无法用于校验撤单交易"
-				result.Hint = "这通常表示数据库中的订单记录异常，建议重新创建订单或联系管理员修复数据。"
-				result.Stage = "verify_cancel_tx"
-			}
-			continue
-		}
-
-		if _, validateErr := chainClient.ValidateCancelTransaction(l.ctx, cancelTxHash, order.Maker, nonceValue); validateErr != nil {
+	cancelTxValidation, validateErr := chainClient.ValidateCancelTransactionBatch(l.ctx, cancelTxHash, maker)
+	if validateErr != nil {
+		for _, order := range cancelTargets {
+			resultKey := buildBatchOrderKey(order.ChainID, order.SettlementAddress, order.OrderHash)
 			if result := findCancelResultByKey(results, resultKey); result != nil {
 				result.Error = validateErr.Error()
 				result.Stage = "verify_cancel_tx"
@@ -209,6 +210,22 @@ func (l *CancelOrdersLogic) CancelOrders(in *executor.CancelOrdersRequest) (*exe
 					result.Message = "撤单交易与当前订单不匹配"
 					result.Hint = "请确认传入的是这批订单真实对应的 invalidateNoncesBySig 交易哈希。"
 				}
+			}
+		}
+		cancelTargets = nil
+	}
+
+	now := time.Now().UTC()
+	for _, order := range cancelTargets {
+		resultKey := buildBatchOrderKey(order.ChainID, order.SettlementAddress, order.OrderHash)
+		nonceValue := cancelTargetNonces[resultKey]
+		if !cancelValidationIncludesNonce(cancelTxValidation, nonceValue) {
+			if result := findCancelResultByKey(results, resultKey); result != nil {
+				result.Error = "cancel transaction does not cover target nonce"
+				result.Stage = "verify_cancel_tx"
+				result.Code = "CANCEL_TX_MISMATCH"
+				result.Message = "撤单交易与当前订单不匹配"
+				result.Hint = "请确认传入的是这批订单真实对应的 invalidateNoncesBySig 交易哈希。"
 			}
 			continue
 		}
@@ -316,6 +333,18 @@ func (l *CancelOrdersLogic) CancelOrders(in *executor.CancelOrdersRequest) (*exe
 			"register_cancel_tx",
 		),
 	}, nil
+}
+
+func cancelValidationIncludesNonce(validation *chain.CancelTxValidationResult, nonce *big.Int) bool {
+	if validation == nil || nonce == nil {
+		return false
+	}
+	for _, candidate := range validation.RegisteredNonces {
+		if candidate != nil && candidate.Cmp(nonce) == 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // buildBatchOrderKey 生成批量撤单请求内的去重键，避免同一订单被重复登记。

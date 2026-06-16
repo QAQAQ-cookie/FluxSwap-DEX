@@ -24,6 +24,7 @@ type ChainClient interface {
 	SuggestExecutorFee(ctx context.Context, outputToken common.Address, estimatedGasUsed uint64, safetyBps int64) (*big.Int, *big.Int, error)
 	CurrentBlockTimestamp(ctx context.Context) (uint64, error)
 	ValidateCancelTransaction(ctx context.Context, txHash string, maker string, nonce *big.Int) (*chain.CancelTxValidationResult, error)
+	ValidateCancelTransactionBatch(ctx context.Context, txHash string, maker string) (*chain.CancelTxValidationResult, error)
 }
 
 type RouterQuoteClient interface {

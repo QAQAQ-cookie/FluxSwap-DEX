@@ -133,8 +133,6 @@
   - 创建链下签名订单并落库
 - `Executor/CancelOrders`
   - 批量登记用户钱包已提交的链上撤单交易
-- `Executor/GetOrder`
-  - 查询单笔订单详情
 
 ## 当前业务链路
 

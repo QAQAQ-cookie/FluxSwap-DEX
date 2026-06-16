@@ -92,28 +92,6 @@ func orderToResponse(order *domain.Order) *executor.GetOrderResponse {
 	}
 }
 
-func orderActivityToView(activity *domain.OrderActivity) *executor.OrderActivityView {
-	if activity == nil {
-		return nil
-	}
-
-	return &executor.OrderActivityView{
-		ActivityType: activity.ActivityType,
-		FromStatus:   activity.FromStatus,
-		ToStatus:     activity.ToStatus,
-		ReasonCode:   activity.ReasonCode,
-		ReasonDetail: activity.ReasonDetail,
-		Source:       activity.Source,
-		ActorAddress: activity.ActorAddress,
-		TxHash:       activity.TxHash,
-		BlockNumber:  activity.BlockNumber,
-		LogIndex:     activity.LogIndex,
-		PayloadJson:  activity.PayloadJSON,
-		OccurredAt:   formatTimeUTC(activity.OccurredAt),
-		CreatedAt:    formatTimeUTC(activity.CreatedAt),
-	}
-}
-
 func formatTimeUTC(value time.Time) string {
 	if value.IsZero() {
 		return ""

@@ -797,6 +797,191 @@ func TestCancelOrdersCountsIdempotentAndNewRegistrationsTogether(t *testing.T) {
 	require.Equal(t, "CANCEL_TX_REGISTERED", resp.Results[1].Code)
 }
 
+func TestCancelOrdersValidatesBatchCancelTxOnce(t *testing.T) {
+	db := openLogicTestDB(t)
+	now := time.Now().UTC()
+	cancelTxHash := "0x9191919191919191919191919191919191919191919191919191919191919191"
+	maker := "0x2222222222222222222222222222222222222222"
+	settlementAddress := "0x1111111111111111111111111111111111111111"
+
+	orderA := &domain.Order{
+		ChainID:           31337,
+		SettlementAddress: settlementAddress,
+		OrderHash:         "0x8181818181818181818181818181818181818181818181818181818181818181",
+		Maker:             maker,
+		InputToken:        "0x3333333333333333333333333333333333333333",
+		OutputToken:       "0x4444444444444444444444444444444444444444",
+		AmountIn:          "100",
+		MinAmountOut:      "90",
+		ExecutorFee:       "1",
+		ExecutorFeeToken:  "0x4444444444444444444444444444444444444444",
+		TriggerPriceX18:   "1",
+		Expiry:            "9999999999",
+		Nonce:             "41",
+		Recipient:         "0x5555555555555555555555555555555555555555",
+		Signature:         "0x" + logicRepeatHex("11", 65),
+		Source:            "test",
+		Status:            "open",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	orderB := &domain.Order{
+		ChainID:           31337,
+		SettlementAddress: settlementAddress,
+		OrderHash:         "0x8282828282828282828282828282828282828282828282828282828282828282",
+		Maker:             maker,
+		InputToken:        "0x3333333333333333333333333333333333333333",
+		OutputToken:       "0x4444444444444444444444444444444444444444",
+		AmountIn:          "100",
+		MinAmountOut:      "90",
+		ExecutorFee:       "1",
+		ExecutorFeeToken:  "0x4444444444444444444444444444444444444444",
+		TriggerPriceX18:   "1",
+		Expiry:            "9999999999",
+		Nonce:             "42",
+		Recipient:         "0x5555555555555555555555555555555555555555",
+		Signature:         "0x" + logicRepeatHex("11", 65),
+		Source:            "test",
+		Status:            "open",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	require.NoError(t, repo.NewOrderRepository(db).Create(context.Background(), orderA))
+	require.NoError(t, repo.NewOrderRepository(db).Create(context.Background(), orderB))
+
+	chainClient := &stubCancelChainClient{
+		batchNonces: []*big.Int{big.NewInt(41), big.NewInt(42)},
+	}
+	logic := NewCancelOrdersLogic(context.Background(), &svc.ServiceContext{
+		Config: config.Config{},
+		DB:     db,
+		ChainClients: map[string]svc.ChainClient{
+			"31337:0x1111111111111111111111111111111111111111": chainClient,
+		},
+	})
+
+	resp, err := logic.CancelOrders(&executor.CancelOrdersRequest{
+		Orders: []*executor.CancelOrderItem{
+			{
+				ChainId:           orderA.ChainID,
+				SettlementAddress: orderA.SettlementAddress,
+				OrderHash:         orderA.OrderHash,
+				Maker:             orderA.Maker,
+			},
+			{
+				ChainId:           orderB.ChainID,
+				SettlementAddress: orderB.SettlementAddress,
+				OrderHash:         orderB.OrderHash,
+				Maker:             orderB.Maker,
+			},
+		},
+		CancelTxHash: cancelTxHash,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, uint32(2), resp.CancelledCount)
+	require.Equal(t, 1, chainClient.batchValidateCalls)
+	require.Equal(t, 0, chainClient.singleValidateCalls)
+	require.True(t, resp.Results[0].Cancelled)
+	require.True(t, resp.Results[1].Cancelled)
+}
+
+func TestCancelOrdersFailsOnlyNonceMissingFromBatchCancelTx(t *testing.T) {
+	db := openLogicTestDB(t)
+	now := time.Now().UTC()
+	cancelTxHash := "0x9292929292929292929292929292929292929292929292929292929292929292"
+	maker := "0x2222222222222222222222222222222222222222"
+	settlementAddress := "0x1111111111111111111111111111111111111111"
+
+	coveredOrder := &domain.Order{
+		ChainID:           31337,
+		SettlementAddress: settlementAddress,
+		OrderHash:         "0x8383838383838383838383838383838383838383838383838383838383838383",
+		Maker:             maker,
+		InputToken:        "0x3333333333333333333333333333333333333333",
+		OutputToken:       "0x4444444444444444444444444444444444444444",
+		AmountIn:          "100",
+		MinAmountOut:      "90",
+		ExecutorFee:       "1",
+		ExecutorFeeToken:  "0x4444444444444444444444444444444444444444",
+		TriggerPriceX18:   "1",
+		Expiry:            "9999999999",
+		Nonce:             "51",
+		Recipient:         "0x5555555555555555555555555555555555555555",
+		Signature:         "0x" + logicRepeatHex("11", 65),
+		Source:            "test",
+		Status:            "open",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	missingOrder := &domain.Order{
+		ChainID:           31337,
+		SettlementAddress: settlementAddress,
+		OrderHash:         "0x8484848484848484848484848484848484848484848484848484848484848484",
+		Maker:             maker,
+		InputToken:        "0x3333333333333333333333333333333333333333",
+		OutputToken:       "0x4444444444444444444444444444444444444444",
+		AmountIn:          "100",
+		MinAmountOut:      "90",
+		ExecutorFee:       "1",
+		ExecutorFeeToken:  "0x4444444444444444444444444444444444444444",
+		TriggerPriceX18:   "1",
+		Expiry:            "9999999999",
+		Nonce:             "52",
+		Recipient:         "0x5555555555555555555555555555555555555555",
+		Signature:         "0x" + logicRepeatHex("11", 65),
+		Source:            "test",
+		Status:            "open",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	require.NoError(t, repo.NewOrderRepository(db).Create(context.Background(), coveredOrder))
+	require.NoError(t, repo.NewOrderRepository(db).Create(context.Background(), missingOrder))
+
+	logic := NewCancelOrdersLogic(context.Background(), &svc.ServiceContext{
+		Config: config.Config{},
+		DB:     db,
+		ChainClients: map[string]svc.ChainClient{
+			"31337:0x1111111111111111111111111111111111111111": &stubCancelChainClient{
+				batchNonces: []*big.Int{big.NewInt(51)},
+			},
+		},
+	})
+
+	resp, err := logic.CancelOrders(&executor.CancelOrdersRequest{
+		Orders: []*executor.CancelOrderItem{
+			{
+				ChainId:           coveredOrder.ChainID,
+				SettlementAddress: coveredOrder.SettlementAddress,
+				OrderHash:         coveredOrder.OrderHash,
+				Maker:             coveredOrder.Maker,
+			},
+			{
+				ChainId:           missingOrder.ChainID,
+				SettlementAddress: missingOrder.SettlementAddress,
+				OrderHash:         missingOrder.OrderHash,
+				Maker:             missingOrder.Maker,
+			},
+		},
+		CancelTxHash: cancelTxHash,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, uint32(1), resp.CancelledCount)
+	require.True(t, resp.Results[0].Cancelled)
+	require.Equal(t, "CANCEL_TX_REGISTERED", resp.Results[0].Code)
+	require.False(t, resp.Results[1].Cancelled)
+	require.Equal(t, "CANCEL_TX_MISMATCH", resp.Results[1].Code)
+
+	updatedCovered, queryErr := repo.NewOrderRepository(db).GetByOrderHash(context.Background(), coveredOrder.ChainID, coveredOrder.SettlementAddress, coveredOrder.OrderHash)
+	require.NoError(t, queryErr)
+	require.Equal(t, "pending_cancel", updatedCovered.Status)
+
+	stillOpen, queryErr := repo.NewOrderRepository(db).GetByOrderHash(context.Background(), missingOrder.ChainID, missingOrder.SettlementAddress, missingOrder.OrderHash)
+	require.NoError(t, queryErr)
+	require.Equal(t, "open", stillOpen.Status)
+}
+
 func TestCancelOrdersRejectsReplacingPendingCancelTxHash(t *testing.T) {
 	db := openLogicTestDB(t)
 	now := time.Now().UTC()
@@ -1048,6 +1233,9 @@ func (s *stubCancelChainClientReject) CurrentBlockTimestamp(context.Context) (ui
 func (s *stubCancelChainClientReject) ValidateCancelTransaction(context.Context, string, string, *big.Int) (*chain.CancelTxValidationResult, error) {
 	return nil, fmt.Errorf("cancel transaction does not cover target nonce")
 }
+func (s *stubCancelChainClientReject) ValidateCancelTransactionBatch(context.Context, string, string) (*chain.CancelTxValidationResult, error) {
+	return nil, fmt.Errorf("cancel transaction does not cover target nonce")
+}
 
 type stubCancelChainClientNotIndexed struct{}
 
@@ -1073,13 +1261,20 @@ func (s *stubCancelChainClientNotIndexed) CurrentBlockTimestamp(context.Context)
 func (s *stubCancelChainClientNotIndexed) ValidateCancelTransaction(context.Context, string, string, *big.Int) (*chain.CancelTxValidationResult, error) {
 	return nil, fmt.Errorf("%w: rpc pending", chain.ErrCancelTransactionNotFound)
 }
+func (s *stubCancelChainClientNotIndexed) ValidateCancelTransactionBatch(context.Context, string, string) (*chain.CancelTxValidationResult, error) {
+	return nil, fmt.Errorf("%w: rpc pending", chain.ErrCancelTransactionNotFound)
+}
 
 func TestCancelTransactionNotFoundErrorIsStructured(t *testing.T) {
 	err := fmt.Errorf("%w: rpc pending", chain.ErrCancelTransactionNotFound)
 	require.True(t, errors.Is(err, chain.ErrCancelTransactionNotFound))
 }
 
-type stubCancelChainClient struct{}
+type stubCancelChainClient struct {
+	batchNonces         []*big.Int
+	batchValidateCalls  int
+	singleValidateCalls int
+}
 
 func (s *stubCancelChainClient) Close() {}
 
@@ -1108,8 +1303,29 @@ func (s *stubCancelChainClient) CurrentBlockTimestamp(context.Context) (uint64, 
 }
 
 func (s *stubCancelChainClient) ValidateCancelTransaction(context.Context, string, string, *big.Int) (*chain.CancelTxValidationResult, error) {
+	s.singleValidateCalls++
 	return &chain.CancelTxValidationResult{
 		TargetsRequestedNonce: true,
+	}, nil
+}
+
+func (s *stubCancelChainClient) ValidateCancelTransactionBatch(context.Context, string, string) (*chain.CancelTxValidationResult, error) {
+	s.batchValidateCalls++
+	nonces := s.batchNonces
+	if len(nonces) == 0 {
+		nonces = []*big.Int{
+			big.NewInt(8),
+			big.NewInt(10),
+			big.NewInt(12),
+			big.NewInt(13),
+			big.NewInt(14),
+			big.NewInt(20),
+			big.NewInt(21),
+			big.NewInt(31),
+		}
+	}
+	return &chain.CancelTxValidationResult{
+		RegisteredNonces: nonces,
 	}, nil
 }
 

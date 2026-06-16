@@ -38,6 +38,7 @@ export function ActionButton({
 
   return (
     <button
+      type="button"
       onClick={onClick}
       disabled={disabled}
       className={`flex w-full items-center justify-center gap-2 rounded-2xl py-4 font-bold transition-colors ${variantClass} ${className}`.trim()}

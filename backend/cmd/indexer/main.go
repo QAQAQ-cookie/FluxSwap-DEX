@@ -1,4 +1,4 @@
-﻿package main
+package main
 
 import (
 	"context"
@@ -130,6 +130,7 @@ func runIndexerSupervisor(ctx context.Context, db *gorm.DB, c config.Config, cha
 			RPCURL:            chainCfg.WSRPCURL,
 			SettlementAddress: chainCfg.SettlementAddress,
 			BackfillBlocks:    c.Worker.IndexerBackfillBlocks,
+			BackfillInterval:  time.Duration(c.Worker.IndexerHeartbeatMs) * time.Millisecond,
 		})
 		if err != nil {
 			if healthState != nil {
@@ -167,4 +168,3 @@ func runIndexerSupervisor(ctx context.Context, db *gorm.DB, c config.Config, cha
 		}
 	}
 }
-

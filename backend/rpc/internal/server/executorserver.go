@@ -33,14 +33,14 @@ func (s *ExecutorServer) CancelOrders(ctx context.Context, in *executor.CancelOr
 	return l.CancelOrders(in)
 }
 
-func (s *ExecutorServer) GetOrder(ctx context.Context, in *executor.GetOrderRequest) (*executor.GetOrderResponse, error) {
-	l := logic.NewGetOrderLogic(ctx, s.svcCtx)
-	return l.GetOrder(in)
+func (s *ExecutorServer) ListOrders(ctx context.Context, in *executor.ListOrdersRequest) (*executor.ListOrdersResponse, error) {
+	l := logic.NewListOrdersLogic(ctx, s.svcCtx)
+	return l.ListOrders(in)
 }
 
-func (s *ExecutorServer) GetOrderActivities(ctx context.Context, in *executor.GetOrderActivitiesRequest) (*executor.GetOrderActivitiesResponse, error) {
-	l := logic.NewGetOrderActivitiesLogic(ctx, s.svcCtx)
-	return l.GetOrderActivities(in)
+func (s *ExecutorServer) ListOrderUpdates(ctx context.Context, in *executor.ListOrderUpdatesRequest) (*executor.ListOrderUpdatesResponse, error) {
+	l := logic.NewListOrderUpdatesLogic(ctx, s.svcCtx)
+	return l.ListOrderUpdates(in)
 }
 
 func (s *ExecutorServer) GetBestRoute(ctx context.Context, in *executor.GetBestRouteRequest) (*executor.GetBestRouteResponse, error) {

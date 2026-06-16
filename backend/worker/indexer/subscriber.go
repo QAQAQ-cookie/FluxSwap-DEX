@@ -1,4 +1,4 @@
-﻿package indexer
+package indexer
 
 import (
 	"context"
@@ -30,6 +30,7 @@ type Config struct {
 	SettlementAddress string
 	ReconnectDelay    time.Duration
 	BackfillBlocks    int64
+	BackfillInterval  time.Duration
 }
 
 // Subscriber 负责维护 websocket 连接、历史回补流程和游标持久化。
@@ -119,6 +120,11 @@ func (s *Subscriber) runOnce(ctx context.Context) error {
 		return err
 	}
 
+	backfillTicker := s.newBackfillTicker()
+	if backfillTicker != nil {
+		defer backfillTicker.Stop()
+	}
+
 	sub, err := client.SubscribeFilterLogs(ctx, query, logsCh)
 	if err != nil {
 		return fmt.Errorf("subscribe filter logs: %w", err)
@@ -134,6 +140,10 @@ func (s *Subscriber) runOnce(ctx context.Context) error {
 				return nil
 			}
 			return fmt.Errorf("subscription error: %w", err)
+		case <-tickerC(backfillTicker):
+			if err := s.backfillRecentLogs(ctx, client, query); err != nil {
+				return fmt.Errorf("periodic backfill logs: %w", err)
+			}
 		case entry, ok := <-logsCh:
 			if !ok {
 				return fmt.Errorf("log channel closed")
@@ -143,6 +153,20 @@ func (s *Subscriber) runOnce(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+func (s *Subscriber) newBackfillTicker() *time.Ticker {
+	if s == nil || s.cfg.BackfillInterval <= 0 {
+		return nil
+	}
+	return time.NewTicker(s.cfg.BackfillInterval)
+}
+
+func tickerC(ticker *time.Ticker) <-chan time.Time {
+	if ticker == nil {
+		return nil
+	}
+	return ticker.C
 }
 
 // handleLog 负责解码一条原始日志、写回数据库，并推进同步游标。
@@ -375,4 +399,3 @@ func eventNameByTopic(topic common.Hash) (string, bool) {
 		return "", false
 	}
 }
-

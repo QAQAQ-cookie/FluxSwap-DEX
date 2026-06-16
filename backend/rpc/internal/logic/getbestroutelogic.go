@@ -145,9 +145,11 @@ func (l *GetBestRouteLogic) GetBestRoute(in *executor.GetBestRouteRequest) (*exe
 		}, nil
 	}
 
+	usedGasAdjustedRanking := true
 	if err := applyGasAdjustedRanking(l.ctx, quoteClient, quoteType, candidates); err != nil {
-		l.Errorf("apply gas-adjusted ranking failed: %v", err)
-		return nil, status.Error(codes.Internal, "apply gas-adjusted ranking failed")
+		l.Errorf("apply gas-adjusted ranking failed, falling back to raw quote ranking: %v", err)
+		usedGasAdjustedRanking = false
+		sortRawQuoteCandidates(quoteType, candidates)
 	}
 
 	selected := candidates[0]
@@ -155,8 +157,8 @@ func (l *GetBestRouteLogic) GetBestRoute(in *executor.GetBestRouteRequest) (*exe
 		SelectedRoute:          buildRouteView(selected, requestTokens, quoteType),
 		AlternativeRoutes:      buildAlternativeRouteViews(candidates, requestTokens, quoteType),
 		Execution:              buildExecution(selected),
-		SelectionReason:        buildSelectionReason(selected, quoteType),
-		UsedGasAdjustedRanking: true,
+		SelectionReason:        buildSelectionReason(selected, quoteType, usedGasAdjustedRanking),
+		UsedGasAdjustedRanking: usedGasAdjustedRanking,
 		Quote: &executor.RouteQuote{
 			QuoteType: quoteType,
 			AmountIn:  selected.GetAmountIn(),
@@ -169,6 +171,32 @@ func (l *GetBestRouteLogic) GetBestRoute(in *executor.GetBestRouteRequest) (*exe
 			"route_selection",
 		),
 	}, nil
+}
+
+func sortRawQuoteCandidates(
+	quoteType executor.RouteQuoteType,
+	candidates []*executor.RoutePath,
+) {
+	sort.SliceStable(candidates, func(i, j int) bool {
+		switch quoteType {
+		case executor.RouteQuoteType_ROUTE_QUOTE_TYPE_EXACT_OUTPUT:
+			leftIn := mustBigInt(candidates[i].GetAmountIn())
+			rightIn := mustBigInt(candidates[j].GetAmountIn())
+			if cmp := leftIn.Cmp(rightIn); cmp != 0 {
+				return cmp < 0
+			}
+
+			return candidates[i].GetHops() < candidates[j].GetHops()
+		default:
+			leftOut := mustBigInt(candidates[i].GetAmountOut())
+			rightOut := mustBigInt(candidates[j].GetAmountOut())
+			if cmp := leftOut.Cmp(rightOut); cmp != 0 {
+				return cmp > 0
+			}
+
+			return candidates[i].GetHops() < candidates[j].GetHops()
+		}
+	})
 }
 
 // buildCandidateTokens builds direct and single-intermediate candidate paths
@@ -544,6 +572,12 @@ func buildRouteView(
 	if quoteType == executor.RouteQuoteType_ROUTE_QUOTE_TYPE_EXACT_OUTPUT {
 		rankingMetric = candidate.GetGasAdjustedAmountIn()
 	}
+	if strings.TrimSpace(rankingMetric) == "" {
+		rankingMetric = candidate.GetAmountOut()
+		if quoteType == executor.RouteQuoteType_ROUTE_QUOTE_TYPE_EXACT_OUTPUT {
+			rankingMetric = candidate.GetAmountIn()
+		}
+	}
 
 	return &executor.RouteView{
 		PathTokens:           buildDisplayPath(candidate, requestTokens),
@@ -603,11 +637,22 @@ func buildExecutionStrategy(candidate *executor.RoutePath) string {
 	return "multihop_swap"
 }
 
-// buildSelectionReason returns the concise reason label for why the route was
-// selected.
-func buildSelectionReason(candidate *executor.RoutePath, quoteType executor.RouteQuoteType) string {
+// buildSelectionReason returns the concise reason label for why the route was selected.
+func buildSelectionReason(candidate *executor.RoutePath, quoteType executor.RouteQuoteType, usedGasAdjustedRanking bool) string {
 	if candidate == nil {
 		return ""
+	}
+	if !usedGasAdjustedRanking {
+		if quoteType == executor.RouteQuoteType_ROUTE_QUOTE_TYPE_EXACT_OUTPUT {
+			if candidate.GetHops() == 0 {
+				return "lowest_direct_input"
+			}
+			return "lowest_multihop_input"
+		}
+		if candidate.GetHops() == 0 {
+			return "best_direct"
+		}
+		return "best_multihop"
 	}
 	if quoteType == executor.RouteQuoteType_ROUTE_QUOTE_TYPE_EXACT_OUTPUT {
 		if candidate.GetHops() == 0 {

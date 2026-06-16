@@ -4,7 +4,7 @@ import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import type { Address } from 'viem';
+import type { Address, Hash } from 'viem';
 import { formatUnits, maxUint256, zeroAddress } from 'viem';
 import {
   ChevronDown,
@@ -32,7 +32,6 @@ import { getSwapTokenOptions, type SwapTokenOption } from '@/config/tokens';
 import { useIsClient } from '@/hooks/useIsClient';
 import {
   DECIMAL_INPUT_REGEX,
-  formatDisplayAmount,
   formatDisplayAmountDown,
   parseAmount,
   parsePercentToBps,
@@ -262,13 +261,13 @@ export default function PortfolioLiquidityPage() {
   const publicClient = usePublicClient({ chainId: effectiveChainId });
   const { address, isConnected } = useAccount();
   const { openConnectModal } = useConnectModal();
-  const {
-    writeContractAsync,
-    data: hash,
-    isPending: isWritePending,
-  } = useWriteContract();
+  const { writeContractAsync, isPending: isWritePending } = useWriteContract();
+  const [submittedTx, setSubmittedTx] = useState<{
+    hash: Hash;
+    action: NonNullable<LiquidityAction>;
+  } | null>(null);
   const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
-    hash,
+    hash: submittedTx?.hash,
   });
   const tokens = useMemo(() => getSwapTokenOptions(effectiveChainId), [effectiveChainId]);
   const initialTokenA = useMemo(
@@ -292,7 +291,7 @@ export default function PortfolioLiquidityPage() {
   const [slippageMode, setSlippageMode] = useState<SlippageMode>('auto');
   const [deadline, setDeadline] = useState('30');
   const [txError, setTxError] = useState<string | null>(null);
-  const [lastAction, setLastAction] = useState<LiquidityAction>(null);
+  const [pendingAction, setPendingAction] = useState<NonNullable<LiquidityAction> | null>(null);
   const [resultModal, setResultModal] = useState<ResultModalState>(null);
   const [displayPair, setDisplayPair] = useState<PoolViewModel | undefined>(undefined);
 
@@ -557,7 +556,8 @@ export default function PortfolioLiquidityPage() {
     setSlippageMode('auto');
     setDeadline('30');
     setTxError(null);
-    setLastAction(null);
+    setPendingAction(null);
+    setSubmittedTx(null);
     setResultModal(null);
   };
 
@@ -587,7 +587,7 @@ export default function PortfolioLiquidityPage() {
   ]);
 
   useEffect(() => {
-    if (!isConfirmed || lastAction !== 'add') {
+    if (!isConfirmed || submittedTx?.action !== 'add') {
       return;
     }
 
@@ -595,7 +595,7 @@ export default function PortfolioLiquidityPage() {
       kind: 'success',
       message: isZh ? '添加流动性成功。' : 'Liquidity added successfully.',
     });
-  }, [isConfirmed, isZh, lastAction]);
+  }, [isConfirmed, isZh, submittedTx?.action]);
 
   useEffect(() => {
     if (!settingsOpen) {
@@ -722,7 +722,8 @@ export default function PortfolioLiquidityPage() {
     }
 
     setTxError(null);
-    setLastAction(actionKind);
+    setPendingAction(actionKind);
+    setSubmittedTx(null);
 
     try {
       if (actionKind === 'approve-a') {
@@ -730,7 +731,7 @@ export default function PortfolioLiquidityPage() {
           return;
         }
 
-        await writeContractAsync({
+        const txHash = await writeContractAsync({
           address: orderedTokenA.address,
           abi: fluxSwapErc20Abi,
           functionName: 'approve',
@@ -738,6 +739,7 @@ export default function PortfolioLiquidityPage() {
           chainId,
           ...localGasOverride,
         });
+        setSubmittedTx({ hash: txHash, action: actionKind });
         return;
       }
 
@@ -746,7 +748,7 @@ export default function PortfolioLiquidityPage() {
           return;
         }
 
-        await writeContractAsync({
+        const txHash = await writeContractAsync({
           address: orderedTokenB.address,
           abi: fluxSwapErc20Abi,
           functionName: 'approve',
@@ -754,6 +756,7 @@ export default function PortfolioLiquidityPage() {
           chainId,
           ...localGasOverride,
         });
+        setSubmittedTx({ hash: txHash, action: actionKind });
         return;
       }
 
@@ -784,7 +787,7 @@ export default function PortfolioLiquidityPage() {
           return;
         }
 
-        await writeContractAsync({
+        const txHash = await writeContractAsync({
           address: routerAddress,
           abi: fluxSwapRouterAbi,
           functionName: 'addLiquidityETH',
@@ -800,6 +803,7 @@ export default function PortfolioLiquidityPage() {
           chainId,
           ...localGasOverride,
         });
+        setSubmittedTx({ hash: txHash, action: actionKind });
         return;
       }
 
@@ -807,7 +811,7 @@ export default function PortfolioLiquidityPage() {
         return;
       }
 
-      await writeContractAsync({
+      const txHash = await writeContractAsync({
         address: routerAddress,
         abi: fluxSwapRouterAbi,
         functionName: 'addLiquidity',
@@ -824,6 +828,7 @@ export default function PortfolioLiquidityPage() {
         chainId,
         ...localGasOverride,
       });
+      setSubmittedTx({ hash: txHash, action: actionKind });
     } catch (error) {
       const errorMessage = formatErrorMessage(error, {
         rejectedMessage:
@@ -868,18 +873,19 @@ export default function PortfolioLiquidityPage() {
       insufficientBalanceB ||
       (needsAllowanceA && allowanceA === undefined) ||
       (needsAllowanceB && allowanceB === undefined));
+  const currentTxAction = submittedTx?.action ?? pendingAction;
   const statusMessage = txError
     ? txError
     : isConfirmed
-      ? lastAction === 'approve-a' || lastAction === 'approve-b'
+      ? submittedTx?.action === 'approve-a' || submittedTx?.action === 'approve-b'
         ? (isZh ? '授权已确认' : 'Approval confirmed')
         : (isZh ? '添加流动性交易已确认' : 'Add liquidity transaction confirmed')
-      : hash && isConfirming
-        ? lastAction === 'approve-a' || lastAction === 'approve-b'
+      : submittedTx?.hash && isConfirming
+        ? currentTxAction === 'approve-a' || currentTxAction === 'approve-b'
           ? (isZh ? '授权交易确认中...' : 'Approval confirming...')
           : (isZh ? '添加流动性交易确认中...' : 'Add liquidity confirming...')
-        : hash
-          ? lastAction === 'approve-a' || lastAction === 'approve-b'
+        : submittedTx?.hash
+          ? currentTxAction === 'approve-a' || currentTxAction === 'approve-b'
             ? (isZh ? '授权交易已提交' : 'Approval submitted')
             : (isZh ? '添加流动性交易已提交' : 'Add liquidity submitted')
           : null;

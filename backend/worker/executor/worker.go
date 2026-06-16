@@ -611,7 +611,6 @@ func (w *Worker) evaluateOrder(ctx context.Context, order *domain.Order) error {
 			}
 			return nil
 		}
-		return nil
 	}
 
 	switch statusReason := strings.TrimSpace(reason); statusReason {

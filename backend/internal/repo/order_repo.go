@@ -1,8 +1,11 @@
-﻿package repo
+package repo
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,21 +19,24 @@ type OrderRepository struct {
 	db *gorm.DB
 }
 
+var ErrInvalidOrderListCursor = errors.New("invalid order list cursor")
+var ErrInvalidOrderUpdatesCursor = errors.New("invalid order updates cursor")
+
 var orderRuntimeFieldNames = map[string]struct{}{
-	"status_reason":               {},
-	"estimated_gas_used":          {},
-	"gas_price_at_quote":          {},
-	"fee_quote_at":                {},
-	"last_required_executor_fee":  {},
-	"last_fee_check_at":           {},
-	"last_execution_check_at":     {},
-	"last_block_reason":           {},
-	"settled_amount_out":          {},
-	"settled_executor_fee":        {},
-	"submitted_tx_hash":           {},
-	"executed_tx_hash":            {},
-	"cancelled_tx_hash":           {},
-	"last_checked_block":          {},
+	"status_reason":              {},
+	"estimated_gas_used":         {},
+	"gas_price_at_quote":         {},
+	"fee_quote_at":               {},
+	"last_required_executor_fee": {},
+	"last_fee_check_at":          {},
+	"last_execution_check_at":    {},
+	"last_block_reason":          {},
+	"settled_amount_out":         {},
+	"settled_executor_fee":       {},
+	"submitted_tx_hash":          {},
+	"executed_tx_hash":           {},
+	"cancelled_tx_hash":          {},
+	"last_checked_block":         {},
 }
 
 // NewOrderRepository 基于给定的 Gorm 连接创建订单仓储。
@@ -201,6 +207,36 @@ func (r *OrderRepository) UpdateFieldsIfStatusIn(
 	}
 
 	return updated, nil
+}
+
+type ListOrdersByMakerParams struct {
+	ChainID           int64
+	SettlementAddress string
+	Maker             string
+	Statuses          []string
+	Limit             int
+	Cursor            string
+}
+
+type ListOrdersByMakerResult struct {
+	Orders     []domain.Order
+	NextCursor string
+	HasMore    bool
+}
+
+type ListOrderUpdatesByMakerParams struct {
+	ChainID           int64
+	SettlementAddress string
+	Maker             string
+	Statuses          []string
+	Limit             int
+	Cursor            string
+}
+
+type ListOrderUpdatesByMakerResult struct {
+	Orders     []domain.Order
+	NextCursor string
+	HasMore    bool
 }
 
 // ClaimOpenOrderForExecution 原子地把 open 订单抢占为 submitting_execute。
@@ -416,6 +452,176 @@ func (r *OrderRepository) ListByStatus(ctx context.Context, status string, limit
 	return orders, nil
 }
 
+// ListByMaker 按钱包地址分页查询订单，支持状态筛选，按 created_at/id 倒序返回。
+func (r *OrderRepository) ListByMaker(ctx context.Context, params ListOrdersByMakerParams) (*ListOrdersByMakerResult, error) {
+	if r == nil || r.db == nil {
+		return nil, errors.New("order repository unavailable")
+	}
+
+	limit := params.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	query := r.db.WithContext(ctx).
+		Model(&domain.Order{}).
+		Where(
+			"chain_id = ? AND maker = ?",
+			params.ChainID,
+			strings.ToLower(strings.TrimSpace(params.Maker)),
+		)
+
+	settlementAddress := strings.ToLower(strings.TrimSpace(params.SettlementAddress))
+	if settlementAddress != "" {
+		query = query.Where("settlement_address = ?", settlementAddress)
+	}
+
+	if len(params.Statuses) > 0 {
+		normalizedStatuses := make([]string, 0, len(params.Statuses))
+		for _, status := range params.Statuses {
+			trimmed := strings.TrimSpace(status)
+			if trimmed == "" {
+				continue
+			}
+			normalizedStatuses = append(normalizedStatuses, strings.ToLower(trimmed))
+		}
+		if len(normalizedStatuses) > 0 {
+			query = query.Where("status IN ?", normalizedStatuses)
+		}
+	}
+
+	if strings.TrimSpace(params.Cursor) != "" {
+		cursor, err := decodeOrderListCursor(params.Cursor)
+		if err != nil {
+			return nil, err
+		}
+		query = query.Where(
+			"(created_at < ?) OR (created_at = ? AND id < ?)",
+			cursor.CreatedAt,
+			cursor.CreatedAt,
+			cursor.ID,
+		)
+	}
+
+	var orders []domain.Order
+	if err := query.
+		Order("created_at DESC").
+		Order("id DESC").
+		Limit(limit + 1).
+		Find(&orders).Error; err != nil {
+		return nil, err
+	}
+
+	hasMore := len(orders) > limit
+	if hasMore {
+		orders = orders[:limit]
+	}
+
+	if err := r.attachRuntimes(ctx, orders); err != nil {
+		return nil, err
+	}
+
+	nextCursor := ""
+	if hasMore && len(orders) > 0 {
+		last := orders[len(orders)-1]
+		nextCursor = encodeOrderListCursor(last.CreatedAt, last.ID)
+	}
+
+	return &ListOrdersByMakerResult{
+		Orders:     orders,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+	}, nil
+}
+
+// ListUpdatesByMaker 按 updated_at/id 倒序返回订单，用于前端轮询刷新状态变化。
+func (r *OrderRepository) ListUpdatesByMaker(ctx context.Context, params ListOrderUpdatesByMakerParams) (*ListOrderUpdatesByMakerResult, error) {
+	if r == nil || r.db == nil {
+		return nil, errors.New("order repository unavailable")
+	}
+
+	limit := params.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	query := r.db.WithContext(ctx).
+		Model(&domain.Order{}).
+		Where(
+			"chain_id = ? AND maker = ?",
+			params.ChainID,
+			strings.ToLower(strings.TrimSpace(params.Maker)),
+		)
+
+	settlementAddress := strings.ToLower(strings.TrimSpace(params.SettlementAddress))
+	if settlementAddress != "" {
+		query = query.Where("settlement_address = ?", settlementAddress)
+	}
+
+	if len(params.Statuses) > 0 {
+		normalizedStatuses := make([]string, 0, len(params.Statuses))
+		for _, status := range params.Statuses {
+			trimmed := strings.TrimSpace(status)
+			if trimmed == "" {
+				continue
+			}
+			normalizedStatuses = append(normalizedStatuses, strings.ToLower(trimmed))
+		}
+		if len(normalizedStatuses) > 0 {
+			query = query.Where("status IN ?", normalizedStatuses)
+		}
+	}
+
+	if strings.TrimSpace(params.Cursor) != "" {
+		cursor, err := decodeOrderUpdatesCursor(params.Cursor)
+		if err != nil {
+			return nil, err
+		}
+		query = query.Where(
+			"(updated_at < ?) OR (updated_at = ? AND id < ?)",
+			cursor.UpdatedAt,
+			cursor.UpdatedAt,
+			cursor.ID,
+		)
+	}
+
+	var orders []domain.Order
+	if err := query.
+		Order("updated_at DESC").
+		Order("id DESC").
+		Limit(limit + 1).
+		Find(&orders).Error; err != nil {
+		return nil, err
+	}
+
+	hasMore := len(orders) > limit
+	if hasMore {
+		orders = orders[:limit]
+	}
+
+	if err := r.attachRuntimes(ctx, orders); err != nil {
+		return nil, err
+	}
+
+	nextCursor := ""
+	if hasMore && len(orders) > 0 {
+		last := orders[len(orders)-1]
+		nextCursor = encodeOrderUpdatesCursor(last.UpdatedAt, last.ID)
+	}
+
+	return &ListOrderUpdatesByMakerResult{
+		Orders:     orders,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+	}, nil
+}
+
 // ListOpenOrdersForSettlement 查询某个结算合约下的 open 订单。
 func (r *OrderRepository) ListOpenOrdersForSettlement(
 	ctx context.Context,
@@ -562,3 +768,76 @@ func splitOrderAndRuntimeUpdates(updates map[string]interface{}) (map[string]int
 	return orderUpdates, runtimeUpdates
 }
 
+type orderListCursor struct {
+	CreatedAt time.Time
+	ID        uint64
+}
+
+type orderUpdatesCursor struct {
+	UpdatedAt time.Time
+	ID        uint64
+}
+
+func encodeOrderListCursor(createdAt time.Time, id uint64) string {
+	payload := fmt.Sprintf("%s|%d", createdAt.UTC().Format(time.RFC3339Nano), id)
+	return base64.RawURLEncoding.EncodeToString([]byte(payload))
+}
+
+func decodeOrderListCursor(cursor string) (*orderListCursor, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(cursor))
+	if err != nil {
+		return nil, fmt.Errorf("%w: decode base64: %v", ErrInvalidOrderListCursor, err)
+	}
+
+	parts := strings.Split(string(raw), "|")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("%w: unexpected parts count", ErrInvalidOrderListCursor)
+	}
+
+	createdAt, err := time.Parse(time.RFC3339Nano, parts[0])
+	if err != nil {
+		return nil, fmt.Errorf("%w: parse createdAt: %v", ErrInvalidOrderListCursor, err)
+	}
+
+	id, err := strconv.ParseUint(parts[1], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("%w: parse id: %v", ErrInvalidOrderListCursor, err)
+	}
+
+	return &orderListCursor{
+		CreatedAt: createdAt.UTC(),
+		ID:        id,
+	}, nil
+}
+
+func encodeOrderUpdatesCursor(updatedAt time.Time, id uint64) string {
+	payload := fmt.Sprintf("%s|%d", updatedAt.UTC().Format(time.RFC3339Nano), id)
+	return base64.RawURLEncoding.EncodeToString([]byte(payload))
+}
+
+func decodeOrderUpdatesCursor(cursor string) (*orderUpdatesCursor, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(cursor))
+	if err != nil {
+		return nil, fmt.Errorf("%w: decode base64: %v", ErrInvalidOrderUpdatesCursor, err)
+	}
+
+	parts := strings.Split(string(raw), "|")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("%w: unexpected parts count", ErrInvalidOrderUpdatesCursor)
+	}
+
+	updatedAt, err := time.Parse(time.RFC3339Nano, parts[0])
+	if err != nil {
+		return nil, fmt.Errorf("%w: parse updatedAt: %v", ErrInvalidOrderUpdatesCursor, err)
+	}
+
+	id, err := strconv.ParseUint(parts[1], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("%w: parse id: %v", ErrInvalidOrderUpdatesCursor, err)
+	}
+
+	return &orderUpdatesCursor{
+		UpdatedAt: updatedAt.UTC(),
+		ID:        id,
+	}, nil
+}

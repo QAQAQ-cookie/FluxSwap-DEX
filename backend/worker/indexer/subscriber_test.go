@@ -397,6 +397,24 @@ func TestBackfillRecentLogsSkipsHistoricalScanWithoutCursorWhenBackfillDisabled(
 	require.False(t, client.filterCalled)
 }
 
+func TestNewBackfillTickerFollowsConfiguredInterval(t *testing.T) {
+	subscriber := &Subscriber{
+		cfg: Config{
+			BackfillInterval: time.Millisecond,
+		},
+	}
+
+	ticker := subscriber.newBackfillTicker()
+	require.NotNil(t, ticker)
+	ticker.Stop()
+}
+
+func TestNewBackfillTickerDisabledWithoutInterval(t *testing.T) {
+	subscriber := &Subscriber{}
+
+	require.Nil(t, subscriber.newBackfillTicker())
+}
+
 func TestHandleLogIgnoresZeroValueUnknownEntry(t *testing.T) {
 	db := openIndexerTestDB(t)
 	subscriber := &Subscriber{

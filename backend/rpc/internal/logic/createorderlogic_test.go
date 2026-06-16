@@ -73,6 +73,10 @@ func (s *stubRPCChainClient) ValidateCancelTransaction(context.Context, string, 
 	return nil, fmt.Errorf("unexpected call")
 }
 
+func (s *stubRPCChainClient) ValidateCancelTransactionBatch(context.Context, string, string) (*chain.CancelTxValidationResult, error) {
+	return nil, fmt.Errorf("unexpected call")
+}
+
 // 瑕嗙洊鍧忕鍚嶅湪寤哄崟闃舵鍗宠鎷︽埅锛岄伩鍏嶈繘鍏ュ悗缁墽琛屽惊鐜寔缁秷鑰楁墽琛屽櫒 gas銆
 func TestCreateOrderRejectsInvalidSignature(t *testing.T) {
 	db := openCreateOrderTestDB(t)
