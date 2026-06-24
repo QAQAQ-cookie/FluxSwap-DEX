@@ -994,11 +994,15 @@ export function SwapWidget({
   const resolvedLimitPayAmount =
     effectiveLimitPayAmount ||
     (isLimitMode && inputMode === "receive" ? quotedPayAmountRaw : "");
+  const quotedReceiveAmountDisplay =
+    quotedAmountOut !== undefined && receiveToken
+      ? formatBigIntAmount(quotedAmountOut, receiveToken.decimals)
+      : "";
   const receiveAmount = isLimitMode
     ? effectiveLimitReceiveAmount
     : inputMode === "receive"
       ? receiveAmountInput
-      : formatBigIntAmount(quotedAmountOut, receiveToken?.decimals ?? 18);
+      : quotedReceiveAmountDisplay;
   const parsedLimitPayAmount =
     isLimitMode && payToken
       ? parseAmount(resolvedLimitPayAmount, payToken.decimals)
@@ -2188,6 +2192,7 @@ export function SwapWidget({
               <div className="mb-2 flex items-center justify-between gap-3">
                 <input
                   type="text"
+                  inputMode="decimal"
                   placeholder={isQuoteLoading ? "..." : "0.0"}
                   value={receiveAmount}
                   onChange={(event) => handleReceiveAmountChange(event.target.value)}

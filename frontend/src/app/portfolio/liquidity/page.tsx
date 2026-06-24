@@ -3,7 +3,7 @@
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import type { Address, Hash } from 'viem';
 import { formatUnits, maxUint256, zeroAddress } from 'viem';
 import {
@@ -255,6 +255,7 @@ export default function PortfolioLiquidityPage() {
   const { i18n } = useTranslation();
   const isZh = i18n.language.startsWith('zh');
   const router = useRouter();
+  const searchParams = useSearchParams();
   const mounted = useIsClient();
   const chainId = useChainId();
   const effectiveChainId = mounted ? chainId : undefined;
@@ -270,9 +271,33 @@ export default function PortfolioLiquidityPage() {
     hash: submittedTx?.hash,
   });
   const tokens = useMemo(() => getSwapTokenOptions(effectiveChainId), [effectiveChainId]);
+  const requestedTokenAAddress = searchParams.get('tokenA')?.toLowerCase() ?? null;
+  const requestedTokenBAddress = searchParams.get('tokenB')?.toLowerCase() ?? null;
+  const prefilledTokenA = useMemo(
+    () =>
+      requestedTokenAAddress
+        ? tokens.find((token) => token.routeAddress.toLowerCase() === requestedTokenAAddress)
+        : undefined,
+    [requestedTokenAAddress, tokens],
+  );
+  const prefilledTokenB = useMemo(
+    () =>
+      requestedTokenBAddress
+        ? tokens.find((token) => token.routeAddress.toLowerCase() === requestedTokenBAddress)
+        : undefined,
+    [requestedTokenBAddress, tokens],
+  );
   const initialTokenA = useMemo(
-    () => tokens.find((token) => token.symbol === 'ETH') ?? tokens[0],
-    [tokens],
+    () => prefilledTokenA ?? tokens.find((token) => token.symbol === 'ETH') ?? tokens[0],
+    [prefilledTokenA, tokens],
+  );
+  const initialTokenB = useMemo(
+    () =>
+      prefilledTokenB &&
+      prefilledTokenB.routeAddress.toLowerCase() !== initialTokenA?.routeAddress.toLowerCase()
+        ? prefilledTokenB
+        : undefined,
+    [initialTokenA, prefilledTokenB],
   );
   const supportedChain = isFluxSupportedChain(effectiveChainId);
   const routerAddress = getContractAddress('FluxSwapRouter', effectiveChainId);
@@ -324,6 +349,14 @@ export default function PortfolioLiquidityPage() {
   }, [initialTokenA, mounted, tokenA]);
 
   useEffect(() => {
+    if (!mounted || tokenB || !initialTokenB) {
+      return;
+    }
+
+    setTokenB(initialTokenB);
+  }, [initialTokenB, mounted, tokenB]);
+
+  useEffect(() => {
     if (!supportedChain || !orderedTokenA || !orderedTokenB) {
       setDisplayPair(undefined);
       return;
@@ -365,11 +398,14 @@ export default function PortfolioLiquidityPage() {
       ? `${displayTokenA.symbol} / ${displayTokenB.symbol}`
       : '--';
   const canContinue = Boolean(tokenA && tokenB);
-  const baselineTokenA = tokenA ?? initialTokenA;
+  const selectedTokenARoute = tokenA?.routeAddress.toLowerCase() ?? null;
+  const selectedTokenBRoute = tokenB?.routeAddress.toLowerCase() ?? null;
+  const initialTokenARoute = initialTokenA?.routeAddress.toLowerCase() ?? null;
+  const initialTokenBRoute = initialTokenB?.routeAddress.toLowerCase() ?? null;
   const canReset =
     step !== 1 ||
-    baselineTokenA?.symbol !== initialTokenA?.symbol ||
-    tokenB !== undefined ||
+    selectedTokenARoute !== initialTokenARoute ||
+    selectedTokenBRoute !== initialTokenBRoute ||
     amountA.trim() !== '' ||
     amountB.trim() !== '' ||
     slippageMode !== 'auto' ||
@@ -546,7 +582,7 @@ export default function PortfolioLiquidityPage() {
   const resetForm = () => {
     setStep(1);
     setTokenA(initialTokenA);
-    setTokenB(undefined);
+    setTokenB(initialTokenB);
     setAmountA('');
     setAmountB('');
     setSelectorTarget(null);

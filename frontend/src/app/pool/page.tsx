@@ -1,15 +1,18 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronRight, Droplets } from 'lucide-react';
+import { ChevronRight, Droplets, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { Address } from 'viem';
+import { type Address, zeroAddress } from 'viem';
 import { useChainId } from 'wagmi';
 
 import { MarketTabs } from '@/components/pool/MarketTabs';
 import { getContractAddress, isFluxSupportedChain } from '@/config/contracts';
 import { formatBigIntAmount } from '@/lib/amounts';
+import { useReadFluxSwapFactoryTreasury } from '@/lib/contracts';
+import { calculatePoolApr, formatPoolApr, getPoolLpFeeRate } from '@/lib/poolMetrics';
 import { getPools, type PoolViewModel } from '@/lib/subgraph/pools';
 import { truncateAddress } from '@/lib/wallet';
 
@@ -27,6 +30,7 @@ type PoolRow = {
   pairLabel: string;
   reservesLabel: string;
   feeTierLabel: string;
+  aprLabel: string;
   protocolLabel: string;
 };
 
@@ -104,10 +108,17 @@ export default function PoolMarketsPage() {
   const { i18n } = useTranslation();
   const isZh = i18n.language.startsWith('zh');
   const chainId = useChainId();
+  const router = useRouter();
 
   const supportedChain = isFluxSupportedChain(chainId);
   const factoryAddress = getContractAddress('FluxSwapFactory', chainId);
   const wrappedNativeAddress = getContractAddress('MockWETH', chainId);
+  const { data: treasuryAddress } = useReadFluxSwapFactoryTreasury({
+    address: factoryAddress ?? zeroAddress,
+    query: {
+      enabled: supportedChain && !!factoryAddress,
+    },
+  });
 
   const [pairs, setPairs] = useState<PoolViewModel[]>([]);
   const [loading, setLoading] = useState(false);
@@ -148,6 +159,7 @@ export default function PoolMarketsPage() {
     };
   }, [factoryAddress, supportedChain]);
 
+  const lpFeeRate = getPoolLpFeeRate(treasuryAddress);
   const poolRows = useMemo<PoolRow[]>(() => {
     return pairs.map((pair) => {
       const token0Symbol = normalizeTokenSymbol(
@@ -168,15 +180,32 @@ export default function PoolMarketsPage() {
         pairLabel: `${token0Symbol} / ${token1Symbol}`,
         reservesLabel: `${formatBigIntAmount(pair.reserve0, pair.token0.decimals, 3)} ${token0Symbol} / ${formatBigIntAmount(pair.reserve1, pair.token1.decimals, 3)} ${token1Symbol}`,
         feeTierLabel: '0.3%',
+        aprLabel: formatPoolApr(calculatePoolApr({
+          pool: pair,
+          swaps: pair.recentSwaps,
+          quoteTokenIndex: 1,
+          lpFeeRate,
+        })),
         protocolLabel: 'V2',
       };
     });
-  }, [pairs, wrappedNativeAddress]);
+  }, [lpFeeRate, pairs, wrappedNativeAddress]);
 
   return (
     <div className="px-4 py-8 lg:px-6 lg:py-10">
       <section className="lg:px-1">
-        <MarketTabs active="pool" />
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <MarketTabs active="pool" />
+          {supportedChain ? (
+            <Link
+              href="/portfolio/liquidity"
+              className="inline-flex h-11 w-fit items-center justify-center gap-2 rounded-full bg-gray-900 px-5 text-sm font-bold text-white shadow-lg shadow-sky-500/10 transition-colors hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
+            >
+              <Plus size={16} />
+              <span>{isZh ? '添加流动性' : 'Add liquidity'}</span>
+            </Link>
+          ) : null}
+        </div>
 
         <div className="mt-6 hidden lg:block">
           <div className="grid grid-cols-[0.55fr_1.7fr_0.8fr_0.9fr_1.45fr_0.8fr] gap-4 rounded-[1.5rem] bg-gray-100/80 px-5 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:bg-white/[0.04] dark:text-gray-400">
@@ -185,7 +214,7 @@ export default function PoolMarketsPage() {
             <div>{isZh ? '协议' : 'Protocol'}</div>
             <div>{isZh ? '费率' : 'Fee tier'}</div>
             <div>{isZh ? '储备' : 'Reserves'}</div>
-            <div className="text-right">{isZh ? '操作' : 'Action'}</div>
+            <div className="text-right">{isZh ? '资金池年利率' : 'Pool APR'}</div>
           </div>
 
           {loading ? (
@@ -205,7 +234,16 @@ export default function PoolMarketsPage() {
             poolRows.map((pool, index) => (
               <div
                 key={pool.id}
-                className="mt-3 grid grid-cols-[0.55fr_1.7fr_0.8fr_0.9fr_1.45fr_0.8fr] items-center gap-4 rounded-[1.8rem] border border-black/5 px-5 py-5 transition-colors hover:bg-sky-50/50 dark:border-white/10 dark:hover:bg-white/[0.03]"
+                role="button"
+                tabIndex={0}
+                onClick={() => router.push(`/pool/${pool.id}`)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    router.push(`/pool/${pool.id}`);
+                  }
+                }}
+                className="mt-3 grid cursor-pointer grid-cols-[0.55fr_1.7fr_0.8fr_0.9fr_1.45fr_0.8fr] items-center gap-4 rounded-[1.8rem] border border-black/5 px-5 py-5 transition-colors hover:bg-sky-50/50 dark:border-white/10 dark:hover:bg-white/[0.03]"
               >
                 <div className="text-lg font-black text-gray-400 dark:text-gray-500">
                   {index + 1}
@@ -240,14 +278,8 @@ export default function PoolMarketsPage() {
                   {pool.reservesLabel}
                 </div>
 
-                <div className="flex justify-end">
-                  <Link
-                    href="/portfolio/liquidity"
-                    className="inline-flex items-center gap-2 rounded-full border border-black/5 bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-200 dark:border-white/10 dark:bg-white/[0.06] dark:text-gray-100 dark:hover:bg-white/[0.1]"
-                  >
-                    <span>{isZh ? '管理' : 'Manage'}</span>
-                    <ChevronRight size={16} />
-                  </Link>
+                <div className="text-right text-sm font-black text-emerald-600 dark:text-emerald-300">
+                  {pool.aprLabel}
                 </div>
               </div>
             ))
@@ -275,6 +307,15 @@ export default function PoolMarketsPage() {
               {poolRows.map((pool) => (
                 <div
                   key={pool.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => router.push(`/pool/${pool.id}`)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      router.push(`/pool/${pool.id}`);
+                    }
+                  }}
                   className="rounded-[1.9rem] border border-black/5 bg-white p-5 dark:border-white/10 dark:bg-white/[0.03]"
                 >
                   <div className="flex items-start justify-between gap-4">
@@ -307,6 +348,14 @@ export default function PoolMarketsPage() {
                         {pool.feeTierLabel}
                       </div>
                     </div>
+                    <div className="rounded-[1.35rem] bg-gray-100 p-4 dark:bg-white/[0.05]">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                        {isZh ? '资金池年利率' : 'Pool APR'}
+                      </div>
+                      <div className="mt-2 text-sm font-black text-emerald-600 dark:text-emerald-300">
+                        {pool.aprLabel}
+                      </div>
+                    </div>
                   </div>
 
                   <div className="mt-4 rounded-[1.35rem] bg-gray-100 p-4 dark:bg-white/[0.05]">
@@ -318,13 +367,6 @@ export default function PoolMarketsPage() {
                     </div>
                   </div>
 
-                  <Link
-                    href="/portfolio/liquidity"
-                    className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-[1.2rem] bg-gray-900 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-white/[0.1]"
-                  >
-                    <span>{isZh ? '进入池子详情' : 'Open pool detail'}</span>
-                    <ChevronRight size={16} />
-                  </Link>
                 </div>
               ))}
             </div>

@@ -26,7 +26,12 @@ import { useAccount, useBalance, useChainId, usePublicClient, useSignTypedData, 
 
 import { getContractAddress, getLocalGasOverride, isFluxSupportedChain } from '@/config/contracts';
 import { getSwapTokenOptions, type SwapTokenOption } from '@/config/tokens';
-import { formatBigIntAmount, formatBigIntAmountDown, formatDisplayAmount } from '@/lib/amounts';
+import {
+  formatBigIntAmount,
+  formatBigIntAmountDown,
+  formatDisplayAmount,
+  formatPairLpAmountDown,
+} from '@/lib/amounts';
 import { fluxSignedOrderSettlementAbi, fluxSwapPairAbi } from '@/lib/contracts';
 import { fluxSwapErc20Abi } from '@/lib/contracts/generated/FluxSwapERC20';
 import { formatErrorMessage } from '@/lib/errors';
@@ -167,6 +172,13 @@ type WalletTokenRow = {
   name: string;
   amountLabel: string;
   rawAmount: bigint;
+};
+
+type PositionDisplayRow = {
+  pairId: string;
+  pairLabel: string;
+  lpBalanceLabel: string;
+  rawLpBalance: bigint;
 };
 
 type LimitOrderTokenMeta = {
@@ -468,7 +480,7 @@ function LimitOrderExpandedDetails({
   isZh: boolean;
 }) {
   return (
-    <div className="grid gap-x-8 gap-y-5 pt-1 sm:grid-cols-2 xl:mx-6 xl:grid-cols-8">
+    <div className="mx-auto grid w-full max-w-[92rem] gap-x-8 gap-y-5 pt-1 sm:grid-cols-2 xl:translate-x-16 xl:grid-cols-8">
       <div className="text-base font-black tracking-tight text-gray-900 dark:text-white sm:col-span-2 xl:col-span-4">
         {isZh ? '订单详情' : 'Order Details'}
       </div>
@@ -905,7 +917,7 @@ export default function PortfolioPage() {
   const [limitOrdersError, setLimitOrdersError] = useState<string | null>(null);
   const [walletLimitOrders, setWalletLimitOrders] = useState<LocalLimitOrderRecord[]>([]);
   const [isLimitOrdersModalOpen, setIsLimitOrdersModalOpen] = useState(false);
-  const [expandedLimitOrderHash, setExpandedLimitOrderHash] = useState<string | null>(null);
+  const [expandedLimitOrderKey, setExpandedLimitOrderKey] = useState<string | null>(null);
   const [limitOrderResultModal, setLimitOrderResultModal] = useState<LimitOrderResultModalState>(null);
   const [selectedLimitOrderKeys, setSelectedLimitOrderKeys] = useState<string[]>([]);
   const [cancellingOrderKeys, setCancellingOrderKeys] = useState<string[]>([]);
@@ -1236,10 +1248,6 @@ export default function PortfolioPage() {
     };
   }, [publicClient, trades]);
 
-  const totalLpBalance = useMemo(
-    () => Object.values(lpBalances).reduce((sum, balance) => sum + balance, ZERO_BIGINT),
-    [lpBalances],
-  );
   const activePositionCount = useMemo(
     () => Object.values(lpBalances).filter((balance) => balance > ZERO_BIGINT).length,
     [lpBalances],
@@ -1249,10 +1257,44 @@ export default function PortfolioPage() {
     ? formatDisplayAmount(fluxBalance?.formatted)
     : '--';
 
-  const lpDisplay = isConnected
-    ? formatBigIntAmount(totalLpBalance, 18, 4)
-    : '--';
-  const showLpHint = isConnected && totalLpBalance > ZERO_BIGINT;
+  const lpDisplay = isConnected ? String(activePositionCount) : '--';
+  const showLpHint = isConnected && activePositionCount > 0;
+  const positionRows = useMemo<PositionDisplayRow[]>(() => {
+    return pairs
+      .map((pair) => {
+        const rawLpBalance = lpBalances[pair.id.toLowerCase()] ?? ZERO_BIGINT;
+        const token0Symbol = normalizeTokenSymbol(
+          pair.token0.symbol,
+          pair.token0.id,
+          wrappedNativeAddress,
+        );
+        const token1Symbol = normalizeTokenSymbol(
+          pair.token1.symbol,
+          pair.token1.id,
+          wrappedNativeAddress,
+        );
+
+        return {
+          pairId: pair.id,
+          pairLabel: `${token0Symbol} / ${token1Symbol}`,
+          lpBalanceLabel: `${formatPairLpAmountDown(
+            rawLpBalance,
+            pair.token0.decimals,
+            pair.token1.decimals,
+            6,
+          )} LP`,
+          rawLpBalance,
+        };
+      })
+      .filter((row) => row.rawLpBalance > ZERO_BIGINT)
+      .sort((left, right) => {
+        if (left.rawLpBalance === right.rawLpBalance) {
+          return left.pairLabel.localeCompare(right.pairLabel);
+        }
+
+        return left.rawLpBalance > right.rawLpBalance ? -1 : 1;
+      });
+  }, [lpBalances, pairs, wrappedNativeAddress]);
   const walletActivityRows = useMemo(() => {
     return trades.map((trade) =>
       buildWalletActivityRow(
@@ -1881,17 +1923,12 @@ export default function PortfolioPage() {
       return;
     }
 
-    if (limitOrderRows.length === 0) {
-      setExpandedLimitOrderHash(null);
-      return;
-    }
-
-    setExpandedLimitOrderHash((current) => {
-      if (current && limitOrderRows.some((row) => row.order.orderHash === current)) {
-        return current;
+    setExpandedLimitOrderKey((current) => {
+      if (!current) {
+        return null;
       }
 
-      return limitOrderRows[0]?.order.orderHash ?? null;
+      return limitOrderRows.some((row) => buildLimitOrderKey(row.order) === current) ? current : null;
     });
   }, [isLimitOrdersModalOpen, limitOrderRows]);
 
@@ -1902,13 +1939,46 @@ export default function PortfolioPage() {
 
   const closeLimitOrdersModal = () => {
     setIsLimitOrdersModalOpen(false);
-    setExpandedLimitOrderHash(null);
+    setExpandedLimitOrderKey(null);
     setSelectedLimitOrderKeys([]);
   };
 
-  const toggleExpandedLimitOrder = (orderHash: string) => {
-    setExpandedLimitOrderHash((current) => (current === orderHash ? null : orderHash));
+  const toggleExpandedLimitOrder = (order: LocalLimitOrderRecord) => {
+    const orderKey = buildLimitOrderKey(order);
+    setExpandedLimitOrderKey((current) => (current === orderKey ? null : orderKey));
   };
+
+  if (!isConnected || !address) {
+    return (
+      <div className="flex min-h-[calc(100vh-5rem)] items-center justify-center px-4 py-10 lg:px-6">
+        <section className="w-full max-w-[560px] rounded-[2.25rem] border border-black/5 bg-white/78 p-7 text-center shadow-2xl shadow-sky-500/5 backdrop-blur-md dark:border-white/10 dark:bg-white/[0.04]">
+          <div className="mx-auto flex justify-center">
+            <FluxSwapLogo />
+          </div>
+
+          <div className="mt-6 text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+            {isZh ? '资产页' : 'Portfolio'}
+          </div>
+          <h1 className="mt-3 text-3xl font-black tracking-tight text-gray-900 dark:text-white">
+            {isZh ? '连接钱包后查看资产' : 'Connect wallet to view portfolio'}
+          </h1>
+          <p className="mx-auto mt-3 max-w-[380px] text-sm leading-6 text-gray-500 dark:text-gray-400">
+            {isZh
+              ? '连接钱包后，这里会展示你的资产余额、限价单、流动性仓位、活动和代币。'
+              : 'After connecting your wallet, your balances, limit orders, liquidity positions, activity, and tokens will appear here.'}
+          </p>
+
+          <button
+            type="button"
+            onClick={() => openConnectModal?.()}
+            className="mt-7 inline-flex h-12 items-center justify-center rounded-full bg-gray-900 px-7 text-sm font-bold text-white transition-colors hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
+          >
+            {isZh ? '连接钱包' : 'Connect wallet'}
+          </button>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="px-4 py-10 lg:px-6">
@@ -1945,12 +2015,12 @@ export default function PortfolioPage() {
                 <div className="px-2 py-2">
                   <div className="flex items-center gap-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
                     <Layers3 size={16} />
-                    <span>{isZh ? 'LP 余额' : 'LP Balance'}</span>
+                    <span>{isZh ? '仓位数量' : 'Positions'}</span>
                     {showLpHint ? (
                       <span className="text-xs font-semibold text-gray-400 dark:text-gray-500">
                         {isZh
-                          ? `汇总 ${activePositionCount} 个池子`
-                          : `Aggregated across ${activePositionCount} pools`}
+                          ? `持有 ${activePositionCount} 个池子`
+                          : `${activePositionCount} active pools`}
                       </span>
                     ) : null}
                   </div>
@@ -1960,7 +2030,7 @@ export default function PortfolioPage() {
                       {lpDisplay}
                     </div>
                     <div className="pb-1 text-sm font-semibold text-gray-500 dark:text-gray-400">
-                      LP
+                      {isZh ? '个' : 'positions'}
                     </div>
                   </div>
                 </div>
@@ -2033,7 +2103,7 @@ export default function PortfolioPage() {
                         key={row.order.orderHash}
                         type="button"
                         onClick={() => {
-                          setExpandedLimitOrderHash(row.order.orderHash);
+                          setExpandedLimitOrderKey(buildLimitOrderKey(row.order));
                           setIsLimitOrdersModalOpen(true);
                         }}
                         className="grid w-full grid-cols-[minmax(0,1.15fr)_118px_92px] items-center gap-x-4 border-b border-black/5 px-3 py-4 text-left transition-colors last:border-b-0 hover:bg-sky-50/70 dark:border-white/10 dark:hover:bg-white/[0.08]"
@@ -2112,8 +2182,62 @@ export default function PortfolioPage() {
                 : 'Liquidity and position overview for the current wallet'
             }
             icon={WalletCards}
-            emptyContent={
-              <div className="flex flex-col items-center justify-center">
+            contentClassName="mt-6 flex h-[360px] min-h-0 overflow-hidden rounded-[1.5rem] border border-dashed border-black/10 bg-gray-50/80 dark:border-white/10 dark:bg-white/[0.03]"
+          >
+            {!isConnected || !address ? (
+              <div className="flex h-full w-full flex-1 flex-col items-center justify-center px-5 text-center">
+                <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                  {isZh ? '连接钱包后查看仓位' : 'Connect wallet to view positions'}
+                </div>
+                <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                  {isZh
+                    ? '这里会展示当前钱包持有的流动性仓位。'
+                    : 'Liquidity positions held by this wallet will appear here.'}
+                </div>
+              </div>
+            ) : positionRows.length > 0 ? (
+              <div className="flex h-full min-h-0 w-full flex-col">
+                <div className="flex items-center justify-between border-b border-black/5 px-5 py-4 dark:border-white/10">
+                  <div>
+                    <div className="text-sm font-black tracking-tight text-gray-900 dark:text-white">
+                      {isZh ? '当前仓位' : 'Current positions'}
+                    </div>
+                    <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      {isZh ? '展示钱包持有 LP 的流动性池' : 'Pools where this wallet holds LP tokens'}
+                    </div>
+                  </div>
+                  <span className="inline-flex min-w-8 items-center justify-center rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+                    {positionRows.length}
+                  </span>
+                </div>
+
+                <div className="flex min-h-0 flex-1 flex-col px-5 pb-5 pt-1">
+                  <div className="grid grid-cols-[minmax(0,1fr)_128px] items-center gap-x-4 border-b border-black/5 px-3 py-3 text-[13px] font-semibold text-gray-500 dark:border-white/10 dark:text-gray-400">
+                    <div className="min-w-0 whitespace-nowrap">{isZh ? '交易对' : 'Pair'}</div>
+                    <div className="whitespace-nowrap text-right">{isZh ? 'LP 余额' : 'LP Balance'}</div>
+                  </div>
+
+                  <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1 [scrollbar-gutter:stable]">
+                    {positionRows.map((row) => (
+                      <div
+                        key={row.pairId}
+                        className="grid w-full grid-cols-[minmax(0,1fr)_128px] items-center gap-x-4 border-b border-black/5 px-3 py-4 last:border-b-0 dark:border-white/10"
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate text-[15px] font-semibold tracking-tight text-gray-900 dark:text-white">
+                            {row.pairLabel}
+                          </div>
+                        </div>
+                        <div className="min-w-0 truncate text-right text-[14px] font-semibold tabular-nums text-gray-800 dark:text-gray-200">
+                          {row.lpBalanceLabel}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex h-full w-full flex-1 flex-col items-center justify-center px-5 text-center">
                 <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
                   {isZh ? '还没有仓位' : 'No positions yet'}
                 </div>
@@ -2130,8 +2254,8 @@ export default function PortfolioPage() {
                   <ArrowRight size={16} />
                 </Link>
               </div>
-            }
-          />
+            )}
+          </PortfolioSection>
           <PortfolioSection
             title={isZh ? '我的质押' : 'Your Staking'}
             description={
@@ -2597,8 +2721,8 @@ export default function PortfolioPage() {
                       {limitOrderRows.map((row) => {
                         const createdAtParts = splitDateTimeLabel(row.createdAtLabel);
                         const expiryParts = splitDateTimeLabel(row.expiryLabel);
-                        const isExpanded = expandedLimitOrderHash === row.order.orderHash;
                         const orderKey = buildLimitOrderKey(row.order);
+                        const isExpanded = expandedLimitOrderKey === orderKey;
                         const isProcessingCurrent = cancellingOrderKeySet.has(orderKey);
                         const isAnotherActionRunning = isCancellingLimitOrders && !isProcessingCurrent;
                         const actionMeta = getLimitOrderActionMeta(
@@ -2619,9 +2743,9 @@ export default function PortfolioPage() {
                               role="button"
                               tabIndex={0}
                               aria-expanded={isExpanded}
-                              onClick={() => toggleExpandedLimitOrder(row.order.orderHash)}
+                              onClick={() => toggleExpandedLimitOrder(row.order)}
                               onKeyDown={(event) =>
-                                toggleWithKeyboard(event, () => toggleExpandedLimitOrder(row.order.orderHash))
+                                toggleWithKeyboard(event, () => toggleExpandedLimitOrder(row.order))
                               }
                               className={`grid w-full cursor-pointer grid-cols-[44px_1.35fr_1.35fr_1.35fr_1.35fr_0.9fr_0.9fr_0.9fr_0.9fr] items-center gap-x-2 px-4 py-4 text-sm leading-5 text-gray-700 transition-colors dark:text-gray-300 ${
                                 isExpanded
@@ -2721,8 +2845,8 @@ export default function PortfolioPage() {
 
                 <div className="h-full space-y-3 overflow-y-auto p-4 xl:hidden">
                   {limitOrderRows.map((row) => {
-                    const isExpanded = expandedLimitOrderHash === row.order.orderHash;
                     const orderKey = buildLimitOrderKey(row.order);
+                    const isExpanded = expandedLimitOrderKey === orderKey;
                     const isProcessingCurrent = cancellingOrderKeySet.has(orderKey);
                     const isAnotherActionRunning = isCancellingLimitOrders && !isProcessingCurrent;
                     const actionMeta = getLimitOrderActionMeta(
@@ -2740,9 +2864,9 @@ export default function PortfolioPage() {
                         role="button"
                         tabIndex={0}
                         aria-expanded={isExpanded}
-                        onClick={() => toggleExpandedLimitOrder(row.order.orderHash)}
+                        onClick={() => toggleExpandedLimitOrder(row.order)}
                         onKeyDown={(event) =>
-                          toggleWithKeyboard(event, () => toggleExpandedLimitOrder(row.order.orderHash))
+                          toggleWithKeyboard(event, () => toggleExpandedLimitOrder(row.order))
                         }
                         className={`rounded-[1.35rem] border border-black/5 p-4 transition-colors dark:border-white/10 ${
                           isExpanded

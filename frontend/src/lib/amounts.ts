@@ -80,6 +80,31 @@ export function formatBigIntAmountDown(
   return formatDisplayAmountDown(formatUnits(value, decimals), fractionDigits)
 }
 
+export function getPairLpDisplayDecimals(
+  token0Decimals: number,
+  token1Decimals: number,
+): number {
+  const normalizeDecimals = (decimals: number) =>
+    Number.isFinite(decimals) && decimals >= 0 ? Math.floor(decimals) : 18
+
+  return Math.floor(
+    (normalizeDecimals(token0Decimals) + normalizeDecimals(token1Decimals)) / 2,
+  )
+}
+
+export function formatPairLpAmountDown(
+  value: bigint | undefined,
+  token0Decimals: number,
+  token1Decimals: number,
+  fractionDigits = 6,
+): string {
+  return formatBigIntAmountDown(
+    value,
+    getPairLpDisplayDecimals(token0Decimals, token1Decimals),
+    fractionDigits,
+  )
+}
+
 export function parseAmount(
   value: string,
   decimals = 18,
