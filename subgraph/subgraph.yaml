@@ -57,4 +57,6 @@ templates:
           handler: handleSwap
         - event: Sync(uint112,uint112)
           handler: handleSync
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleTransfer
       file: ./src/flux-swap-pair.ts

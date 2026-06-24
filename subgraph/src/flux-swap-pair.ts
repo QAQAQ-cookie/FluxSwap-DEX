@@ -1,11 +1,14 @@
-import { BigInt, Bytes } from "@graphprotocol/graph-ts";
-import { BurnEvent, MintEvent, Pair, SwapEvent } from "../generated/schema";
+import { Address, BigInt, Bytes } from "@graphprotocol/graph-ts";
+import { BurnEvent, MintEvent, Pair, SwapEvent, SyncEvent } from "../generated/schema";
 import {
   Burn,
   Mint,
   Swap,
   Sync,
+  Transfer,
 } from "../generated/templates/FluxSwapPair/FluxSwapPair";
+
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 function buildEventId(txHash: Bytes, logIndex: BigInt): Bytes {
   return txHash.concat(Bytes.fromByteArray(Bytes.fromBigInt(logIndex)));
@@ -91,7 +94,33 @@ export function handleSync(event: Sync): void {
     return;
   }
 
+  let syncEvent = new SyncEvent(buildEventId(event.transaction.hash, event.logIndex));
+  syncEvent.pair = pair.id;
+  syncEvent.reserve0 = event.params.reserve0;
+  syncEvent.reserve1 = event.params.reserve1;
+  syncEvent.timestamp = event.block.timestamp;
+  syncEvent.blockNumber = event.block.number;
+  syncEvent.txHash = event.transaction.hash;
+  syncEvent.logIndex = event.logIndex;
+  syncEvent.save();
+
   pair.reserve0 = event.params.reserve0;
   pair.reserve1 = event.params.reserve1;
+  pair.save();
+}
+
+export function handleTransfer(event: Transfer): void {
+  let pair = Pair.load(event.address);
+
+  if (pair == null) {
+    return;
+  }
+
+  if (event.params.from.toHexString() == ZERO_ADDRESS) {
+    pair.totalSupply = pair.totalSupply.plus(event.params.value);
+  } else if (event.params.to.toHexString() == ZERO_ADDRESS) {
+    pair.totalSupply = pair.totalSupply.minus(event.params.value);
+  }
+
   pair.save();
 }

@@ -30,6 +30,7 @@ type Pair @entity(immutable: false) {
   swaps: [SwapEvent!]! @derivedFrom(field: "pair")
   mints: [MintEvent!]! @derivedFrom(field: "pair")
   burns: [BurnEvent!]! @derivedFrom(field: "pair")
+  syncs: [SyncEvent!]! @derivedFrom(field: "pair")
 }
 
 type SwapEvent @entity(immutable: true) {
@@ -72,6 +73,19 @@ type BurnEvent @entity(immutable: true) {
   to: Bytes!
   amount0: BigInt!
   amount1: BigInt!
+
+  timestamp: BigInt!
+  blockNumber: BigInt!
+  txHash: Bytes!
+  logIndex: BigInt!
+}
+
+type SyncEvent @entity(immutable: true) {
+  id: Bytes!
+  pair: Pair!
+
+  reserve0: BigInt!
+  reserve1: BigInt!
 
   timestamp: BigInt!
   blockNumber: BigInt!
