@@ -3,7 +3,7 @@
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import type { EChartsOption } from 'echarts';
 import {
   ArrowDownUp,
@@ -126,6 +126,9 @@ const ANALYTICS_RANGE_CONFIG: Record<
 };
 
 const MAX_POOL_ANALYTICS_EVENTS = 500;
+const MAX_DEPTH_IMPACT = 0.9;
+const MIN_DEPTH_ZOOM = 1;
+const MAX_DEPTH_ZOOM = 4;
 
 function normalizeTokenSymbol(symbol: string, tokenAddress: string, wrappedNativeAddress?: string) {
   if (wrappedNativeAddress && tokenAddress.toLowerCase() === wrappedNativeAddress.toLowerCase()) {
@@ -748,6 +751,22 @@ function formatCompactMetric(value: number | null) {
   }).format(value);
 }
 
+function getDepthScaleCeiling(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+
+  const magnitude = 10 ** Math.floor(Math.log10(value));
+  const normalized = value / magnitude;
+  const step = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+
+  return step * magnitude;
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
 function formatChangePercent(changePct: number | null) {
   if (changePct === null || !Number.isFinite(changePct)) {
     return undefined;
@@ -792,20 +811,7 @@ function buildDepthSeries(
 
   const currentPrice = quoteSize / baseSize;
   const invariant = baseSize * quoteSize;
-  const impactSteps = [
-    0.4,
-    0.34,
-    0.28,
-    0.23,
-    0.18,
-    0.14,
-    0.1,
-    0.07,
-    0.045,
-    0.025,
-    0.0125,
-    0,
-  ];
+  const impactSteps = Array.from({ length: 181 }, (_, index) => (180 - index) * 0.005);
 
   const bids = impactSteps.map((impact) => {
     const price = currentPrice * (1 - impact);
@@ -861,6 +867,7 @@ export default function PoolDetailPage() {
   const [hoveredDepthImpact, setHoveredDepthImpact] = useState<number | null>(null);
   const [depthZoom, setDepthZoom] = useState(1);
   const [isPairReversed, setIsPairReversed] = useState(false);
+  const chartContainerRef = useRef<HTMLDivElement | null>(null);
 
   const { data: treasuryAddress } = useReadFluxSwapFactoryTreasury({
     address: factoryAddress ?? zeroAddress,
@@ -958,11 +965,67 @@ export default function PoolDetailPage() {
       };
     }
 
+    const maxVisibleImpact = (MAX_DEPTH_IMPACT * 100) / depthZoom;
+    if (hoveredDepthImpact > maxVisibleImpact) {
+      return {
+        bid: null,
+        ask: null,
+      };
+    }
+
     return {
       bid: findDepthPointByImpact(depthSeries.bids, hoveredDepthImpact),
       ask: findDepthPointByImpact(depthSeries.asks, hoveredDepthImpact),
     };
-  }, [depthSeries.asks, depthSeries.bids, hoveredDepthImpact]);
+  }, [depthSeries.asks, depthSeries.bids, depthZoom, hoveredDepthImpact]);
+  const depthChartOverlay = useMemo(() => {
+    if (analyticsTab !== 'depth' || depthSeries.currentPrice === null) {
+      return null;
+    }
+
+    const depthRangeRatio = MAX_DEPTH_IMPACT / depthZoom;
+    const depthMinPrice = depthSeries.currentPrice * (1 - depthRangeRatio);
+    const depthMaxPrice = depthSeries.currentPrice * (1 + depthRangeRatio);
+    const priceRange = depthMaxPrice - depthMinPrice;
+
+    if (!Number.isFinite(priceRange) || priceRange <= 0) {
+      return null;
+    }
+
+    const depthScaleMax = [...depthSeries.bids, ...depthSeries.asks].reduce(
+      (maxDepth, point) => Math.max(maxDepth, point.quoteDepth),
+      0,
+    );
+    const depthYAxisMax = getDepthScaleCeiling(depthScaleMax) ?? depthScaleMax;
+
+    if (!Number.isFinite(depthYAxisMax) || depthYAxisMax <= 0) {
+      return null;
+    }
+
+    const getPointPosition = (point: DepthPoint | null) => {
+      if (!point) {
+        return null;
+      }
+
+      return {
+        leftPct: clampNumber(((point.price - depthMinPrice) / priceRange) * 100, 0, 100),
+        topPct: clampNumber(100 - (point.quoteDepth / depthYAxisMax) * 100, 0, 100),
+      };
+    };
+
+    const currentPriceLeftPct = ((depthSeries.currentPrice - depthMinPrice) / priceRange) * 100;
+    const hoverLeftPct =
+      hoveredDepthImpact === null
+        ? null
+        : ((depthSeries.currentPrice * (1 + hoveredDepthImpact / 100) - depthMinPrice) / priceRange) * 100;
+
+    return {
+      currentPriceLeftPct: clampNumber(currentPriceLeftPct, 0, 100),
+      hoverLeftPct: hoverLeftPct === null ? null : clampNumber(hoverLeftPct, 0, 100),
+      bid: getPointPosition(hoveredDepthPoints.bid),
+      ask: getPointPosition(hoveredDepthPoints.ask),
+    };
+  }, [analyticsTab, depthSeries, depthZoom, hoveredDepthImpact, hoveredDepthPoints.ask, hoveredDepthPoints.bid]);
   useEffect(() => {
     setHoveredVolumePoint(null);
     setHoveredDepthImpact(null);
@@ -1017,7 +1080,6 @@ export default function PoolDetailPage() {
         depthSeries.currentPrice === null
           ? '--'
           : `1 ${baseTokenSymbol} = ${formatPriceMetric(depthSeries.currentPrice)} ${quoteTokenSymbol}`,
-      footnote: isZh ? '基于当前池子储备模拟的 AMM 可成交深度' : 'AMM depth simulated from current pool reserves',
     };
   }, [
     analyticsTab,
@@ -1048,60 +1110,83 @@ export default function PoolDetailPage() {
   }, [activities, lpFeeRate, poolDetail, quoteTokenIndex]);
   const chartEvents = useMemo(
     () => {
-      const updateHoveredDepth = (hoveredPrice: number | undefined) => {
-        if (
-          analyticsTab !== 'depth' ||
-          depthSeries.currentPrice === null ||
-          !hoveredPrice ||
-          !Number.isFinite(hoveredPrice)
-        ) {
-          return;
-        }
-
-        setHoveredDepthImpact(Math.abs((hoveredPrice - depthSeries.currentPrice) / depthSeries.currentPrice) * 100);
-      };
-
       return {
-      mouseover: (event: { dataIndex?: number; value?: unknown }) => {
-        if (analyticsTab === 'volume' && typeof event.dataIndex === 'number') {
-          setHoveredVolumePoint(analyticsPoints[event.dataIndex] ?? null);
-          return;
-        }
-
-        const value = event.value;
-        const hoveredPrice =
-          Array.isArray(value) && typeof value[0] === 'number'
-            ? value[0]
-            : undefined;
-        updateHoveredDepth(hoveredPrice);
-      },
-      updateAxisPointer: (event: { axesInfo?: Array<{ value?: number | string }> }) => {
-        const axisValue = event.axesInfo?.[0]?.value;
-        const hoveredPrice =
-          typeof axisValue === 'number'
-            ? axisValue
-            : typeof axisValue === 'string'
-              ? Number(axisValue)
-              : undefined;
-        updateHoveredDepth(hoveredPrice);
-      },
-      globalout: () => {
-        setHoveredVolumePoint(null);
-        setHoveredDepthImpact(null);
-      },
-    };
+        mouseover: (event: { dataIndex?: number; value?: unknown }) => {
+          if (analyticsTab === 'volume' && typeof event.dataIndex === 'number') {
+            setHoveredVolumePoint(analyticsPoints[event.dataIndex] ?? null);
+          }
+        },
+        globalout: () => {
+          setHoveredVolumePoint(null);
+        },
+      };
     },
-    [analyticsPoints, analyticsTab, depthSeries.currentPrice],
+    [analyticsPoints, analyticsTab],
   );
+  const chartEventHandlers = analyticsTab === 'depth' ? undefined : chartEvents;
+  const handleDepthMouseMove = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (
+      analyticsTab !== 'depth' ||
+      depthSeries.currentPrice === null ||
+      analyticsChartEmpty
+    ) {
+      return;
+    }
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const plotLeft = 22;
+    const plotRight = 24;
+    const plotWidth = rect.width - plotLeft - plotRight;
+
+    if (plotWidth <= 0) {
+      return;
+    }
+
+    const x = clampNumber(event.clientX - rect.left - plotLeft, 0, plotWidth);
+    const depthRangeRatio = MAX_DEPTH_IMPACT / depthZoom;
+    const depthMinPrice = depthSeries.currentPrice * (1 - depthRangeRatio);
+    const depthMaxPrice = depthSeries.currentPrice * (1 + depthRangeRatio);
+    const hoveredPrice = depthMinPrice + (x / plotWidth) * (depthMaxPrice - depthMinPrice);
+
+    if (!Number.isFinite(hoveredPrice)) {
+      return;
+    }
+
+    setHoveredDepthImpact(Math.abs((hoveredPrice - depthSeries.currentPrice) / depthSeries.currentPrice) * 100);
+  };
+  const handleDepthMouseLeave = () => {
+    setHoveredDepthImpact(null);
+  };
   const zoomOutDepth = () => {
-    setDepthZoom((current) => Math.max(0.5, current / 1.25));
+    setDepthZoom((current) => Math.max(MIN_DEPTH_ZOOM, current / 1.25));
   };
   const resetDepthZoom = () => {
     setDepthZoom(1);
   };
   const zoomInDepth = () => {
-    setDepthZoom((current) => Math.min(4, current * 1.25));
+    setDepthZoom((current) => Math.min(MAX_DEPTH_ZOOM, current * 1.25));
   };
+  useEffect(() => {
+    const container = chartContainerRef.current;
+    if (!container || analyticsTab !== 'depth') {
+      return;
+    }
+
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      setDepthZoom((current) =>
+        event.deltaY < 0
+          ? Math.min(MAX_DEPTH_ZOOM, current * 1.12)
+          : Math.max(MIN_DEPTH_ZOOM, current / 1.12),
+      );
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+
+    return () => {
+      container.removeEventListener('wheel', handleWheel);
+    };
+  }, [analyticsTab]);
 
   const summaryCards = useMemo(() => {
     if (!poolDetail) {
@@ -1184,6 +1269,11 @@ export default function PoolDetailPage() {
   const addLiquidityHref = poolDetail
     ? `/portfolio/liquidity?tokenA=${poolDetail.token0.id}&tokenB=${poolDetail.token1.id}`
     : '/portfolio/liquidity';
+  const swapHref = poolDetail
+    ? `/swap?mode=swap&payToken=${encodeURIComponent(displayTokenASymbol)}&receiveToken=${encodeURIComponent(
+        displayTokenBSymbol,
+      )}&inputMode=pay`
+    : '/swap';
   const breadcrumbLabel = poolDetail
     ? poolLabel
     : isZh
@@ -1234,97 +1324,80 @@ export default function PoolDetailPage() {
 
     if (analyticsTab === 'depth') {
       const currentDepthPrice = depthSeries.currentPrice;
-      const depthRangeRatio = 0.4 / depthZoom;
-      const formatDepthLabel = (point: DepthPoint, title: string) => [
-        `{title|${title}} {impact|${point.priceImpact > 0 ? '+' : ''}${point.priceImpact.toFixed(1)}%}`,
-        `{label|${isZh ? '价格' : 'Price'}} {value|${formatPriceMetric(point.price)} ${quoteTokenSymbol}}`,
-        `{label|${isZh ? '数量' : 'Amount'}} {value|${formatDepthTokenAmount(point.depth)} ${baseTokenSymbol}}`,
-        `{label|${isZh ? '金额' : 'Value'}} {value|${formatDepthTokenAmount(point.quoteDepth)} ${quoteTokenSymbol}}`,
-      ].join('\n');
-      const depthLabelRich = {
-        title: {
-          color: '#64748b',
-          fontSize: 13,
-          fontWeight: 700,
-          width: 72,
-          lineHeight: 24,
-        },
-        impact: {
-          color: '#0f172a',
-          fontSize: 13,
-          fontWeight: 800,
-          align: 'right' as const,
-          width: 68,
-          lineHeight: 24,
-        },
-        label: {
-          color: '#64748b',
-          fontSize: 12,
-          width: 42,
-          lineHeight: 24,
-        },
-        value: {
-          color: '#0f172a',
-          fontSize: 12,
-          fontWeight: 800,
-          align: 'right' as const,
-          width: 102,
-          lineHeight: 24,
-        },
-      };
+      const depthRangeRatio = MAX_DEPTH_IMPACT / depthZoom;
+      const depthMinPrice = currentDepthPrice === null ? undefined : currentDepthPrice * (1 - depthRangeRatio);
+      const depthMaxPrice = currentDepthPrice === null ? undefined : currentDepthPrice * (1 + depthRangeRatio);
+      const visibleBids = depthSeries.bids.filter(
+        (point) =>
+          depthMinPrice === undefined ||
+          depthMaxPrice === undefined ||
+          (point.price >= depthMinPrice && point.price <= depthMaxPrice),
+      );
+      const visibleAsks = depthSeries.asks.filter(
+        (point) =>
+          depthMinPrice === undefined ||
+          depthMaxPrice === undefined ||
+          (point.price >= depthMinPrice && point.price <= depthMaxPrice),
+      );
+      const depthScaleMax = [...depthSeries.bids, ...depthSeries.asks].reduce(
+        (maxDepth, point) => Math.max(maxDepth, point.quoteDepth),
+        0,
+      );
+      const depthYAxisMax = getDepthScaleCeiling(depthScaleMax);
 
       return {
         animation: false,
         grid: {
           ...baseGrid,
-          left: 24,
-          right: 86,
-          top: 28,
+          left: 22,
+          right: 24,
+          top: 18,
+          bottom: 40,
         },
         backgroundColor: 'transparent',
         tooltip: {
-          trigger: 'axis',
-          showContent: false,
-          axisPointer: {
-            type: 'line',
-            lineStyle: {
-              color: 'rgba(100,116,139,0.45)',
-              width: 1,
-              type: 'dashed',
-            },
-          },
+          show: false,
+          trigger: 'none',
         },
         xAxis: {
           type: 'value',
-          min: currentDepthPrice === null ? undefined : currentDepthPrice * (1 - depthRangeRatio),
-          max: currentDepthPrice === null ? undefined : currentDepthPrice * (1 + depthRangeRatio),
+          min: depthMinPrice,
+          max: depthMaxPrice,
+          splitNumber: 7,
           axisLine: { show: false },
           axisTick: { show: false },
           splitLine: {
+            show: true,
             lineStyle: {
-              color: 'rgba(148,163,184,0.14)',
-              type: 'dotted',
+              color: 'rgba(148,163,184,0.18)',
+              type: 'dashed',
             },
           },
           axisLabel: {
             color: '#6b7280',
+            fontSize: 13,
+            fontWeight: 700,
+            hideOverlap: true,
+            margin: 16,
             formatter: (value: number) => formatPriceMetric(value),
           },
         },
         yAxis: {
           type: 'value',
+          min: 0,
+          max: depthYAxisMax,
           position: 'right',
           axisLine: { show: false },
           axisTick: { show: false },
           splitLine: {
+            show: true,
             lineStyle: {
-              color: 'rgba(148,163,184,0.16)',
+              color: 'rgba(148,163,184,0.14)',
               type: 'dashed',
             },
           },
           axisLabel: {
-            color: '#6b7280',
-            formatter: (value: number) => formatCompactMetric(value),
+            show: false,
           },
         },
         series: [
@@ -1333,137 +1406,58 @@ export default function PoolDetailPage() {
             type: 'line',
             step: 'end',
             showSymbol: false,
+            silent: true,
             connectNulls: false,
             lineStyle: {
-              width: 2.5,
+              width: 3,
               color: '#2f8f2f',
             },
             areaStyle: {
-              color: 'rgba(47, 143, 47, 0.16)',
+              color: {
+                type: 'linear',
+                x: 0,
+                y: 0,
+                x2: 0,
+                y2: 1,
+                colorStops: [
+                  { offset: 0, color: 'rgba(47, 143, 47, 0.22)' },
+                  { offset: 1, color: 'rgba(47, 143, 47, 0.04)' },
+                ],
+              },
             },
             emphasis: {
               disabled: true,
             },
-            data: depthSeries.bids.map((point) => [point.price, point.depth]),
-            markPoint:
-              hoveredDepthPoints.bid === null
-                ? undefined
-                : {
-                    symbol: 'circle',
-                    symbolSize: 8,
-                    itemStyle: {
-                      color: '#ffffff',
-                      borderColor: '#2f8f2f',
-                      borderWidth: 2,
-                    },
-                    label: {
-                      show: true,
-                      formatter: formatDepthLabel(
-                        hoveredDepthPoints.bid,
-                        isZh ? '卖出区间' : 'Sell range',
-                      ),
-                      position: 'insideTopLeft',
-                      distance: 14,
-                      align: 'left',
-                      backgroundColor: 'rgba(255,255,255,0.96)',
-                      borderColor: 'rgba(15,23,42,0.08)',
-                      borderWidth: 1,
-                      borderRadius: 16,
-                      padding: [12, 13],
-                      shadowColor: 'rgba(15,23,42,0.12)',
-                      shadowBlur: 24,
-                      shadowOffsetY: 10,
-                      rich: {
-                        ...depthLabelRich,
-                        impact: {
-                          ...depthLabelRich.impact,
-                          color: '#2f8f2f',
-                        },
-                      },
-                    },
-                    data: [
-                      {
-                        name: 'bid-depth-hover',
-                        coord: [hoveredDepthPoints.bid.price, hoveredDepthPoints.bid.depth],
-                      },
-                    ],
-                  },
+            data: visibleBids.map((point) => [point.price, point.quoteDepth]),
           },
           {
             name: isZh ? '买入深度' : 'Buy depth',
             type: 'line',
             step: 'start',
             showSymbol: false,
+            silent: true,
             connectNulls: false,
             lineStyle: {
-              width: 2.5,
+              width: 3,
               color: '#dc2626',
             },
             areaStyle: {
-              color: 'rgba(220, 38, 38, 0.16)',
+              color: {
+                type: 'linear',
+                x: 0,
+                y: 0,
+                x2: 0,
+                y2: 1,
+                colorStops: [
+                  { offset: 0, color: 'rgba(220, 38, 38, 0.24)' },
+                  { offset: 1, color: 'rgba(220, 38, 38, 0.05)' },
+                ],
+              },
             },
             emphasis: {
               disabled: true,
             },
-            data: depthSeries.asks.map((point) => [point.price, point.depth]),
-            markPoint:
-              hoveredDepthPoints.ask === null
-                ? undefined
-                : {
-                    symbol: 'circle',
-                    symbolSize: 8,
-                    itemStyle: {
-                      color: '#ffffff',
-                      borderColor: '#dc2626',
-                      borderWidth: 2,
-                    },
-                    label: {
-                      show: true,
-                      formatter: formatDepthLabel(
-                        hoveredDepthPoints.ask,
-                        isZh ? '买入区间' : 'Buy range',
-                      ),
-                      position: 'insideTopRight',
-                      distance: 14,
-                      align: 'left',
-                      backgroundColor: 'rgba(255,255,255,0.96)',
-                      borderColor: 'rgba(15,23,42,0.08)',
-                      borderWidth: 1,
-                      borderRadius: 16,
-                      padding: [12, 13],
-                      shadowColor: 'rgba(15,23,42,0.12)',
-                      shadowBlur: 24,
-                      shadowOffsetY: 10,
-                      rich: {
-                        ...depthLabelRich,
-                        impact: {
-                          ...depthLabelRich.impact,
-                          color: '#dc2626',
-                        },
-                      },
-                    },
-                    data: [
-                      {
-                        name: 'ask-depth-hover',
-                        coord: [hoveredDepthPoints.ask.price, hoveredDepthPoints.ask.depth],
-                      },
-                    ],
-                  },
-            markLine:
-              currentDepthPrice === null
-                ? undefined
-                : {
-                    symbol: 'none',
-                    silent: true,
-                    lineStyle: {
-                      color: 'rgba(100,116,139,0.55)',
-                      width: 1,
-                    },
-                    label: {
-                      show: false,
-                    },
-                    data: [{ xAxis: currentDepthPrice }],
-                  },
+            data: visibleAsks.map((point) => [point.price, point.quoteDepth]),
           },
         ],
       } as EChartsOption;
@@ -1622,11 +1616,8 @@ export default function PoolDetailPage() {
   }, [
     analyticsPoints,
     analyticsTab,
-    baseTokenSymbol,
     depthZoom,
     depthSeries,
-    hoveredDepthPoints.ask,
-    hoveredDepthPoints.bid,
     isZh,
     quoteTokenSymbol,
   ]);
@@ -1646,6 +1637,15 @@ export default function PoolDetailPage() {
           <div className="flex flex-wrap items-center gap-3">
             {supportedChain ? (
               <Link
+                href={swapHref}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-black/5 bg-white px-5 text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-100 dark:border-white/10 dark:bg-white/[0.06] dark:text-gray-100 dark:hover:bg-white/[0.1]"
+              >
+                <Repeat2 size={16} />
+                <span>{isZh ? '交易' : 'Swap'}</span>
+              </Link>
+            ) : null}
+            {supportedChain ? (
+              <Link
                 href={addLiquidityHref}
                 className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-gray-900 px-5 text-sm font-bold text-white transition-colors hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
               >
@@ -1653,12 +1653,6 @@ export default function PoolDetailPage() {
                 <ChevronRight size={16} />
               </Link>
             ) : null}
-            <Link
-              href="/pool"
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-black/5 bg-white px-5 text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-100 dark:border-white/10 dark:bg-white/[0.06] dark:text-gray-100 dark:hover:bg-white/[0.1]"
-            >
-              <span>{isZh ? '返回列表' : 'Back to pools'}</span>
-            </Link>
           </div>
         </div>
 
@@ -1724,17 +1718,18 @@ export default function PoolDetailPage() {
 
                     <div className="hidden flex-wrap items-center gap-3">
                       <Link
+                        href={swapHref}
+                        className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-black/5 bg-white px-5 text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-100 dark:border-white/10 dark:bg-white/[0.06] dark:text-gray-100 dark:hover:bg-white/[0.1]"
+                      >
+                        <Repeat2 size={16} />
+                        <span>{isZh ? '交易' : 'Swap'}</span>
+                      </Link>
+                      <Link
                         href={addLiquidityHref}
                         className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-gray-900 px-5 text-sm font-bold text-white transition-colors hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
                       >
                         <span>{isZh ? '添加流动性' : 'Add liquidity'}</span>
                         <ChevronRight size={16} />
-                      </Link>
-                      <Link
-                        href="/pool"
-                        className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-black/5 bg-white px-5 text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-100 dark:border-white/10 dark:bg-white/[0.06] dark:text-gray-100 dark:hover:bg-white/[0.1]"
-                      >
-                        <span>{isZh ? '返回列表' : 'Back to pools'}</span>
                       </Link>
                     </div>
                   </div>
@@ -1844,7 +1839,12 @@ export default function PoolDetailPage() {
                         </div>
                       </div>
 
-                      <div className="h-[420px] rounded-[1.5rem] border border-black/5 bg-white/70 px-2 py-4 dark:border-white/10 dark:bg-[#0b1220]">
+                      <div
+                        ref={chartContainerRef}
+                        onMouseMove={handleDepthMouseMove}
+                        onMouseLeave={handleDepthMouseLeave}
+                        className="relative h-[420px] overflow-hidden rounded-[1.5rem] border border-black/5 bg-white px-2 py-4 dark:border-white/10 dark:bg-white"
+                      >
                         {analyticsChartEmpty ? (
                           <div className="flex h-full items-center justify-center rounded-[1.2rem] border border-dashed border-black/10 text-sm text-gray-500 dark:border-white/10 dark:text-gray-400">
                             {isZh ? '当前范围内暂无可展示数据' : 'No chart data in this range yet'}
@@ -1852,12 +1852,82 @@ export default function PoolDetailPage() {
                         ) : (
                           <ReactECharts
                             option={analyticsChartOption}
-                            onEvents={chartEvents}
+                            onEvents={chartEventHandlers}
                             notMerge
                             lazyUpdate
                             style={{ height: '100%', width: '100%' }}
                           />
                         )}
+                        {analyticsTab === 'depth' && !analyticsChartEmpty && depthChartOverlay ? (
+                          <div className="pointer-events-none absolute inset-x-2 inset-y-4">
+                            <div
+                              className="absolute bottom-[40px] top-[18px] w-px bg-slate-400/70"
+                              style={{ left: `${depthChartOverlay.currentPriceLeftPct}%` }}
+                            />
+                            {depthChartOverlay.hoverLeftPct !== null ? (
+                              <div
+                                className="absolute bottom-[40px] top-[18px] w-px border-l border-dashed border-slate-400/55"
+                                style={{ left: `${depthChartOverlay.hoverLeftPct}%` }}
+                              />
+                            ) : null}
+                            {hoveredDepthPoints.bid && depthChartOverlay.bid ? (
+                              <div
+                                className="absolute w-[194px] -translate-x-full -translate-y-1/2 rounded-xl border border-emerald-200/70 bg-white/95 px-3 py-2 text-xs shadow-[0_12px_28px_rgba(15,23,42,0.12)]"
+                                style={{
+                                  left: `${clampNumber(depthChartOverlay.bid.leftPct - 1, 24, 96)}%`,
+                                  top: `${clampNumber(depthChartOverlay.bid.topPct, 16, 86)}%`,
+                                }}
+                              >
+                                <div className="flex items-center justify-between gap-3 font-bold">
+                                  <span className="text-slate-500">{isZh ? '左侧深度' : 'Left depth'}</span>
+                                  <span className="text-[#2f8f2f]">{hoveredDepthPoints.bid.priceImpact.toFixed(1)}%</span>
+                                </div>
+                                <div className="mt-1.5 grid grid-cols-[36px_1fr] gap-x-2 gap-y-1">
+                                  <span className="text-slate-500">{isZh ? '价' : 'Px'}</span>
+                                  <span className="text-right font-bold text-slate-900 dark:text-white">
+                                    {formatPriceMetric(hoveredDepthPoints.bid.price)} {quoteTokenSymbol}
+                                  </span>
+                                  <span className="text-slate-500">{isZh ? '量' : 'Amt'}</span>
+                                  <span className="text-right font-bold text-slate-900 dark:text-white">
+                                    {formatDepthTokenAmount(hoveredDepthPoints.bid.depth)} {baseTokenSymbol}
+                                  </span>
+                                  <span className="text-slate-500">{isZh ? '值' : 'Val'}</span>
+                                  <span className="text-right font-bold text-slate-900 dark:text-white">
+                                    {formatDepthTokenAmount(hoveredDepthPoints.bid.quoteDepth)} {quoteTokenSymbol}
+                                  </span>
+                                </div>
+                              </div>
+                            ) : null}
+                            {hoveredDepthPoints.ask && depthChartOverlay.ask ? (
+                              <div
+                                className="absolute w-[194px] translate-x-[1%] -translate-y-1/2 rounded-xl border border-rose-200/70 bg-white/95 px-3 py-2 text-xs shadow-[0_12px_28px_rgba(15,23,42,0.12)]"
+                                style={{
+                                  left: `${clampNumber(depthChartOverlay.ask.leftPct + 1, 4, 76)}%`,
+                                  top: `${clampNumber(depthChartOverlay.ask.topPct, 16, 86)}%`,
+                                }}
+                              >
+                                <div className="flex items-center justify-between gap-3 font-bold">
+                                  <span className="text-slate-500">{isZh ? '右侧深度' : 'Right depth'}</span>
+                                  <span className="text-[#dc2626]">+{hoveredDepthPoints.ask.priceImpact.toFixed(1)}%</span>
+                                </div>
+                                <div className="mt-1.5 grid grid-cols-[36px_1fr] gap-x-2 gap-y-1">
+                                  <span className="text-slate-500">{isZh ? '价' : 'Px'}</span>
+                                  <span className="text-right font-bold text-slate-900 dark:text-white">
+                                    {formatPriceMetric(hoveredDepthPoints.ask.price)} {quoteTokenSymbol}
+                                  </span>
+                                  <span className="text-slate-500">{isZh ? '量' : 'Amt'}</span>
+                                  <span className="text-right font-bold text-slate-900 dark:text-white">
+                                    {formatDepthTokenAmount(hoveredDepthPoints.ask.depth)} {baseTokenSymbol}
+                                  </span>
+                                  <span className="text-slate-500">{isZh ? '值' : 'Val'}</span>
+                                  <span className="text-right font-bold text-slate-900 dark:text-white">
+                                    {formatDepthTokenAmount(hoveredDepthPoints.ask.quoteDepth)} {quoteTokenSymbol}
+                                  </span>
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </div>
                       {analyticsTab === 'depth' && !analyticsChartEmpty ? (
                         <div className="-mt-2 flex justify-end pr-2">

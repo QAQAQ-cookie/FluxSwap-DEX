@@ -97,6 +97,7 @@ export type PoolViewModel = {
   };
   reserve0: bigint;
   reserve1: bigint;
+  totalSupply: bigint;
   recentSwaps: PoolRecentSwapViewModel[];
 };
 
@@ -186,6 +187,7 @@ const POOLS_LIST_QUERY = `
       id
       reserve0
       reserve1
+      totalSupply
       token0 {
         id
         symbol
@@ -414,6 +416,7 @@ function mapSubgraphPair(pair: SubgraphPair): PoolViewModel {
     },
     reserve0: BigInt(pair.reserve0),
     reserve1: BigInt(pair.reserve1),
+    totalSupply: BigInt(pair.totalSupply ?? '0'),
     recentSwaps: (pair.swaps ?? []).map((swap) => ({
       amount0In: BigInt(swap.amount0In),
       amount1In: BigInt(swap.amount1In),

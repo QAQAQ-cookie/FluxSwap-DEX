@@ -2,7 +2,7 @@
 
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   ArrowDownUp,
@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { Address } from 'viem';
+import { maxUint256 } from 'viem';
 import { useAccount, useBalance, useChainId, usePublicClient, useSignTypedData, useWriteContract } from 'wagmi';
 
 import { getContractAddress, getLocalGasOverride, isFluxSupportedChain } from '@/config/contracts';
@@ -32,7 +33,7 @@ import {
   formatDisplayAmount,
   formatPairLpAmountDown,
 } from '@/lib/amounts';
-import { fluxSignedOrderSettlementAbi, fluxSwapPairAbi } from '@/lib/contracts';
+import { fluxSignedOrderSettlementAbi, fluxSwapPairAbi, fluxSwapRouterAbi } from '@/lib/contracts';
 import { fluxSwapErc20Abi } from '@/lib/contracts/generated/FluxSwapERC20';
 import { formatErrorMessage } from '@/lib/errors';
 import { buildInvalidateNoncesTypedData } from '@/lib/limitOrders';
@@ -178,7 +179,24 @@ type PositionDisplayRow = {
   pairId: string;
   pairLabel: string;
   lpBalanceLabel: string;
+  poolShareLabel: string;
+  withdrawToken0Label: string;
+  withdrawToken1Label: string;
+  reserveToken0Label: string;
+  reserveToken1Label: string;
+  totalLpLabel: string;
+  token0Symbol: string;
+  token1Symbol: string;
+  token0Address: Address;
+  token1Address: Address;
+  token0Decimals: number;
+  token1Decimals: number;
+  addLiquidityHref: string;
+  poolHref: string;
   rawLpBalance: bigint;
+  totalSupply: bigint;
+  reserve0: bigint;
+  reserve1: bigint;
 };
 
 type LimitOrderTokenMeta = {
@@ -254,6 +272,7 @@ type FetchLimitOrdersParams = {
 };
 
 type TokenSortDirection = 'desc' | 'asc';
+type RemoveLiquidityAction = 'approve' | 'remove' | null;
 
 type LimitOrderResultModalState =
   | {
@@ -272,6 +291,10 @@ const LIMIT_ORDER_REFRESH_INTERVAL_MS = 8000;
 const LIMIT_ORDER_CANCEL_DEADLINE_SECONDS = BigInt(30 * 60);
 const LIMIT_ORDER_CANCEL_REGISTER_RETRIES = 6;
 const LIMIT_ORDER_CANCEL_REGISTER_RETRY_MS = 1500;
+const TOKEN_BALANCE_REFRESH_INTERVAL_MS = 8000;
+const REMOVE_LIQUIDITY_DEADLINE_SECONDS = BigInt(30 * 60);
+const DEFAULT_REMOVE_SLIPPAGE_BPS = BigInt(50);
+const PERCENT_BPS_BASE = BigInt(10_000);
 
 function sleep(ms: number) {
   return new Promise((resolve) => {
@@ -610,6 +633,58 @@ function splitDateTimeLabel(label: string) {
   return { date: normalized, time: '' };
 }
 
+function calculateProportionalAmount(amount: bigint, balance: bigint, totalSupply: bigint) {
+  if (amount <= ZERO_BIGINT || balance <= ZERO_BIGINT || totalSupply <= ZERO_BIGINT) {
+    return ZERO_BIGINT;
+  }
+
+  return (amount * balance) / totalSupply;
+}
+
+function formatPoolShare(balance: bigint, totalSupply: bigint) {
+  if (balance <= ZERO_BIGINT || totalSupply <= ZERO_BIGINT) {
+    return '0%';
+  }
+
+  const basisPoints = (balance * BigInt(1_000_000)) / totalSupply;
+  const percent = Number(basisPoints) / 10_000;
+
+  if (!Number.isFinite(percent) || percent <= 0) {
+    return '<0.0001%';
+  }
+
+  return `${percent.toLocaleString('en-US', {
+    minimumFractionDigits: percent >= 1 ? 2 : 4,
+    maximumFractionDigits: percent >= 1 ? 2 : 4,
+  })}%`;
+}
+
+function parsePercentToBasisPoints(value: string) {
+  const trimmed = value.trim();
+  if (!/^\d*(?:\.\d{0,2})?$/.test(trimmed) || trimmed === '' || trimmed === '.') {
+    return undefined;
+  }
+
+  const [integerPart = '0', fractionPart = ''] = trimmed.split('.');
+  const integer = BigInt(integerPart === '' ? '0' : integerPart);
+  const fraction = BigInt(fractionPart.padEnd(2, '0').slice(0, 2));
+  const basisPoints = integer * BigInt(100) + fraction;
+
+  if (basisPoints <= ZERO_BIGINT || basisPoints > PERCENT_BPS_BASE) {
+    return undefined;
+  }
+
+  return basisPoints;
+}
+
+function applySlippage(amount: bigint, slippageBps = DEFAULT_REMOVE_SLIPPAGE_BPS) {
+  if (amount <= ZERO_BIGINT) {
+    return ZERO_BIGINT;
+  }
+
+  return (amount * (PERCENT_BPS_BASE - slippageBps)) / PERCENT_BPS_BASE;
+}
+
 function getLimitOrderStatusLabel(status: string, isZh: boolean) {
   switch (status.trim().toLowerCase()) {
     case 'open':
@@ -901,6 +976,7 @@ export default function PortfolioPage() {
   const supportedChain = isFluxSupportedChain(chainId);
   const fluxTokenAddress = getContractAddress('FluxToken', chainId);
   const wrappedNativeAddress = getContractAddress('MockWETH', chainId);
+  const routerAddress = getContractAddress('FluxSwapRouter', chainId);
   const limitSettlementAddress = getContractAddress('FluxSignedOrderSettlement', chainId);
   const trackedTokens = useMemo(() => getSwapTokenOptions(chainId), [chainId]);
   const [pairs, setPairs] = useState<PoolViewModel[]>([]);
@@ -921,8 +997,15 @@ export default function PortfolioPage() {
   const [limitOrderResultModal, setLimitOrderResultModal] = useState<LimitOrderResultModalState>(null);
   const [selectedLimitOrderKeys, setSelectedLimitOrderKeys] = useState<string[]>([]);
   const [cancellingOrderKeys, setCancellingOrderKeys] = useState<string[]>([]);
+  const [isPositionsModalOpen, setIsPositionsModalOpen] = useState(false);
+  const [removePosition, setRemovePosition] = useState<PositionDisplayRow | null>(null);
+  const [removePercentInput, setRemovePercentInput] = useState('50');
+  const [removeLiquidityAction, setRemoveLiquidityAction] = useState<RemoveLiquidityAction>(null);
+  const [removeLiquidityResultModal, setRemoveLiquidityResultModal] = useState<LimitOrderResultModalState>(null);
+  const [removeLpAllowance, setRemoveLpAllowance] = useState<bigint | null>(null);
+  const [removeLpAllowanceLoading, setRemoveLpAllowanceLoading] = useState(false);
 
-  const { data: nativeBalance } = useBalance({
+  const { data: nativeBalance, refetch: refetchNativeBalance } = useBalance({
     address,
     chainId,
     query: {
@@ -931,7 +1014,7 @@ export default function PortfolioPage() {
     },
   });
 
-  const { data: fluxBalance } = useBalance({
+  const { data: fluxBalance, refetch: refetchFluxBalance } = useBalance({
     address,
     chainId,
     token: fluxTokenAddress,
@@ -940,6 +1023,58 @@ export default function PortfolioPage() {
       refetchInterval: 8000,
     },
   });
+
+  const refreshTokenBalances = useCallback(
+    async ({ background = false }: { background?: boolean } = {}) => {
+      if (!publicClient || !isConnected || !address) {
+        setTokenBalances({});
+        setTokenLoading(false);
+        setTokenError(null);
+        return;
+      }
+
+      const erc20Tokens = trackedTokens.filter((token) => token.kind === 'erc20' && token.address);
+
+      if (erc20Tokens.length === 0) {
+        setTokenBalances({});
+        setTokenLoading(false);
+        setTokenError(null);
+        return;
+      }
+
+      if (!background) {
+        setTokenLoading(true);
+      }
+      setTokenError(null);
+
+      try {
+        const entries = await Promise.all(
+          erc20Tokens.map(async (token) => {
+            const balance = await publicClient.readContract({
+              address: token.address!,
+              abi: fluxSwapErc20Abi,
+              functionName: 'balanceOf',
+              args: [address],
+            });
+
+            return [token.symbol, balance] as const;
+          }),
+        );
+
+        setTokenBalances(Object.fromEntries(entries));
+      } catch (error) {
+        if (!background) {
+          setTokenBalances({});
+        }
+        setTokenError(error instanceof Error ? error.message : 'Failed to load token balances');
+      } finally {
+        if (!background) {
+          setTokenLoading(false);
+        }
+      }
+    },
+    [address, isConnected, publicClient, trackedTokens],
+  );
 
   useEffect(() => {
     if (!supportedChain) {
@@ -1044,59 +1179,27 @@ export default function PortfolioPage() {
   }, [address, isConnected, pairs, publicClient]);
 
   useEffect(() => {
-    if (!publicClient || !isConnected || !address) {
-      setTokenBalances({});
-      setTokenLoading(false);
-      setTokenError(null);
-      return;
-    }
-
-    const erc20Tokens = trackedTokens.filter((token) => token.kind === 'erc20' && token.address);
-
-    if (erc20Tokens.length === 0) {
-      setTokenBalances({});
-      setTokenLoading(false);
-      setTokenError(null);
-      return;
-    }
-
     let cancelled = false;
-    setTokenLoading(true);
-    setTokenError(null);
 
-    Promise.all(
-      erc20Tokens.map(async (token) => {
-        const balance = await publicClient.readContract({
-          address: token.address!,
-          abi: fluxSwapErc20Abi,
-          functionName: 'balanceOf',
-          args: [address],
-        });
+    const refresh = async (options?: { background?: boolean }) => {
+      if (cancelled) {
+        return;
+      }
 
-        return [token.symbol, balance] as const;
-      }),
-    )
-      .then((entries) => {
-        if (!cancelled) {
-          setTokenBalances(Object.fromEntries(entries));
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setTokenBalances({});
-          setTokenError(error instanceof Error ? error.message : 'Failed to load token balances');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setTokenLoading(false);
-        }
-      });
+      await refreshTokenBalances(options);
+    };
+
+    void refresh();
+
+    const refreshTimer = window.setInterval(() => {
+      void refresh({ background: true });
+    }, TOKEN_BALANCE_REFRESH_INTERVAL_MS);
 
     return () => {
       cancelled = true;
+      window.clearInterval(refreshTimer);
     };
-  }, [address, isConnected, publicClient, trackedTokens]);
+  }, [refreshTokenBalances]);
 
   useEffect(() => {
     if (!supportedChain || !isConnected || !address) {
@@ -1273,6 +1376,16 @@ export default function PortfolioPage() {
           pair.token1.id,
           wrappedNativeAddress,
         );
+        const withdrawToken0 = calculateProportionalAmount(
+          pair.reserve0,
+          rawLpBalance,
+          pair.totalSupply,
+        );
+        const withdrawToken1 = calculateProportionalAmount(
+          pair.reserve1,
+          rawLpBalance,
+          pair.totalSupply,
+        );
 
         return {
           pairId: pair.id,
@@ -1283,7 +1396,37 @@ export default function PortfolioPage() {
             pair.token1.decimals,
             6,
           )} LP`,
+          poolShareLabel: formatPoolShare(rawLpBalance, pair.totalSupply),
+          withdrawToken0Label: `${formatBigIntAmountDown(
+            withdrawToken0,
+            pair.token0.decimals,
+            6,
+          )} ${token0Symbol}`,
+          withdrawToken1Label: `${formatBigIntAmountDown(
+            withdrawToken1,
+            pair.token1.decimals,
+            6,
+          )} ${token1Symbol}`,
+          reserveToken0Label: `${formatBigIntAmountDown(pair.reserve0, pair.token0.decimals, 6)} ${token0Symbol}`,
+          reserveToken1Label: `${formatBigIntAmountDown(pair.reserve1, pair.token1.decimals, 6)} ${token1Symbol}`,
+          totalLpLabel: `${formatPairLpAmountDown(
+            pair.totalSupply,
+            pair.token0.decimals,
+            pair.token1.decimals,
+            6,
+          )} LP`,
+          token0Symbol,
+          token1Symbol,
+          token0Address: pair.token0.id,
+          token1Address: pair.token1.id,
+          token0Decimals: pair.token0.decimals,
+          token1Decimals: pair.token1.decimals,
+          addLiquidityHref: `/portfolio/liquidity?tokenA=${pair.token0.id}&tokenB=${pair.token1.id}`,
+          poolHref: `/pool/${pair.id}`,
           rawLpBalance,
+          totalSupply: pair.totalSupply,
+          reserve0: pair.reserve0,
+          reserve1: pair.reserve1,
         };
       })
       .filter((row) => row.rawLpBalance > ZERO_BIGINT)
@@ -1295,6 +1438,115 @@ export default function PortfolioPage() {
         return left.rawLpBalance > right.rawLpBalance ? -1 : 1;
       });
   }, [lpBalances, pairs, wrappedNativeAddress]);
+  const removePercentBps = parsePercentToBasisPoints(removePercentInput);
+  const removeLiquidityAmount =
+    removePosition && removePercentBps
+      ? (removePosition.rawLpBalance * removePercentBps) / PERCENT_BPS_BASE
+      : ZERO_BIGINT;
+  const removeEstimatedToken0 = removePosition
+    ? calculateProportionalAmount(removePosition.reserve0, removeLiquidityAmount, removePosition.totalSupply)
+    : ZERO_BIGINT;
+  const removeEstimatedToken1 = removePosition
+    ? calculateProportionalAmount(removePosition.reserve1, removeLiquidityAmount, removePosition.totalSupply)
+    : ZERO_BIGINT;
+  const removeMinToken0 = applySlippage(removeEstimatedToken0);
+  const removeMinToken1 = applySlippage(removeEstimatedToken1);
+  const needsRemoveLpApproval =
+    Boolean(removePosition && removeLiquidityAmount > ZERO_BIGINT) &&
+    (removeLpAllowance === null || removeLpAllowance < removeLiquidityAmount);
+  const isRemoveLpAllowanceLoading =
+    Boolean(removePosition && removeLiquidityAmount > ZERO_BIGINT && publicClient && routerAddress && address) &&
+    removeLpAllowanceLoading;
+  const removeLiquidityAmountLabel = removePosition
+    ? `${formatPairLpAmountDown(
+        removeLiquidityAmount,
+        removePosition.token0Decimals,
+        removePosition.token1Decimals,
+        6,
+      )} LP`
+    : '';
+  const removeEstimatedToken0Label = removePosition
+    ? `${formatBigIntAmountDown(removeEstimatedToken0, removePosition.token0Decimals, 6)} ${removePosition.token0Symbol}`
+    : '';
+  const removeEstimatedToken1Label = removePosition
+    ? `${formatBigIntAmountDown(removeEstimatedToken1, removePosition.token1Decimals, 6)} ${removePosition.token1Symbol}`
+    : '';
+  const removeMinToken0Label = removePosition
+    ? `${formatBigIntAmountDown(removeMinToken0, removePosition.token0Decimals, 6)} ${removePosition.token0Symbol}`
+    : '';
+  const removeMinToken1Label = removePosition
+    ? `${formatBigIntAmountDown(removeMinToken1, removePosition.token1Decimals, 6)} ${removePosition.token1Symbol}`
+    : '';
+  const removeLiquidityButtonLabel = !isConnected
+    ? isZh
+      ? '连接钱包'
+      : 'Connect Wallet'
+    : removeLiquidityAction === 'approve'
+      ? isZh
+        ? '授权确认中...'
+        : 'Approving...'
+      : removeLiquidityAction === 'remove'
+        ? isZh
+          ? '移除中...'
+          : 'Removing...'
+        : !routerAddress || !publicClient
+          ? isZh
+            ? '当前网络暂不支持'
+            : 'Unsupported network'
+          : isRemoveLpAllowanceLoading
+            ? isZh
+              ? '读取授权中...'
+              : 'Checking approval...'
+          : !removePercentBps || removeLiquidityAmount <= ZERO_BIGINT
+            ? isZh
+              ? '请输入有效比例'
+              : 'Enter a valid percent'
+            : needsRemoveLpApproval
+              ? isZh
+                ? '授权 LP'
+                : 'Approve LP'
+              : isZh
+                ? '确认移除'
+                : 'Remove Liquidity';
+  const removeLiquidityButtonDisabled =
+    Boolean(removeLiquidityAction) ||
+    isRemoveLpAllowanceLoading ||
+    (isConnected && (!routerAddress || !publicClient || !removePercentBps || removeLiquidityAmount <= ZERO_BIGINT));
+
+  useEffect(() => {
+    if (!publicClient || !address || !routerAddress || !removePosition) {
+      setRemoveLpAllowance(null);
+      setRemoveLpAllowanceLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setRemoveLpAllowanceLoading(true);
+
+    publicClient
+      .readContract({
+        address: removePosition.pairId as Address,
+        abi: fluxSwapPairAbi,
+        functionName: 'allowance',
+        args: [address, routerAddress],
+      })
+      .then((allowance) => {
+        if (!cancelled) {
+          setRemoveLpAllowance(allowance);
+          setRemoveLpAllowanceLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRemoveLpAllowance(null);
+          setRemoveLpAllowanceLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [address, publicClient, removePosition, routerAddress]);
   const walletActivityRows = useMemo(() => {
     return trades.map((trade) =>
       buildWalletActivityRow(
@@ -1491,6 +1743,10 @@ export default function PortfolioPage() {
 
   const closeLimitOrderResultModal = () => {
     setLimitOrderResultModal(null);
+  };
+
+  const closeRemoveLiquidityResultModal = () => {
+    setRemoveLiquidityResultModal(null);
   };
 
   const handleCancelLimitOrder = async (order: LocalLimitOrderRecord) => {
@@ -1937,10 +2193,203 @@ export default function PortfolioPage() {
     setSelectedLimitOrderKeys((current) => current.filter((key) => validKeys.has(key)));
   }, [selectableLimitOrderRows]);
 
+  useEffect(() => {
+    if (!isConnected || !address || positionRows.length === 0) {
+      setIsPositionsModalOpen(false);
+    }
+  }, [address, isConnected, positionRows.length]);
+
   const closeLimitOrdersModal = () => {
     setIsLimitOrdersModalOpen(false);
     setExpandedLimitOrderKey(null);
     setSelectedLimitOrderKeys([]);
+  };
+
+  const closePositionsModal = () => {
+    setIsPositionsModalOpen(false);
+  };
+
+  const openRemoveLiquidityModal = (row: PositionDisplayRow) => {
+    setRemovePosition(row);
+    setRemovePercentInput('50');
+    setRemoveLiquidityAction(null);
+    setRemoveLiquidityResultModal(null);
+    setRemoveLpAllowance(null);
+    setRemoveLpAllowanceLoading(false);
+  };
+
+  const closeRemoveLiquidityModal = () => {
+    if (removeLiquidityAction) {
+      return;
+    }
+
+    setRemovePosition(null);
+    setRemovePercentInput('50');
+    setRemoveLiquidityResultModal(null);
+    setRemoveLpAllowance(null);
+    setRemoveLpAllowanceLoading(false);
+  };
+
+  const refreshPositionPoolState = async (pairId: Address) => {
+    if (!publicClient || !address) {
+      return;
+    }
+
+    const [balance, totalSupply, reserves] = await Promise.all([
+      publicClient.readContract({
+        address: pairId,
+        abi: fluxSwapPairAbi,
+        functionName: 'balanceOf',
+        args: [address],
+      }),
+      publicClient.readContract({
+        address: pairId,
+        abi: fluxSwapPairAbi,
+        functionName: 'totalSupply',
+      }),
+      publicClient.readContract({
+        address: pairId,
+        abi: fluxSwapPairAbi,
+        functionName: 'getReserves',
+      }),
+    ]);
+
+    setLpBalances((current) => ({
+      ...current,
+      [pairId.toLowerCase()]: balance,
+    }));
+    setPairs((current) =>
+      current.map((pair) =>
+        pair.id.toLowerCase() === pairId.toLowerCase()
+          ? {
+              ...pair,
+              reserve0: reserves[0],
+              reserve1: reserves[1],
+              totalSupply,
+            }
+          : pair,
+      ),
+    );
+  };
+
+  const handleRemoveLiquidityAction = async () => {
+    if (!isConnected || !address) {
+      openConnectModal?.();
+      return;
+    }
+
+    if (!removePosition || !routerAddress || !publicClient || removeLiquidityAmount <= ZERO_BIGINT) {
+      return;
+    }
+
+    setRemoveLiquidityResultModal(null);
+    const action: RemoveLiquidityAction = needsRemoveLpApproval ? 'approve' : 'remove';
+    setRemoveLiquidityAction(action);
+
+    try {
+      if (action === 'approve') {
+        const txHash = await writeContractAsync({
+          address: removePosition.pairId as Address,
+          abi: fluxSwapPairAbi,
+          functionName: 'approve',
+          args: [routerAddress, maxUint256],
+          chainId,
+          ...localGasOverride,
+        });
+
+        const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+        if (receipt.status !== 'success') {
+          throw new Error(isZh ? 'LP 授权交易失败。' : 'LP approval transaction failed.');
+        }
+
+        setRemoveLpAllowance(maxUint256);
+        setRemoveLpAllowanceLoading(false);
+        setRemoveLiquidityResultModal({
+          kind: 'success',
+          title: isZh ? '授权成功' : 'Approval successful',
+          message: isZh ? 'LP 已授权，现在可以继续移除流动性。' : 'LP approved. You can now remove liquidity.',
+        });
+        return;
+      }
+
+      const latestBlock = await publicClient.getBlock();
+      const deadline = latestBlock.timestamp + REMOVE_LIQUIDITY_DEADLINE_SECONDS;
+      const token0IsNative =
+        wrappedNativeAddress &&
+        removePosition.token0Address.toLowerCase() === wrappedNativeAddress.toLowerCase();
+      const token1IsNative =
+        wrappedNativeAddress &&
+        removePosition.token1Address.toLowerCase() === wrappedNativeAddress.toLowerCase();
+
+      let txHash: `0x${string}`;
+
+      if (token0IsNative || token1IsNative) {
+        const tokenAddress = token0IsNative ? removePosition.token1Address : removePosition.token0Address;
+        const amountTokenMin = token0IsNative ? removeMinToken1 : removeMinToken0;
+        const amountETHMin = token0IsNative ? removeMinToken0 : removeMinToken1;
+
+        txHash = await writeContractAsync({
+          address: routerAddress,
+          abi: fluxSwapRouterAbi,
+          functionName: 'removeLiquidityETH',
+          args: [
+            tokenAddress,
+            removeLiquidityAmount,
+            amountTokenMin,
+            amountETHMin,
+            address,
+            deadline,
+          ],
+          chainId,
+          ...localGasOverride,
+        });
+      } else {
+        txHash = await writeContractAsync({
+          address: routerAddress,
+          abi: fluxSwapRouterAbi,
+          functionName: 'removeLiquidity',
+          args: [
+            removePosition.token0Address,
+            removePosition.token1Address,
+            removeLiquidityAmount,
+            removeMinToken0,
+            removeMinToken1,
+            address,
+            deadline,
+          ],
+          chainId,
+          ...localGasOverride,
+        });
+      }
+
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+      if (receipt.status !== 'success') {
+        throw new Error(isZh ? '移除流动性交易失败。' : 'Remove liquidity transaction failed.');
+      }
+
+      await Promise.allSettled([
+        refreshPositionPoolState(removePosition.pairId as Address),
+        refreshTokenBalances({ background: true }),
+        refetchNativeBalance(),
+        refetchFluxBalance(),
+      ]);
+      setRemoveLiquidityResultModal({
+        kind: 'success',
+        title: isZh ? '移除成功' : 'Liquidity removed',
+        message: isZh ? '流动性已移除，仓位数据会随链上和子图刷新。' : 'Liquidity was removed. Position data will update with chain and subgraph refresh.',
+      });
+      setRemovePosition(null);
+    } catch (error) {
+      setRemoveLiquidityResultModal({
+        kind: 'error',
+        title: isZh ? '移除失败' : 'Remove failed',
+        message: formatErrorMessage(error, {
+          rejectedMessage: isZh ? '你已取消本次操作。' : 'You rejected this action.',
+        }),
+      });
+    } finally {
+      setRemoveLiquidityAction(null);
+    }
   };
 
   const toggleExpandedLimitOrder = (order: LocalLimitOrderRecord) => {
@@ -2206,9 +2655,14 @@ export default function PortfolioPage() {
                       {isZh ? '展示钱包持有 LP 的流动性池' : 'Pools where this wallet holds LP tokens'}
                     </div>
                   </div>
-                  <span className="inline-flex min-w-8 items-center justify-center rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+                  <button
+                    type="button"
+                    onClick={() => setIsPositionsModalOpen(true)}
+                    className="inline-flex min-w-8 items-center justify-center rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:hover:bg-emerald-500/25"
+                    title={isZh ? '查看仓位详情' : 'View position details'}
+                  >
                     {positionRows.length}
-                  </span>
+                  </button>
                 </div>
 
                 <div className="flex min-h-0 flex-1 flex-col px-5 pb-5 pt-1">
@@ -2219,9 +2673,11 @@ export default function PortfolioPage() {
 
                   <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1 [scrollbar-gutter:stable]">
                     {positionRows.map((row) => (
-                      <div
+                      <button
+                        type="button"
                         key={row.pairId}
-                        className="grid w-full grid-cols-[minmax(0,1fr)_128px] items-center gap-x-4 border-b border-black/5 px-3 py-4 last:border-b-0 dark:border-white/10"
+                        onClick={() => setIsPositionsModalOpen(true)}
+                        className="grid w-full grid-cols-[minmax(0,1fr)_128px] items-center gap-x-4 border-b border-black/5 px-3 py-4 text-left transition-colors last:border-b-0 hover:bg-sky-50/60 dark:border-white/10 dark:hover:bg-white/[0.05]"
                       >
                         <div className="min-w-0">
                           <div className="truncate text-[15px] font-semibold tracking-tight text-gray-900 dark:text-white">
@@ -2231,7 +2687,7 @@ export default function PortfolioPage() {
                         <div className="min-w-0 truncate text-right text-[14px] font-semibold tabular-nums text-gray-800 dark:text-gray-200">
                           {row.lpBalanceLabel}
                         </div>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -2611,6 +3067,329 @@ export default function PortfolioPage() {
             </div>
           </section>
         </div>
+
+        {isPositionsModalOpen && positionRows.length > 0 ? (
+          <div
+            className="fixed inset-0 z-[90] flex items-center justify-center bg-black/35 p-4 backdrop-blur-sm"
+            onClick={closePositionsModal}
+          >
+            <div
+              className="flex h-[760px] max-h-[calc(100vh-2rem)] w-full max-w-[76rem] flex-col rounded-[1.75rem] border border-black/5 bg-white p-5 shadow-2xl dark:border-white/10 dark:bg-[#0f1726] xl:p-6"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-2xl font-black tracking-tight text-gray-900 dark:text-white">
+                    {isZh ? '流动性仓位' : 'Liquidity Positions'}
+                  </div>
+                  <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    {isZh
+                      ? `共 ${positionRows.length} 个持仓池子`
+                      : `${positionRows.length} pool position${positionRows.length > 1 ? 's' : ''}`}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={closePositionsModal}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-600 transition-colors hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.10]"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-[1.25rem] border border-black/5 bg-gray-50/80 px-4 py-3 dark:border-white/10 dark:bg-white/[0.04]">
+                  <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                    {isZh ? '仓位数量' : 'Positions'}
+                  </div>
+                  <div className="mt-2 text-2xl font-black tracking-tight text-gray-900 dark:text-white">
+                    {positionRows.length}
+                  </div>
+                </div>
+                <div className="rounded-[1.25rem] border border-black/5 bg-gray-50/80 px-4 py-3 dark:border-white/10 dark:bg-white/[0.04]">
+                  <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                    {isZh ? '主要指标' : 'Key metric'}
+                  </div>
+                  <div className="mt-2 text-sm font-semibold text-gray-900 dark:text-white">
+                    {isZh ? '按 LP 份额估算可取回数量' : 'Withdrawable amounts estimated by LP share'}
+                  </div>
+                </div>
+                <div className="rounded-[1.25rem] border border-black/5 bg-gray-50/80 px-4 py-3 dark:border-white/10 dark:bg-white/[0.04]">
+                  <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                    {isZh ? '说明' : 'Note'}
+                  </div>
+                  <div className="mt-2 text-sm font-semibold text-gray-900 dark:text-white">
+                    {isZh ? '实际移除时以链上池子状态为准' : 'Final withdrawal depends on on-chain pool state'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 flex-1 overflow-hidden rounded-[1.5rem] border border-black/5 dark:border-white/10">
+                <div className="hidden h-full overflow-y-auto overflow-x-hidden xl:block">
+                  <div className="sticky top-0 z-10 grid grid-cols-[1.05fr_1.05fr_0.78fr_1.15fr_1.15fr_1fr] items-center gap-x-3 border-b border-black/5 bg-white/95 px-5 py-3 text-xs font-bold tracking-[0.08em] text-gray-500 backdrop-blur-sm dark:border-white/10 dark:bg-[#0f1726]/95 dark:text-gray-400">
+                    <div>{isZh ? '交易对' : 'Pair'}</div>
+                    <div className="text-right">{isZh ? 'LP 余额' : 'LP Balance'}</div>
+                    <div className="text-right">{isZh ? '池子份额' : 'Pool Share'}</div>
+                    <div className="text-right">{isZh ? '可取回代币一' : 'Token A'}</div>
+                    <div className="text-right">{isZh ? '可取回代币二' : 'Token B'}</div>
+                    <div className="text-right">{isZh ? '操作' : 'Action'}</div>
+                  </div>
+
+                  <div className="divide-y divide-black/5 dark:divide-white/10">
+                    {positionRows.map((row) => (
+                      <div
+                        key={row.pairId}
+                        className="grid grid-cols-[1.05fr_1.05fr_0.78fr_1.15fr_1.15fr_1fr] items-center gap-x-3 px-5 py-4 text-sm text-gray-700 dark:text-gray-300"
+                      >
+                        <Link href={row.poolHref} className="min-w-0 rounded-xl transition-colors hover:text-sky-600">
+                          <div className="truncate font-black tracking-tight text-gray-900 transition-colors hover:text-sky-600 dark:text-white dark:hover:text-sky-300">
+                            {row.pairLabel}
+                          </div>
+                          <div className="mt-1 font-mono text-xs text-gray-500 dark:text-gray-400">
+                            {truncateAddress(row.pairId)}
+                          </div>
+                        </Link>
+                        <div className="min-w-0 truncate text-right font-semibold tabular-nums">{row.lpBalanceLabel}</div>
+                        <div className="text-right font-semibold tabular-nums">{row.poolShareLabel}</div>
+                        <div className="min-w-0 truncate text-right font-semibold tabular-nums">{row.withdrawToken0Label}</div>
+                        <div className="min-w-0 truncate text-right font-semibold tabular-nums">{row.withdrawToken1Label}</div>
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openRemoveLiquidityModal(row)}
+                            className="inline-flex h-9 items-center justify-center rounded-full border border-rose-200 px-3 text-xs font-semibold text-rose-600 transition-colors hover:border-rose-300 hover:bg-rose-50 dark:border-rose-400/25 dark:text-rose-300 dark:hover:bg-rose-400/10"
+                          >
+                            {isZh ? '移除' : 'Remove'}
+                          </button>
+                          <Link
+                            href={row.addLiquidityHref}
+                            className="inline-flex h-9 items-center justify-center rounded-full bg-gray-900 px-3 text-xs font-semibold text-white transition-colors hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
+                          >
+                            {isZh ? '添加' : 'Add'}
+                          </Link>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="h-full space-y-3 overflow-y-auto p-4 xl:hidden">
+                  {positionRows.map((row) => (
+                    <div
+                      key={row.pairId}
+                      className="rounded-[1.35rem] border border-black/5 bg-gray-50/80 p-4 dark:border-white/10 dark:bg-white/[0.03]"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <Link href={row.poolHref} className="block truncate text-base font-black tracking-tight text-gray-900 transition-colors hover:text-sky-600 dark:text-white dark:hover:text-sky-300">
+                            {row.pairLabel}
+                          </Link>
+                          <div className="mt-1 font-mono text-xs text-gray-500 dark:text-gray-400">
+                            {truncateAddress(row.pairId)}
+                          </div>
+                        </div>
+                        <div className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+                          {row.poolShareLabel}
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid gap-2.5 text-sm">
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-gray-500 dark:text-gray-400">{isZh ? 'LP 余额' : 'LP Balance'}</span>
+                          <span className="font-semibold tabular-nums text-gray-900 dark:text-white">{row.lpBalanceLabel}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-gray-500 dark:text-gray-400">{row.token0Symbol}</span>
+                          <span className="font-semibold tabular-nums text-gray-900 dark:text-white">{row.withdrawToken0Label}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-gray-500 dark:text-gray-400">{row.token1Symbol}</span>
+                          <span className="font-semibold tabular-nums text-gray-900 dark:text-white">{row.withdrawToken1Label}</span>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openRemoveLiquidityModal(row)}
+                          className="inline-flex h-9 items-center justify-center rounded-full border border-rose-200 px-3 text-xs font-semibold text-rose-600 transition-colors hover:border-rose-300 hover:bg-rose-50 dark:border-rose-400/25 dark:text-rose-300 dark:hover:bg-rose-400/10"
+                        >
+                          {isZh ? '移除流动性' : 'Remove liquidity'}
+                        </button>
+                        <Link
+                          href={row.addLiquidityHref}
+                          className="inline-flex h-9 items-center justify-center rounded-full bg-gray-900 px-3 text-xs font-semibold text-white transition-colors hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
+                        >
+                          {isZh ? '添加流动性' : 'Add liquidity'}
+                        </Link>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {removePosition ? (
+          <div
+            className="fixed inset-0 z-[95] flex items-center justify-center bg-black/35 p-4 backdrop-blur-sm"
+            onClick={closeRemoveLiquidityModal}
+          >
+            <div
+              className="w-full max-w-[560px] rounded-[1.75rem] border border-black/5 bg-white p-5 shadow-2xl dark:border-white/10 dark:bg-[#0f1726]"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-2xl font-black tracking-tight text-gray-900 dark:text-white">
+                    {isZh ? '移除流动性' : 'Remove Liquidity'}
+                  </div>
+                  <div className="mt-1 text-sm font-semibold text-gray-500 dark:text-gray-400">
+                    {removePosition.pairLabel}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeRemoveLiquidityModal}
+                  disabled={Boolean(removeLiquidityAction)}
+                  className={`inline-flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
+                    removeLiquidityAction
+                      ? 'cursor-not-allowed bg-gray-100 text-gray-300 dark:bg-white/[0.04] dark:text-gray-600'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.10]'
+                  }`}
+                  aria-label={isZh ? '关闭' : 'Close'}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-[1.2rem] bg-gray-50/90 px-4 py-3 dark:bg-white/[0.04]">
+                  <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                    {isZh ? 'LP 余额' : 'LP Balance'}
+                  </div>
+                  <div className="mt-1 truncate text-base font-black tabular-nums text-gray-900 dark:text-white">
+                    {removePosition.lpBalanceLabel}
+                  </div>
+                </div>
+                <div className="rounded-[1.2rem] bg-gray-50/90 px-4 py-3 dark:bg-white/[0.04]">
+                  <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                    {isZh ? '池子份额' : 'Pool Share'}
+                  </div>
+                  <div className="mt-1 text-base font-black tabular-nums text-gray-900 dark:text-white">
+                    {removePosition.poolShareLabel}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-[1.35rem] border border-black/5 p-4 dark:border-white/10">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-bold text-gray-900 dark:text-white">
+                    {isZh ? '移除比例' : 'Remove Percent'}
+                  </div>
+                  <div className="text-sm font-semibold text-gray-500 dark:text-gray-400">
+                    {removeLiquidityAmountLabel}
+                  </div>
+                </div>
+
+                <div className="mt-3 flex items-center gap-2 rounded-[1.15rem] bg-gray-50 p-2 dark:bg-white/[0.04]">
+                  <input
+                    value={removePercentInput}
+                    onChange={(event) => setRemovePercentInput(event.target.value)}
+                    inputMode="decimal"
+                    disabled={Boolean(removeLiquidityAction)}
+                    className="min-w-0 flex-1 bg-transparent px-2 text-3xl font-black tabular-nums text-gray-900 outline-none placeholder:text-gray-300 disabled:cursor-not-allowed dark:text-white dark:placeholder:text-gray-700"
+                    placeholder="0"
+                  />
+                  <span className="pr-2 text-xl font-black text-gray-400">%</span>
+                </div>
+
+                <div className="mt-3 grid grid-cols-4 gap-2">
+                  {['25', '50', '75', '100'].map((percent) => (
+                    <button
+                      type="button"
+                      key={percent}
+                      disabled={Boolean(removeLiquidityAction)}
+                      onClick={() => setRemovePercentInput(percent)}
+                      className={`h-9 rounded-full text-sm font-bold transition-colors ${
+                        removePercentInput === percent
+                          ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.10]'
+                      } ${removeLiquidityAction ? 'cursor-not-allowed opacity-60' : ''}`}
+                    >
+                      {percent}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3">
+                <div className="rounded-[1.25rem] bg-gray-50/90 px-4 py-3 dark:bg-white/[0.04]">
+                  <div className="text-sm font-bold text-gray-900 dark:text-white">
+                    {isZh ? '预计取回' : 'Estimated Receive'}
+                  </div>
+                  <div className="mt-3 grid gap-2 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-gray-500 dark:text-gray-400">{removePosition.token0Symbol}</span>
+                      <span className="min-w-0 truncate font-semibold tabular-nums text-gray-900 dark:text-white">
+                        {removeEstimatedToken0Label}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-gray-500 dark:text-gray-400">{removePosition.token1Symbol}</span>
+                      <span className="min-w-0 truncate font-semibold tabular-nums text-gray-900 dark:text-white">
+                        {removeEstimatedToken1Label}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-[1.25rem] bg-amber-50/80 px-4 py-3 dark:bg-amber-400/[0.08]">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-sm font-bold text-amber-800 dark:text-amber-200">
+                      {isZh ? '最少取回' : 'Minimum Receive'}
+                    </div>
+                    <div className="text-xs font-semibold text-amber-700/80 dark:text-amber-200/80">
+                      {isZh ? '含 0.5% 滑点保护' : '0.5% slippage protected'}
+                    </div>
+                  </div>
+                  <div className="mt-3 grid gap-2 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-amber-700/80 dark:text-amber-200/80">{removePosition.token0Symbol}</span>
+                      <span className="min-w-0 truncate font-semibold tabular-nums text-amber-900 dark:text-amber-100">
+                        {removeMinToken0Label}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-amber-700/80 dark:text-amber-200/80">{removePosition.token1Symbol}</span>
+                      <span className="min-w-0 truncate font-semibold tabular-nums text-amber-900 dark:text-amber-100">
+                        {removeMinToken1Label}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  void handleRemoveLiquidityAction();
+                }}
+                disabled={removeLiquidityButtonDisabled}
+                className={`mt-5 inline-flex h-12 w-full items-center justify-center rounded-[1rem] text-base font-bold transition-colors ${
+                  removeLiquidityButtonDisabled
+                    ? 'cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-white/[0.06] dark:text-gray-500'
+                    : needsRemoveLpApproval
+                      ? 'bg-sky-600 text-white hover:bg-sky-700'
+                      : 'bg-gray-900 text-white hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200'
+                }`}
+              >
+                {removeLiquidityButtonLabel}
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {isLimitOrdersModalOpen && limitOrderRows.length > 0 ? (
           <div
@@ -3017,6 +3796,62 @@ export default function PortfolioPage() {
                 <button
                   type="button"
                   onClick={closeLimitOrderResultModal}
+                  className="inline-flex h-11 w-full items-center justify-center rounded-[1rem] bg-[#232323] text-base font-medium text-white transition-colors hover:bg-black dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
+                >
+                  {isZh ? '确定' : 'Confirm'}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+        {removeLiquidityResultModal ? (
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-4 backdrop-blur-[2px]"
+            onClick={closeRemoveLiquidityResultModal}
+          >
+            <div
+              className="w-full max-w-[460px] rounded-[1.7rem] bg-white px-5 py-5 shadow-2xl dark:bg-gray-900"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-start justify-end">
+                <button
+                  type="button"
+                  onClick={closeRemoveLiquidityResultModal}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                  aria-label={isZh ? '关闭' : 'Close'}
+                >
+                  <X size={22} />
+                </button>
+              </div>
+
+              <div className="flex flex-col items-center px-3 pb-1 pt-1 text-center">
+                <div
+                  className={`flex h-14 w-14 items-center justify-center rounded-[1rem] ${
+                    removeLiquidityResultModal.kind === 'success'
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-rose-100 text-rose-700'
+                  }`}
+                >
+                  {removeLiquidityResultModal.kind === 'success' ? (
+                    <CheckCircle2 size={26} />
+                  ) : (
+                    <AlertCircle size={26} />
+                  )}
+                </div>
+
+                <h3 className="mt-5 text-[1.65rem] font-semibold tracking-tight text-gray-950 dark:text-white">
+                  {removeLiquidityResultModal.title}
+                </h3>
+
+                <p className="mt-2.5 text-base leading-7 text-gray-500 dark:text-gray-300">
+                  {removeLiquidityResultModal.message}
+                </p>
+              </div>
+
+              <div className="mt-6">
+                <button
+                  type="button"
+                  onClick={closeRemoveLiquidityResultModal}
                   className="inline-flex h-11 w-full items-center justify-center rounded-[1rem] bg-[#232323] text-base font-medium text-white transition-colors hover:bg-black dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
                 >
                   {isZh ? '确定' : 'Confirm'}
