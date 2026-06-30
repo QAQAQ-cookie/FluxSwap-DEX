@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+@variant dark (&:is(.dark *));
+
+:root {
+  --background: #f6f8fb;
+  --foreground: #0b1220;
+}
+
+.dark {
+  --background: #070d18;
+  --foreground: #eef4ff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(246, 248, 251, 0.98)),
+    var(--background);
+  color: var(--foreground);
+}
+
+.dark body {
+  background:
+    linear-gradient(180deg, rgba(7, 13, 24, 0.88), rgba(7, 13, 24, 0.98)),
+    var(--background);
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
