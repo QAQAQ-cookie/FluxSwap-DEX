@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useTranslation } from 'react-i18next';
-import { useChainId } from 'wagmi';
+import { useAccount, useChainId } from 'wagmi';
 import { Droplets, Repeat2, Sparkles, Zap } from 'lucide-react';
 
 import { SwapWidget } from '@/components/SwapWidget';
@@ -13,9 +13,11 @@ export default function Home() {
   const mounted = useIsClient();
   const { i18n } = useTranslation();
   const isZh = mounted ? i18n.language.startsWith('zh') : true;
+  const { isConnected } = useAccount();
   const chainId = useChainId();
   const effectiveChainId = mounted ? chainId : undefined;
   const supportedChain = isFluxSupportedChain(effectiveChainId);
+  const showUnsupportedNetwork = mounted && isConnected && !supportedChain;
 
   const features = [
     {
@@ -119,7 +121,7 @@ export default function Home() {
       </div>
       
       {/* Network Status Alert */}
-      {!supportedChain && (
+      {showUnsupportedNetwork && (
         <div className="mt-12 flex w-full max-w-2xl items-center gap-4 rounded-3xl border border-amber-200/50 bg-amber-50/50 p-6 backdrop-blur-md dark:border-amber-900/30 dark:bg-amber-900/10">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-400">
             <Zap size={24} />
