@@ -1,27 +1,27 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import {
   AlertCircle,
-  Ban,
   CheckCircle2,
-  ChevronDown,
-  ChevronRight,
   LoaderCircle,
-  PauseCircle,
   Play,
   RefreshCw,
   Settings2,
   ShieldCheck,
-  Vault,
-  Wallet,
   X,
 } from 'lucide-react';
-import { isAddress, type Address, type Hex } from 'viem';
+import { isAddress, type Address, type Hex, zeroAddress } from 'viem';
 import { useAccount, useChainId, usePublicClient, useWriteContract } from 'wagmi';
 
-import { Card, PageHeader, shortAddress, StatusPill } from '@/components/AdminPrimitives';
+import { Card, PageHeader, shortAddress } from '@/components/AdminPrimitives';
+import { TreasuryAccessPanel } from '@/components/treasury/TreasuryAccessPanel';
+import { TreasuryAllocationCard } from '@/components/treasury/TreasuryAllocationCard';
+import { TreasuryAssetTable } from '@/components/treasury/TreasuryAssetTable';
+import { FieldLabel, SelectInput, TextInput } from '@/components/treasury/TreasuryFormControls';
+import { TreasuryOperationsTable } from '@/components/treasury/TreasuryOperationsTable';
+import { TreasuryStatusCards } from '@/components/treasury/TreasuryStatusCards';
 import { getContractAddress, getLocalGasOverride, isFluxSupportedChain } from '@/config/contracts';
 import { getAdminTokenOptions } from '@/config/tokens';
 import { formatBigIntAmountDown, parseAmount } from '@/lib/amounts';
@@ -55,6 +55,7 @@ type TreasuryTokenRow = {
   dailySpendCap: bigint;
   spentToday: bigint;
   allowed: boolean;
+  isNative?: boolean;
 };
 
 type TreasuryOperationRow = {
@@ -66,13 +67,6 @@ type TreasuryOperationRow = {
   metadata?: TreasuryOperationMetadata;
 };
 
-type TreasuryRiskRow = {
-  token: TreasuryTokenRow;
-  risk: 'danger' | 'warning' | 'success' | 'neutral';
-  reason: string;
-  spendRatio?: number;
-};
-
 type TreasuryOperationKind =
   | 'setAllowedToken'
   | 'setAllowedRecipient'
@@ -81,7 +75,9 @@ type TreasuryOperationKind =
   | 'revokeSpender'
   | 'setGuardian'
   | 'setOperator'
-  | 'setMinDelay';
+  | 'setMinDelay'
+  | 'emergencyWithdraw'
+  | 'emergencyWithdrawETH';
 
 type TreasuryOperationMetadata = {
   version: 1;
@@ -102,6 +98,12 @@ type TreasuryOperationMetadata = {
     newGuardian?: Address;
     newOperator?: Address;
     newMinDelay?: string;
+    withdrawToken?: Address;
+    withdrawTokenSymbol?: string;
+    withdrawTokenDecimals?: number;
+    withdrawRecipient?: Address;
+    withdrawAmountUnits?: string;
+    withdrawAmountDisplay?: string;
   };
   createdAt: number;
 };
@@ -124,7 +126,14 @@ type ConfirmModalState =
     }
   | null;
 
-type ActiveTreasuryAction = 'schedule' | 'pause' | 'unpause' | `execute:${string}` | `cancel:${string}` | null;
+type ActiveTreasuryAction =
+  | 'schedule'
+  | 'allocate'
+  | 'pause'
+  | 'unpause'
+  | `execute:${string}`
+  | `cancel:${string}`
+  | null;
 
 function formatDuration(seconds: bigint) {
   if (seconds <= ZERO_BIGINT) {
@@ -219,87 +228,8 @@ function getSpendBarClass(ratio?: number) {
   return 'bg-slate-300';
 }
 
-function buildRiskRows(tokenRows: TreasuryTokenRow[]): TreasuryRiskRow[] {
-  const riskRank = {
-    danger: 0,
-    warning: 1,
-    neutral: 2,
-    success: 3,
-  };
-
-  return tokenRows
-    .map((token) => {
-      const spendRatio = getDailySpendRatio(token);
-
-      if (!token.allowed) {
-        return {
-          token,
-          risk: 'warning',
-          reason: '未加入白名单，金库不会放行该资产',
-          spendRatio,
-        } satisfies TreasuryRiskRow;
-      }
-
-      if (spendRatio !== undefined && spendRatio >= 90) {
-        return {
-          token,
-          risk: 'danger',
-          reason: '今日额度已接近用完，需要关注后续分发',
-          spendRatio,
-        } satisfies TreasuryRiskRow;
-      }
-
-      if (spendRatio !== undefined && spendRatio >= 75) {
-        return {
-          token,
-          risk: 'warning',
-          reason: '今日额度使用偏高',
-          spendRatio,
-        } satisfies TreasuryRiskRow;
-      }
-
-      if (token.balance > ZERO_BIGINT && token.approvedSpendRemaining <= ZERO_BIGINT) {
-        return {
-          token,
-          risk: 'warning',
-          reason: '金库有余额，但 Manager 暂无可拉取额度',
-          spendRatio,
-        } satisfies TreasuryRiskRow;
-      }
-
-      if (token.balance <= ZERO_BIGINT && token.approvedSpendRemaining > ZERO_BIGINT) {
-        return {
-          token,
-          risk: 'warning',
-          reason: '余额为 0，但仍保留授权额度',
-          spendRatio,
-        } satisfies TreasuryRiskRow;
-      }
-
-      if (token.dailySpendCap <= ZERO_BIGINT && token.balance > ZERO_BIGINT) {
-        return {
-          token,
-          risk: 'neutral',
-          reason: '未设置每日额度，暂不限制当日支出',
-          spendRatio,
-        } satisfies TreasuryRiskRow;
-      }
-
-      return {
-        token,
-        risk: 'success',
-        reason: '授权、白名单和每日额度正常',
-        spendRatio,
-      } satisfies TreasuryRiskRow;
-    })
-    .sort((left, right) => {
-      const rankDiff = riskRank[left.risk] - riskRank[right.risk];
-      if (rankDiff !== 0) {
-        return rankDiff;
-      }
-
-      return left.token.symbol.localeCompare(right.token.symbol);
-    });
+function subtractFloor(value: bigint, used: bigint) {
+  return value > used ? value - used : ZERO_BIGINT;
 }
 
 function sortOperations(left: TreasuryOperationRow, right: TreasuryOperationRow) {
@@ -312,97 +242,6 @@ function sortOperations(left: TreasuryOperationRow, right: TreasuryOperationRow)
   }
 
   return left.executeAfter < right.executeAfter ? -1 : 1;
-}
-
-function getOperationStatusLabel(status: TreasuryOperationRow['status']) {
-  return status === 'ready' ? '可执行' : '等待中';
-}
-
-function getOperationStatusTone(status: TreasuryOperationRow['status']) {
-  return status === 'ready' ? 'warning' : 'neutral';
-}
-
-function formatMetadataValue(value?: string | boolean) {
-  if (value === undefined) {
-    return '--';
-  }
-
-  if (typeof value === 'boolean') {
-    return value ? '允许' : '移除';
-  }
-
-  return value;
-}
-
-function buildOperationDetailItems(operation: TreasuryOperationRow) {
-  const metadata = operation.metadata;
-
-  if (!metadata) {
-    return [
-      { label: '操作 ID', value: operation.operationId },
-      { label: '元数据状态', value: '缺少本地参数元数据' },
-      { label: '可执行时间', value: formatUnixTime(operation.executeAfter) },
-      { label: '发起人', value: operation.scheduler ?? '--' },
-    ];
-  }
-
-  const items: Array<{ label: string; value: string }> = [
-    { label: '操作 ID', value: metadata.operationId },
-    { label: '元数据状态', value: '已记录' },
-    { label: '本地创建时间', value: new Date(metadata.createdAt).toLocaleString('zh-CN', { hour12: false }) },
-    { label: '可执行时间', value: formatUnixTime(operation.executeAfter) },
-    { label: '发起人', value: operation.scheduler ?? '--' },
-  ];
-
-  if (metadata.params.token) {
-    items.push({ label: '资产地址', value: metadata.params.token });
-  }
-  if (metadata.params.tokenSymbol) {
-    items.push({ label: '资产符号', value: metadata.params.tokenSymbol });
-  }
-  if (metadata.params.recipient) {
-    items.push({ label: '接收地址', value: metadata.params.recipient });
-  }
-  if (metadata.params.spender) {
-    items.push({ label: '花费者地址', value: metadata.params.spender });
-  }
-  if (metadata.params.newGuardian) {
-    items.push({ label: '新 Guardian', value: metadata.params.newGuardian });
-  }
-  if (metadata.params.newOperator) {
-    items.push({ label: '新 Operator', value: metadata.params.newOperator });
-  }
-  if (metadata.params.allowed !== undefined) {
-    items.push({ label: '白名单状态', value: formatMetadataValue(metadata.params.allowed) });
-  }
-  if (metadata.params.amountDisplay) {
-    items.push({ label: '数量', value: metadata.params.amountDisplay });
-  }
-  if (metadata.params.amountUnits) {
-    items.push({ label: '链上数量', value: metadata.params.amountUnits });
-  }
-  if (metadata.params.newMinDelay) {
-    items.push({ label: '新治理延迟（秒）', value: metadata.params.newMinDelay });
-  }
-
-  return items;
-}
-
-function isChainValue(value: string) {
-  return /^0x[0-9a-fA-F]{20,}$/.test(value);
-}
-
-function OperationDetailValue({ value }: { value: string }) {
-  if (isChainValue(value)) {
-    return (
-      <div className="mt-1 min-w-0">
-        <p className="font-mono text-sm leading-6 text-slate-900">{shortAddress(value)}</p>
-        <p className="mt-0.5 break-all font-mono text-xs leading-5 text-slate-500">{value}</p>
-      </div>
-    );
-  }
-
-  return <p className="mt-1 break-words text-sm leading-6 text-slate-800">{value}</p>;
 }
 
 function getTreasuryOperationStorageKey(chainId: number, treasuryAddress: Address) {
@@ -437,55 +276,6 @@ function saveTreasuryOperationMetadata(
   }
 
   window.localStorage.setItem(getTreasuryOperationStorageKey(chainId, treasuryAddress), JSON.stringify(metadataById));
-}
-
-function FieldLabel({ children }: { children: React.ReactNode }) {
-  return <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{children}</label>;
-}
-
-function TextInput({
-  value,
-  onChange,
-  placeholder,
-  disabled,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  disabled?: boolean;
-}) {
-  return (
-    <input
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      disabled={disabled}
-      placeholder={placeholder}
-      className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-500 disabled:bg-slate-100 disabled:text-slate-400"
-    />
-  );
-}
-
-function SelectInput({
-  value,
-  onChange,
-  disabled,
-  children,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  disabled?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      disabled={disabled}
-      className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-500 disabled:bg-slate-100 disabled:text-slate-400"
-    >
-      {children}
-    </select>
-  );
 }
 
 function ResultModal({
@@ -622,6 +412,11 @@ export default function TreasuryPage() {
   const [amountValue, setAmountValue] = useState('');
   const [delaySeconds, setDelaySeconds] = useState('');
   const [newMinDelayValue, setNewMinDelayValue] = useState('');
+  const [withdrawRecipientAddress, setWithdrawRecipientAddress] = useState('');
+  const [withdrawAmountValue, setWithdrawAmountValue] = useState('');
+  const [allocationTokenAddress, setAllocationTokenAddress] = useState('');
+  const [allocationRecipientAddress, setAllocationRecipientAddress] = useState('');
+  const [allocationAmountValue, setAllocationAmountValue] = useState('');
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -688,7 +483,7 @@ export default function TreasuryPage() {
 
       const fromBlock = latestBlock > EVENT_LOOKBACK_BLOCKS ? latestBlock - EVENT_LOOKBACK_BLOCKS : ZERO_BIGINT;
 
-      const [rows, scheduledLogs] = await Promise.all([
+      const [erc20Rows, nativeBalance, nativeDailySpendCap, nativeSpentToday, scheduledLogs] = await Promise.all([
         Promise.all(
           tokens.map(async (token) => {
             const [balance, approvedSpendRemaining, dailySpendCap, spentToday, allowed] = await Promise.all([
@@ -736,6 +531,19 @@ export default function TreasuryPage() {
             };
           }),
         ),
+        publicClient.getBalance({ address: treasuryAddress }),
+        publicClient.readContract({
+          address: treasuryAddress,
+          abi: fluxSwapTreasuryAbi,
+          functionName: 'dailySpendCap',
+          args: [zeroAddress],
+        }),
+        publicClient.readContract({
+          address: treasuryAddress,
+          abi: fluxSwapTreasuryAbi,
+          functionName: 'spentToday',
+          args: [zeroAddress],
+        }),
         publicClient.getContractEvents({
           address: treasuryAddress,
           abi: fluxSwapTreasuryAbi,
@@ -795,6 +603,18 @@ export default function TreasuryPage() {
       const activeOperations = operationCandidates
         .filter((operation): operation is TreasuryOperationRow => operation !== null)
         .sort(sortOperations);
+      const nativeRow: TreasuryTokenRow = {
+        address: zeroAddress,
+        symbol: 'ETH',
+        name: 'Ether',
+        decimals: 18,
+        balance: nativeBalance,
+        approvedSpendRemaining: ZERO_BIGINT,
+        dailySpendCap: nativeDailySpendCap,
+        spentToday: nativeSpentToday,
+        allowed: true,
+        isNative: true,
+      };
 
       setTreasuryInfo({
         address: treasuryAddress,
@@ -804,7 +624,7 @@ export default function TreasuryPage() {
         minDelay,
         paused,
       });
-      setTokenRows(rows);
+      setTokenRows([nativeRow, ...erc20Rows]);
       setOperationRows(activeOperations);
     } catch (loadError) {
       setError(formatErrorMessage(loadError));
@@ -824,17 +644,19 @@ export default function TreasuryPage() {
   const totalConfiguredAssets = tokenRows.length;
   const allowedTokenCount = tokenRows.filter((token) => token.allowed).length;
   const readyOperationCount = operationRows.filter((operation) => operation.status === 'ready').length;
-  const riskRows = useMemo(() => buildRiskRows(tokenRows), [tokenRows]);
-  const warningRiskCount = riskRows.filter((row) => row.risk === 'danger' || row.risk === 'warning').length;
   const walletConnected = mounted && isConnected;
   const isMultisig = walletConnected && sameAddress(address, treasuryInfo?.multisig);
   const isGuardian = walletConnected && sameAddress(address, treasuryInfo?.guardian);
   const isOperator = walletConnected && sameAddress(address, treasuryInfo?.operator);
   const effectiveSelectedTokenAddress = selectedTokenAddress || tokens[0]?.address || '';
   const selectedToken = tokens.find((token) => sameAddress(token.address, effectiveSelectedTokenAddress)) ?? tokens[0];
+  const effectiveAllocationTokenAddress = allocationTokenAddress || tokenRows[0]?.address || zeroAddress;
+  const selectedAllocationToken =
+    tokenRows.find((token) => sameAddress(token.address, effectiveAllocationTokenAddress)) ?? tokenRows[0];
   const effectiveDelaySeconds = delaySeconds || treasuryInfo?.minDelay.toString() || '';
   const canPause = walletConnected && (isMultisig || isGuardian) && Boolean(treasuryAddress);
   const canUnpause = walletConnected && isMultisig && Boolean(treasuryAddress);
+  const canAllocate = walletConnected && (isMultisig || isOperator) && Boolean(treasuryAddress) && !treasuryInfo?.paused;
 
   const persistMetadata = useCallback(
     (metadata: TreasuryOperationMetadata) => {
@@ -1082,25 +904,99 @@ export default function TreasuryPage() {
       };
     }
 
-    const newMinDelay = newMinDelayValue.trim() ? BigInt(newMinDelayValue.trim()) : undefined;
-    if (!newMinDelay || newMinDelay <= ZERO_BIGINT) {
-      setResultModal({ kind: 'error', title: '参数无效', message: '请输入有效的新治理延迟秒数。' });
+    if (operationKind === 'setMinDelay') {
+      const newMinDelay = newMinDelayValue.trim() ? BigInt(newMinDelayValue.trim()) : undefined;
+      if (!newMinDelay || newMinDelay <= ZERO_BIGINT) {
+        setResultModal({ kind: 'error', title: '参数无效', message: '请输入有效的新治理延迟秒数。' });
+        return null;
+      }
+
+      const operationId = await publicClient.readContract({
+        address: treasuryAddress,
+        abi: fluxSwapTreasuryAbi,
+        functionName: 'hashSetMinDelay',
+        args: [newMinDelay],
+      });
+
+      return {
+        ...common,
+        operationId,
+        label: '治理延迟',
+        summary: `治理延迟更新为 ${formatDuration(newMinDelay)}`,
+        params: { newMinDelay: newMinDelay.toString() },
+      };
+    }
+
+    if (operationKind === 'emergencyWithdraw') {
+      if (!selectedToken) {
+        setResultModal({ kind: 'error', title: '参数无效', message: '请选择有效的提取资产。' });
+        return null;
+      }
+
+      if (!isAddress(withdrawRecipientAddress)) {
+        setResultModal({ kind: 'error', title: '参数无效', message: '请输入有效的提取接收地址。' });
+        return null;
+      }
+
+      const amountUnits = parseAmount(withdrawAmountValue, selectedToken.decimals);
+      if (!amountUnits || amountUnits <= ZERO_BIGINT) {
+        setResultModal({ kind: 'error', title: '参数无效', message: '紧急提取数量必须大于 0。' });
+        return null;
+      }
+
+      const operationId = await publicClient.readContract({
+        address: treasuryAddress,
+        abi: fluxSwapTreasuryAbi,
+        functionName: 'hashEmergencyWithdraw',
+        args: [selectedToken.address, withdrawRecipientAddress, amountUnits],
+      });
+
+      return {
+        ...common,
+        operationId,
+        label: '紧急提取',
+        summary: `提取 ${withdrawAmountValue} ${selectedToken.symbol} 到 ${shortAddress(withdrawRecipientAddress)}`,
+        params: {
+          withdrawToken: selectedToken.address,
+          withdrawTokenSymbol: selectedToken.symbol,
+          withdrawTokenDecimals: selectedToken.decimals,
+          withdrawRecipient: withdrawRecipientAddress,
+          withdrawAmountUnits: amountUnits.toString(),
+          withdrawAmountDisplay: `${withdrawAmountValue} ${selectedToken.symbol}`,
+        },
+      };
+    }
+
+    if (!isAddress(withdrawRecipientAddress)) {
+      setResultModal({ kind: 'error', title: '参数无效', message: '请输入有效的 ETH 提取接收地址。' });
+      return null;
+    }
+
+    const amountUnits = parseAmount(withdrawAmountValue, 18);
+    if (!amountUnits || amountUnits <= ZERO_BIGINT) {
+      setResultModal({ kind: 'error', title: '参数无效', message: 'ETH 紧急提取数量必须大于 0。' });
       return null;
     }
 
     const operationId = await publicClient.readContract({
       address: treasuryAddress,
       abi: fluxSwapTreasuryAbi,
-      functionName: 'hashSetMinDelay',
-      args: [newMinDelay],
+      functionName: 'hashEmergencyWithdrawETH',
+      args: [withdrawRecipientAddress, amountUnits],
     });
 
     return {
       ...common,
       operationId,
-      label: '治理延迟',
-      summary: `治理延迟更新为 ${formatDuration(newMinDelay)}`,
-      params: { newMinDelay: newMinDelay.toString() },
+      label: '紧急提取 ETH',
+      summary: `提取 ${withdrawAmountValue} ETH 到 ${shortAddress(withdrawRecipientAddress)}`,
+      params: {
+        withdrawTokenSymbol: 'ETH',
+        withdrawTokenDecimals: 18,
+        withdrawRecipient: withdrawRecipientAddress,
+        withdrawAmountUnits: amountUnits.toString(),
+        withdrawAmountDisplay: `${withdrawAmountValue} ETH`,
+      },
     };
   }, [
     amountValue,
@@ -1115,6 +1011,8 @@ export default function TreasuryPage() {
     targetAddress,
     treasuryAddress,
     treasuryInfo,
+    withdrawAmountValue,
+    withdrawRecipientAddress,
   ]);
 
   const handleScheduleOperation = useCallback(async () => {
@@ -1225,6 +1123,106 @@ export default function TreasuryPage() {
     writeContractAsync,
   ]);
 
+  const submitAllocation = useCallback(() => {
+    if (!treasuryAddress || !selectedAllocationToken || !publicClient) {
+      setResultModal({ kind: 'error', title: '无法划拨', message: '金库资产信息尚未加载完成。' });
+      return;
+    }
+
+    if (!mounted || !isConnected) {
+      openConnectModal?.();
+      return;
+    }
+
+    if (!canAllocate) {
+      setResultModal({
+        kind: 'error',
+        title: '无法划拨',
+        message: treasuryInfo?.paused ? '金库当前已暂停，不能执行资产划拨。' : '只有 Operator 或 Multisig 钱包可以划拨资产。',
+      });
+      return;
+    }
+
+    if (!isAddress(allocationRecipientAddress)) {
+      setResultModal({ kind: 'error', title: '参数无效', message: '请输入有效的划拨接收地址。' });
+      return;
+    }
+
+    const amountUnits = parseAmount(allocationAmountValue, selectedAllocationToken.decimals);
+    if (!amountUnits || amountUnits <= ZERO_BIGINT) {
+      setResultModal({ kind: 'error', title: '参数无效', message: '划拨数量必须大于 0。' });
+      return;
+    }
+
+    if (amountUnits > selectedAllocationToken.balance) {
+      setResultModal({ kind: 'error', title: '余额不足', message: '划拨数量不能超过当前金库余额。' });
+      return;
+    }
+
+    if (
+      selectedAllocationToken.dailySpendCap > ZERO_BIGINT &&
+      selectedAllocationToken.spentToday + amountUnits > selectedAllocationToken.dailySpendCap
+    ) {
+      setResultModal({ kind: 'error', title: '超过每日额度', message: '本次划拨会超过该资产今日剩余额度。' });
+      return;
+    }
+
+    void (async () => {
+      const recipientAllowed = await publicClient.readContract({
+        address: treasuryAddress,
+        abi: fluxSwapTreasuryAbi,
+        functionName: 'allowedRecipients',
+        args: [allocationRecipientAddress],
+      });
+
+      if (!recipientAllowed) {
+        setResultModal({
+          kind: 'error',
+          title: '接收方未加入白名单',
+          message: '请先通过治理操作把该接收地址加入白名单，再执行划拨。',
+        });
+        return;
+      }
+
+      void runTransaction(
+        'allocate',
+        '金库资产已划拨',
+        () =>
+          selectedAllocationToken.isNative
+            ? writeContractAsync({
+                address: treasuryAddress,
+                abi: fluxSwapTreasuryAbi,
+                functionName: 'allocateETH',
+                args: [allocationRecipientAddress, amountUnits],
+                ...localGasOverride,
+              })
+            : writeContractAsync({
+                address: treasuryAddress,
+                abi: fluxSwapTreasuryAbi,
+                functionName: 'allocate',
+                args: [selectedAllocationToken.address, allocationRecipientAddress, amountUnits],
+                ...localGasOverride,
+              }),
+      );
+    })().catch((allocationError) => {
+      setResultModal({ kind: 'error', title: '划拨检查失败', message: formatErrorMessage(allocationError) });
+    });
+  }, [
+    allocationAmountValue,
+    allocationRecipientAddress,
+    canAllocate,
+    isConnected,
+    localGasOverride,
+    mounted,
+    openConnectModal,
+    publicClient,
+    runTransaction,
+    selectedAllocationToken,
+    treasuryAddress,
+    treasuryInfo?.paused,
+    writeContractAsync,
+  ]);
+
   const handlePauseToggle = useCallback(() => {
     setConfirmModal({
       title: treasuryInfo?.paused ? '确认恢复金库' : '确认暂停金库',
@@ -1238,6 +1236,38 @@ export default function TreasuryPage() {
       },
     });
   }, [submitPauseToggle, treasuryInfo?.paused]);
+
+  const handleAllocation = useCallback(() => {
+    if (!mounted || !isConnected) {
+      openConnectModal?.();
+      return;
+    }
+
+    if (!selectedAllocationToken) {
+      setResultModal({ kind: 'error', title: '无法划拨', message: '请选择需要划拨的金库资产。' });
+      return;
+    }
+
+    setConfirmModal({
+      title: '确认划拨金库资产',
+      message: `将划拨 ${allocationAmountValue || '0'} ${selectedAllocationToken.symbol} 到 ${shortAddress(
+        allocationRecipientAddress,
+      )}。该动作会立即走链上交易，并消耗对应资产的每日额度。`,
+      tone: 'danger',
+      confirmLabel: '确认划拨',
+      action: () => {
+        submitAllocation();
+      },
+    });
+  }, [
+    allocationAmountValue,
+    allocationRecipientAddress,
+    isConnected,
+    mounted,
+    openConnectModal,
+    selectedAllocationToken,
+    submitAllocation,
+  ]);
 
   const submitCancelOperation = useCallback(
     (operation: TreasuryOperationRow) => {
@@ -1454,6 +1484,50 @@ export default function TreasuryPage() {
         return;
       }
 
+      if (
+        metadata.kind === 'emergencyWithdraw' &&
+        params.withdrawToken &&
+        params.withdrawRecipient &&
+        params.withdrawAmountUnits
+      ) {
+        void runTransaction(
+          action,
+          '紧急提取已执行',
+          () =>
+            writeContractAsync({
+              address: treasuryAddress,
+              abi: fluxSwapTreasuryAbi,
+              functionName: 'executeEmergencyWithdraw',
+              args: [
+                params.withdrawToken!,
+                params.withdrawRecipient!,
+                BigInt(params.withdrawAmountUnits!),
+                operation.operationId,
+              ],
+              ...localGasOverride,
+            }),
+          () => removeMetadata(operation.operationId),
+        );
+        return;
+      }
+
+      if (metadata.kind === 'emergencyWithdrawETH' && params.withdrawRecipient && params.withdrawAmountUnits) {
+        void runTransaction(
+          action,
+          'ETH 紧急提取已执行',
+          () =>
+            writeContractAsync({
+              address: treasuryAddress,
+              abi: fluxSwapTreasuryAbi,
+              functionName: 'executeEmergencyWithdrawETH',
+              args: [params.withdrawRecipient!, BigInt(params.withdrawAmountUnits!), operation.operationId],
+              ...localGasOverride,
+            }),
+          () => removeMetadata(operation.operationId),
+        );
+        return;
+      }
+
       setResultModal({ kind: 'error', title: '参数不完整', message: '该操作的本地参数元数据不完整，不能安全执行。' });
     },
     [localGasOverride, removeMetadata, runTransaction, treasuryAddress, writeContractAsync],
@@ -1503,105 +1577,31 @@ export default function TreasuryPage() {
         </div>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card className="p-5">
-          <p className="text-sm text-slate-500">金库状态</p>
-          <div className="mt-3">
-            <StatusPill tone={treasuryInfo?.paused ? 'danger' : 'success'}>
-              {treasuryInfo?.paused ? '已暂停' : '正常'}
-            </StatusPill>
-          </div>
-        </Card>
-        <Card className="p-5">
-          <p className="text-sm text-slate-500">配置资产</p>
-          <p className="mt-3 text-2xl font-semibold text-slate-950">{totalConfiguredAssets}</p>
-          <p className="mt-1 text-xs text-slate-500">{allowedTokenCount} 个已加入白名单</p>
-        </Card>
-        <Card className="p-5">
-          <p className="text-sm text-slate-500">待执行治理</p>
-          <p className="mt-3 text-2xl font-semibold text-slate-950">{operationRows.length}</p>
-          <p className="mt-1 text-xs text-slate-500">{readyOperationCount} 个已到可执行时间</p>
-        </Card>
-        <Card className="p-5">
-          <p className="text-sm text-slate-500">治理延迟</p>
-          <p className="mt-3 text-2xl font-semibold text-slate-950">
-            {formatDuration(treasuryInfo?.minDelay ?? ZERO_BIGINT)}
-          </p>
-        </Card>
-      </div>
+      <TreasuryStatusCards
+        paused={treasuryInfo?.paused}
+        minDelayLabel={formatDuration(treasuryInfo?.minDelay ?? ZERO_BIGINT)}
+        totalConfiguredAssets={totalConfiguredAssets}
+        allowedTokenCount={allowedTokenCount}
+        operationCount={operationRows.length}
+        readyOperationCount={readyOperationCount}
+        pauseBusy={activeAction === 'pause' || activeAction === 'unpause'}
+        mounted={mounted}
+        onPauseToggle={handlePauseToggle}
+      />
 
-      <Card className="overflow-hidden">
-        <div className="border-b border-slate-200 p-5">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
-              <ShieldCheck size={19} />
-            </span>
-            <div>
-              <h2 className="font-semibold text-slate-950">权限与治理地址</h2>
-              <p className="text-sm text-slate-500">治理、多签、紧急控制和执行账户的当前配置。</p>
-            </div>
-          </div>
-        </div>
-        <div className="grid gap-0 divide-y divide-slate-200 md:grid-cols-2 md:divide-x md:divide-y-0 xl:grid-cols-4">
-          <div className="p-5">
-            <p className="text-xs text-slate-500">Treasury</p>
-            <p className="mt-2 font-mono text-sm font-semibold text-slate-900">{shortAddress(treasuryInfo?.address)}</p>
-          </div>
-          <div className="p-5">
-            <p className="text-xs text-slate-500">Multisig</p>
-            <p className="mt-2 font-mono text-sm font-semibold text-slate-900">{shortAddress(treasuryInfo?.multisig)}</p>
-          </div>
-          <div className="p-5">
-            <p className="text-xs text-slate-500">Guardian</p>
-            <p className="mt-2 font-mono text-sm font-semibold text-slate-900">{shortAddress(treasuryInfo?.guardian)}</p>
-          </div>
-          <div className="p-5">
-            <p className="text-xs text-slate-500">Operator</p>
-            <p className="mt-2 font-mono text-sm font-semibold text-slate-900">{shortAddress(treasuryInfo?.operator)}</p>
-          </div>
-        </div>
-      </Card>
-
-      <Card className="p-5">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="flex items-center gap-3">
-              <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-                <Wallet size={19} />
-              </span>
-              <div>
-                <h2 className="font-semibold text-slate-950">治理操作入口</h2>
-                <p className="text-sm text-slate-500">先识别当前钱包角色，后续排队、执行和取消操作都会基于这里的权限状态。</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-xs text-slate-500">当前钱包</p>
-              <p className="mt-1 font-mono text-sm font-semibold text-slate-900">
-                {walletConnected ? shortAddress(address) : '未连接'}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <StatusPill tone={isMultisig ? 'success' : 'neutral'}>Multisig</StatusPill>
-              <StatusPill tone={isGuardian ? 'success' : 'neutral'}>Guardian</StatusPill>
-              <StatusPill tone={isOperator ? 'success' : 'neutral'}>Operator</StatusPill>
-            </div>
-            {!walletConnected ? (
-              <button
-                type="button"
-                onClick={openConnectModal ?? undefined}
-                disabled={!mounted}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:bg-slate-300 disabled:text-slate-500"
-              >
-                <Wallet size={15} />
-                连接钱包
-              </button>
-            ) : null}
-          </div>
-        </div>
-      </Card>
+      <TreasuryAccessPanel
+        treasuryAddress={treasuryInfo?.address}
+        multisig={treasuryInfo?.multisig}
+        guardian={treasuryInfo?.guardian}
+        operator={treasuryInfo?.operator}
+        walletConnected={walletConnected}
+        walletAddress={address}
+        mounted={mounted}
+        isMultisig={isMultisig}
+        isGuardian={isGuardian}
+        isOperator={isOperator}
+        onConnect={openConnectModal ?? undefined}
+      />
 
       <div className="grid gap-4 xl:grid-cols-[1.25fr_0.75fr]">
         <Card className="overflow-hidden">
@@ -1629,6 +1629,8 @@ export default function TreasuryPage() {
                 <option value="setGuardian">更新 Guardian</option>
                 <option value="setOperator">更新 Operator</option>
                 <option value="setMinDelay">更新治理延迟</option>
+                <option value="emergencyWithdraw">紧急提取 ERC20</option>
+                <option value="emergencyWithdrawETH">紧急提取 ETH</option>
               </SelectInput>
             </div>
 
@@ -1641,7 +1643,9 @@ export default function TreasuryPage() {
               />
             </div>
 
-            {['setAllowedToken', 'setDailySpendCap', 'approveSpender', 'revokeSpender'].includes(operationKind) ? (
+            {['setAllowedToken', 'setDailySpendCap', 'approveSpender', 'revokeSpender', 'emergencyWithdraw'].includes(
+              operationKind,
+            ) ? (
               <div className="space-y-2">
                 <FieldLabel>资产</FieldLabel>
                 <SelectInput value={effectiveSelectedTokenAddress} onChange={setSelectedTokenAddress}>
@@ -1702,6 +1706,24 @@ export default function TreasuryPage() {
               </div>
             ) : null}
 
+            {['emergencyWithdraw', 'emergencyWithdrawETH'].includes(operationKind) ? (
+              <>
+                <div className="space-y-2">
+                  <FieldLabel>提取数量</FieldLabel>
+                  <TextInput
+                    value={withdrawAmountValue}
+                    onChange={setWithdrawAmountValue}
+                    placeholder={operationKind === 'emergencyWithdraw' && selectedToken ? `输入 ${selectedToken.symbol} 数量` : '输入 ETH 数量'}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <FieldLabel>接收地址</FieldLabel>
+                  <TextInput value={withdrawRecipientAddress} onChange={setWithdrawRecipientAddress} placeholder="0x..." />
+                </div>
+              </>
+            ) : null}
+
             <div className="flex items-end justify-end lg:col-span-2">
               <button
                 type="button"
@@ -1716,368 +1738,48 @@ export default function TreasuryPage() {
           </div>
         </Card>
 
-        <Card className="p-5">
-          <div className="flex h-full flex-col justify-between gap-5">
-            <div>
-              <div className="flex items-center gap-3">
-                <span
-                  className={`inline-flex h-10 w-10 items-center justify-center rounded-xl ${
-                    treasuryInfo?.paused ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'
-                  }`}
-                >
-                  {treasuryInfo?.paused ? <PauseCircle size={19} /> : <ShieldCheck size={19} />}
-                </span>
-                <div>
-                  <h2 className="font-semibold text-slate-950">紧急状态</h2>
-                  <p className="text-sm text-slate-500">
-                    暂停由 Guardian 或 Multisig 执行，恢复只能由 Multisig 执行。
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs text-slate-500">当前状态</p>
-                <div className="mt-2">
-                  <StatusPill tone={treasuryInfo?.paused ? 'danger' : 'success'}>
-                    {treasuryInfo?.paused ? '已暂停' : '正常'}
-                  </StatusPill>
-                </div>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={handlePauseToggle}
-              disabled={activeAction === 'pause' || activeAction === 'unpause' || !mounted}
-              className={`inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition disabled:bg-slate-300 disabled:text-slate-500 ${
-                treasuryInfo?.paused
-                  ? 'bg-slate-950 text-white hover:bg-slate-800'
-                  : 'bg-rose-600 text-white hover:bg-rose-500'
-              }`}
-            >
-              {activeAction === 'pause' || activeAction === 'unpause' ? (
-                <LoaderCircle size={16} className="animate-spin" />
-              ) : treasuryInfo?.paused ? (
-                <Play size={16} />
-              ) : (
-                <Ban size={16} />
-              )}
-              {treasuryInfo?.paused ? '恢复金库' : '暂停金库'}
-            </button>
-          </div>
-        </Card>
+        <TreasuryAllocationCard
+          tokenRows={tokenRows}
+          selectedToken={selectedAllocationToken}
+          selectedTokenAddress={effectiveAllocationTokenAddress}
+          recipientAddress={allocationRecipientAddress}
+          amountValue={allocationAmountValue}
+          active={activeAction === 'allocate'}
+          mounted={mounted}
+          walletConnected={walletConnected}
+          canAllocate={canAllocate}
+          onTokenChange={setAllocationTokenAddress}
+          onRecipientChange={setAllocationRecipientAddress}
+          onAmountChange={setAllocationAmountValue}
+          onSubmit={handleAllocation}
+          formatTokenAmount={formatTokenAmount}
+          subtractFloor={subtractFloor}
+        />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-        <Card className="overflow-hidden">
-          <div className="border-b border-slate-200 p-5">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex items-center gap-3">
-                <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                  <Settings2 size={19} />
-                </span>
-                <div>
-                  <h2 className="font-semibold text-slate-950">待处理治理操作</h2>
-                  <p className="text-sm text-slate-500">最近 20,000 区块内排队、尚未执行的金库操作。</p>
-                </div>
-              </div>
+      <TreasuryOperationsTable
+        loading={loading}
+        operations={operationRows}
+        readyOperationCount={readyOperationCount}
+        expandedOperationId={expandedOperationId}
+        activeAction={activeAction}
+        isMultisig={isMultisig}
+        onToggleExpand={(operationId) =>
+          setExpandedOperationId((current) => (current === operationId ? null : operationId))
+        }
+        onExecute={handleExecuteOperation}
+        onCancel={handleCancelOperation}
+        formatUnixTime={formatUnixTime}
+      />
 
-              <div className="grid grid-cols-2 gap-2 sm:w-[260px]">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
-                  <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">总数</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-950">{operationRows.length}</p>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
-                  <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">可执行</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-950">{readyOperationCount}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {loading && operationRows.length === 0 ? (
-            <div className="flex h-[200px] flex-col items-center justify-center gap-3 px-6 text-center text-sm text-slate-500">
-              <LoaderCircle size={22} className="animate-spin text-slate-400" />
-              <p>正在加载治理操作</p>
-            </div>
-          ) : operationRows.length === 0 ? (
-            <div className="flex h-[200px] flex-col items-center justify-center gap-4 px-8 text-center">
-              <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
-                <Settings2 size={20} />
-              </span>
-              <div className="max-w-md space-y-1">
-                <p className="text-base font-semibold text-slate-900">暂无待处理治理操作</p>
-                <p className="text-sm leading-6 text-slate-500">
-                  等 Multisig 排队治理动作后，这里会显示操作类型、可执行时间和执行入口。
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px] border-collapse text-left">
-                <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                  <tr>
-                    <th className="w-10 px-4 py-3" aria-label="展开详情" />
-                    <th className="px-4 py-3">类型</th>
-                    <th className="px-5 py-3">内容</th>
-                    <th className="px-5 py-3">状态</th>
-                    <th className="px-5 py-3">可执行时间</th>
-                    <th className="px-5 py-3">发起人</th>
-                    <th className="px-5 py-3 text-right">操作</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {operationRows.map((operation) => {
-                    const expanded = expandedOperationId === operation.operationId;
-                    const detailItems = buildOperationDetailItems(operation);
-
-                    return (
-                      <Fragment key={operation.operationId}>
-                        <tr
-                          className="cursor-pointer align-middle transition hover:bg-slate-50/80"
-                          onClick={() =>
-                            setExpandedOperationId((current) =>
-                              current === operation.operationId ? null : operation.operationId,
-                            )
-                          }
-                        >
-                          <td className="px-4 py-4">
-                            <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition group-hover:border-slate-300">
-                              {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                            </span>
-                          </td>
-                          <td className="px-4 py-4">
-                            <p className="text-sm font-semibold text-slate-950">
-                              {operation.metadata?.label ?? '未知操作'}
-                            </p>
-                            <p className="mt-1 font-mono text-xs text-slate-500">{shortAddress(operation.operationId)}</p>
-                          </td>
-                          <td className="px-5 py-4 text-sm text-slate-700">
-                            {operation.metadata?.summary ?? '缺少本地参数元数据，只能取消，不能直接执行'}
-                          </td>
-                          <td className="px-5 py-4">
-                            <StatusPill tone={getOperationStatusTone(operation.status)}>
-                              {getOperationStatusLabel(operation.status)}
-                            </StatusPill>
-                          </td>
-                          <td className="px-5 py-4 text-sm text-slate-700">{formatUnixTime(operation.executeAfter)}</td>
-                          <td className="px-5 py-4 font-mono text-sm text-slate-700">
-                            {shortAddress(operation.scheduler)}
-                          </td>
-                          <td className="px-5 py-4">
-                            <div className="flex justify-end gap-2" onClick={(event) => event.stopPropagation()}>
-                              <button
-                                type="button"
-                                onClick={() => handleExecuteOperation(operation)}
-                                disabled={
-                                  activeAction === `execute:${operation.operationId}` ||
-                                  operation.status !== 'ready' ||
-                                  !operation.metadata
-                                }
-                                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-slate-950 px-3 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400"
-                              >
-                                {activeAction === `execute:${operation.operationId}` ? (
-                                  <LoaderCircle size={14} className="animate-spin" />
-                                ) : (
-                                  <Play size={14} />
-                                )}
-                                执行
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleCancelOperation(operation)}
-                                disabled={activeAction === `cancel:${operation.operationId}` || !isMultisig}
-                                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:bg-slate-100 disabled:text-slate-400"
-                              >
-                                {activeAction === `cancel:${operation.operationId}` ? (
-                                  <LoaderCircle size={14} className="animate-spin" />
-                                ) : (
-                                  <X size={14} />
-                                )}
-                                取消
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                        {expanded ? (
-                          <tr key={`${operation.operationId}-detail`} className="bg-slate-50/70">
-                            <td colSpan={7} className="px-5 py-4">
-                              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                                <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 lg:flex-row lg:items-start lg:justify-between">
-                                  <div className="min-w-0">
-                                    <p className="text-sm font-semibold text-slate-950">
-                                      {operation.metadata?.label ?? '未知操作'}
-                                    </p>
-                                    <p className="mt-1 text-sm text-slate-500">
-                                      {operation.metadata?.summary ?? '这个操作缺少本地参数元数据，因此只能查看基础链上信息。'}
-                                    </p>
-                                  </div>
-                                  <StatusPill tone={operation.metadata ? 'success' : 'warning'}>
-                                    {operation.metadata ? '元数据完整' : '缺少元数据'}
-                                  </StatusPill>
-                                </div>
-
-                                <div className="mt-4 grid gap-x-8 gap-y-4 md:grid-cols-2">
-                                  {detailItems.map((item) => (
-                                    <div
-                                      key={`${operation.operationId}-${item.label}`}
-                                      className="min-w-0 border-b border-dashed border-slate-100 pb-3 last:border-b-0"
-                                    >
-                                      <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">{item.label}</p>
-                                      <OperationDetailValue value={item.value} />
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-                        ) : null}
-                      </Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
-
-        <Card className="overflow-hidden">
-          <div className="border-b border-slate-200 p-5">
-            <div className="flex items-center gap-3">
-              <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
-                <AlertCircle size={19} />
-              </span>
-              <div>
-                <h2 className="font-semibold text-slate-950">授权风险</h2>
-                <p className="text-sm text-slate-500">{warningRiskCount} 个资产需要关注。</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="max-h-[340px] divide-y divide-slate-200 overflow-y-auto">
-            {loading && riskRows.length === 0 ? (
-              <div className="px-5 py-10 text-center text-sm text-slate-500">
-                <LoaderCircle size={18} className="mx-auto mb-2 animate-spin" />
-                正在检查授权风险
-              </div>
-            ) : riskRows.length === 0 ? (
-              <div className="px-5 py-10 text-center text-sm text-slate-500">暂无资产风险数据</div>
-            ) : (
-              riskRows.map((row) => (
-                <div key={row.token.address} className="flex items-start justify-between gap-4 px-5 py-4">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="font-semibold text-slate-950">{row.token.symbol}</p>
-                      <StatusPill tone={row.risk}>
-                        {row.risk === 'danger'
-                          ? '高风险'
-                          : row.risk === 'warning'
-                            ? '需关注'
-                            : row.risk === 'success'
-                              ? '正常'
-                              : '提示'}
-                      </StatusPill>
-                    </div>
-                    <p className="mt-1 text-sm leading-5 text-slate-500">{row.reason}</p>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <p className="text-xs text-slate-500">今日额度</p>
-                    <p className="mt-1 text-sm font-semibold text-slate-900">{formatRatio(row.spendRatio)}</p>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </Card>
-      </div>
-
-      <Card className="overflow-hidden">
-        <div className="border-b border-slate-200 p-5">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
-              <Vault size={19} />
-            </span>
-            <div>
-              <h2 className="font-semibold text-slate-950">金库资产</h2>
-              <p className="text-sm text-slate-500">
-                展示配置代币在 Treasury 内的余额、给 MultiPoolManager 的可拉取额度，以及每日额度使用进度。
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1040px] border-collapse text-left">
-            <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-              <tr>
-                <th className="px-5 py-3">资产</th>
-                <th className="px-5 py-3">白名单</th>
-                <th className="px-5 py-3">金库余额</th>
-                <th className="px-5 py-3">Manager 授权</th>
-                <th className="px-5 py-3">每日额度</th>
-                <th className="px-5 py-3">今日使用</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {loading && tokenRows.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-5 py-12 text-center text-sm text-slate-500">
-                    <LoaderCircle size={18} className="mx-auto mb-2 animate-spin" />
-                    正在加载金库数据
-                  </td>
-                </tr>
-              ) : tokenRows.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-5 py-12 text-center text-sm text-slate-500">
-                    暂无配置代币
-                  </td>
-                </tr>
-              ) : (
-                tokenRows.map((token) => {
-                  const spendRatio = getDailySpendRatio(token);
-
-                  return (
-                    <tr key={token.address} className="align-middle">
-                      <td className="px-5 py-4">
-                        <p className="font-semibold text-slate-950">{token.symbol}</p>
-                        <p className="mt-1 font-mono text-xs text-slate-500">{shortAddress(token.address)}</p>
-                      </td>
-                      <td className="px-5 py-4">
-                        <StatusPill tone={token.allowed ? 'success' : 'neutral'}>
-                          {token.allowed ? '允许' : '未允许'}
-                        </StatusPill>
-                      </td>
-                      <td className="px-5 py-4 text-sm font-semibold text-slate-900">
-                        {formatTokenAmount(token.balance, token)}
-                      </td>
-                      <td className="px-5 py-4 text-sm text-slate-700">
-                        {formatTokenAmount(token.approvedSpendRemaining, token)}
-                      </td>
-                      <td className="px-5 py-4 text-sm text-slate-700">
-                        {token.dailySpendCap > ZERO_BIGINT ? formatTokenAmount(token.dailySpendCap, token) : '未设置'}
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="min-w-[190px]">
-                          <div className="flex items-center justify-between gap-3 text-sm">
-                            <span className="font-medium text-slate-800">{formatTokenAmount(token.spentToday, token)}</span>
-                            <span className="text-xs font-semibold text-slate-500">{formatRatio(spendRatio)}</span>
-                          </div>
-                          <div className="mt-2 h-2 rounded-full bg-slate-100">
-                            <div
-                              className={`h-full rounded-full transition-all ${getSpendBarClass(spendRatio)}`}
-                              style={{ width: `${spendRatio ?? 0}%` }}
-                            />
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <TreasuryAssetTable
+        loading={loading}
+        tokenRows={tokenRows}
+        formatTokenAmount={formatTokenAmount}
+        formatRatio={formatRatio}
+        getDailySpendRatio={getDailySpendRatio}
+        getSpendBarClass={getSpendBarClass}
+      />
 
       <Card className="p-5">
         <div className="flex items-start gap-3">
