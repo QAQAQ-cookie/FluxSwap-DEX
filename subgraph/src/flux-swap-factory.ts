@@ -1,6 +1,4 @@
-import { Address, BigInt } from "@graphprotocol/graph-ts";
-import { PairCreated } from "../generated/FluxSwapFactory/FluxSwapFactory";
-import { FluxSwapPair as FluxSwapPairTemplate } from "../generated/templates";
+import { Address, BigInt, DataSourceTemplate, ethereum } from "@graphprotocol/graph-ts";
 import { Pair, Token } from "../generated/schema";
 
 class TokenMetadata {
@@ -55,10 +53,10 @@ function createTokenIfMissing(address: Address, timestamp: BigInt): void {
   }
 }
 
-export function handlePairCreated(event: PairCreated): void {
-  let token0 = event.params.token0;
-  let token1 = event.params.token1;
-  let pairAddress = event.params.pair;
+export function handlePairCreated(event: ethereum.Event): void {
+  let token0 = event.parameters[0].value.toAddress();
+  let token1 = event.parameters[1].value.toAddress();
+  let pairAddress = event.parameters[2].value.toAddress();
 
   createTokenIfMissing(token0, event.block.timestamp);
   createTokenIfMissing(token1, event.block.timestamp);
@@ -81,5 +79,5 @@ export function handlePairCreated(event: PairCreated): void {
     pair.save();
   }
 
-  FluxSwapPairTemplate.create(pairAddress);
+  DataSourceTemplate.create("FluxSwapPair", [pairAddress.toHexString()]);
 }
