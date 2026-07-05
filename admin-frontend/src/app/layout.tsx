@@ -6,8 +6,8 @@ import { Providers } from '@/components/Providers';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'FluxSwap Admin',
-  description: 'Manage FluxSwap farms, reward allocation, and reward distribution.',
+  title: 'FluxSwap 管理端',
+  description: '管理 FluxSwap 的农场、奖励分配、金库治理和代币配置。',
 };
 
 export default function RootLayout({

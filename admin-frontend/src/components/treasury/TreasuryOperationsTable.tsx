@@ -2,67 +2,21 @@
 
 import { Fragment } from 'react';
 import { ChevronDown, ChevronRight, LoaderCircle, Play, Settings2, X } from 'lucide-react';
-import type { Address, Hex } from 'viem';
+import type { Hex } from 'viem';
 
 import { Card, shortAddress, StatusPill } from '@/components/AdminPrimitives';
-
-type TreasuryOperationMetadata = {
-  version: 1;
-  chainId: number;
-  treasuryAddress: Address;
-  operationId: Hex;
-  kind:
-    | 'setAllowedToken'
-    | 'setAllowedRecipient'
-    | 'setDailySpendCap'
-    | 'approveSpender'
-    | 'revokeSpender'
-    | 'setGuardian'
-    | 'setOperator'
-    | 'setMinDelay'
-    | 'emergencyWithdraw'
-    | 'emergencyWithdrawETH';
-  label: string;
-  summary: string;
-  params: {
-    token?: Address;
-    tokenSymbol?: string;
-    allowed?: boolean;
-    recipient?: Address;
-    spender?: Address;
-    amountUnits?: string;
-    amountDisplay?: string;
-    newGuardian?: Address;
-    newOperator?: Address;
-    newMinDelay?: string;
-    withdrawToken?: Address;
-    withdrawTokenSymbol?: string;
-    withdrawRecipient?: Address;
-    withdrawAmountUnits?: string;
-    withdrawAmountDisplay?: string;
-  };
-  createdAt: number;
-};
-
-export type TreasuryOperationTableRow = {
-  operationId: Hex;
-  executeAfter: bigint;
-  scheduler?: Address;
-  status: 'pending' | 'ready';
-  blockNumber: bigint;
-  metadata?: TreasuryOperationMetadata;
-};
+import type { TreasuryOperationRow } from '@/components/treasury/TreasuryTypes';
 
 type TreasuryOperationsTableProps = {
   loading: boolean;
-  operations: TreasuryOperationTableRow[];
+  operations: TreasuryOperationRow[];
   readyOperationCount: number;
   expandedOperationId: Hex | null;
   activeAction: string | null;
   isMultisig: boolean;
   onToggleExpand: (operationId: Hex) => void;
-  onExecute: (operation: TreasuryOperationTableRow) => void;
-  onCancel: (operation: TreasuryOperationTableRow) => void;
+  onExecute: (operation: TreasuryOperationRow) => void;
+  onCancel: (operation: TreasuryOperationRow) => void;
   formatUnixTime: (seconds: bigint) => string;
 };
 
@@ -78,21 +32,21 @@ function formatMetadataValue(value?: string | boolean) {
   return value;
 }
 
-function getOperationStatusLabel(status: TreasuryOperationTableRow['status']) {
+function getOperationStatusLabel(status: TreasuryOperationRow['status']) {
   return status === 'ready' ? '可执行' : '等待中';
 }
 
-function getOperationStatusTone(status: TreasuryOperationTableRow['status']) {
+function getOperationStatusTone(status: TreasuryOperationRow['status']) {
   return status === 'ready' ? 'warning' : 'neutral';
 }
 
-function buildOperationDetailItems(operation: TreasuryOperationTableRow, formatUnixTime: (seconds: bigint) => string) {
+function buildOperationDetailItems(operation: TreasuryOperationRow, formatUnixTime: (seconds: bigint) => string) {
   const metadata = operation.metadata;
 
   if (!metadata) {
     return [
       { label: '操作 ID', value: operation.operationId },
-      { label: '元数据状态', value: '缺少本地参数元数据' },
+      { label: '参数记录', value: '缺少本地参数记录' },
       { label: '可执行时间', value: formatUnixTime(operation.executeAfter) },
       { label: '发起人', value: operation.scheduler ?? '--' },
     ];
@@ -100,7 +54,7 @@ function buildOperationDetailItems(operation: TreasuryOperationTableRow, formatU
 
   const items: Array<{ label: string; value: string }> = [
     { label: '操作 ID', value: metadata.operationId },
-    { label: '元数据状态', value: '已记录' },
+    { label: '参数记录', value: '已记录' },
     { label: '本地创建时间', value: new Date(metadata.createdAt).toLocaleString('zh-CN', { hour12: false }) },
     { label: '可执行时间', value: formatUnixTime(operation.executeAfter) },
     { label: '发起人', value: operation.scheduler ?? '--' },
@@ -119,10 +73,10 @@ function buildOperationDetailItems(operation: TreasuryOperationTableRow, formatU
     items.push({ label: '花费者地址', value: metadata.params.spender });
   }
   if (metadata.params.newGuardian) {
-    items.push({ label: '新 Guardian', value: metadata.params.newGuardian });
+    items.push({ label: '新守护者', value: metadata.params.newGuardian });
   }
   if (metadata.params.newOperator) {
-    items.push({ label: '新 Operator', value: metadata.params.newOperator });
+    items.push({ label: '新操作员', value: metadata.params.newOperator });
   }
   if (metadata.params.allowed !== undefined) {
     items.push({ label: '白名单状态', value: formatMetadataValue(metadata.params.allowed) });
@@ -194,7 +148,7 @@ export function TreasuryOperationsTable({
             </span>
             <div>
               <h2 className="font-semibold text-slate-950">待处理治理操作</h2>
-              <p className="text-sm text-slate-500">最近 20,000 区块内排队、尚未执行的金库操作。</p>
+              <p className="text-sm text-slate-500">最近 20,000 区块内已排队、未执行的金库操作。</p>
             </div>
           </div>
 
@@ -223,9 +177,7 @@ export function TreasuryOperationsTable({
           </span>
           <div className="max-w-md space-y-1">
             <p className="text-base font-semibold text-slate-900">暂无待处理治理操作</p>
-            <p className="text-sm leading-6 text-slate-500">
-              等 Multisig 排队治理动作后，这里会显示操作类型、可执行时间和执行入口。
-            </p>
+            <p className="text-sm leading-6 text-slate-500">多签排队后，这里会显示类型、执行时间和操作入口。</p>
           </div>
         </div>
       ) : (
@@ -263,7 +215,7 @@ export function TreasuryOperationsTable({
                         <p className="mt-1 font-mono text-xs text-slate-500">{shortAddress(operation.operationId)}</p>
                       </td>
                       <td className="px-5 py-4 text-sm text-slate-700">
-                        {operation.metadata?.summary ?? '缺少本地参数元数据，只能取消，不能直接执行'}
+                        {operation.metadata?.summary ?? '缺少本地参数记录，只能取消，不能直接执行'}
                       </td>
                       <td className="px-5 py-4">
                         <StatusPill tone={getOperationStatusTone(operation.status)}>
@@ -317,11 +269,11 @@ export function TreasuryOperationsTable({
                                   {operation.metadata?.label ?? '未知操作'}
                                 </p>
                                 <p className="mt-1 text-sm text-slate-500">
-                                  {operation.metadata?.summary ?? '这个操作缺少本地参数元数据，因此只能查看基础链上信息。'}
+                                  {operation.metadata?.summary ?? '该操作缺少本地参数记录，因此只能查看基础链上信息。'}
                                 </p>
                               </div>
                               <StatusPill tone={operation.metadata ? 'success' : 'warning'}>
-                                {operation.metadata ? '元数据完整' : '缺少元数据'}
+                                {operation.metadata ? '参数完整' : '缺少参数'}
                               </StatusPill>
                             </div>
 

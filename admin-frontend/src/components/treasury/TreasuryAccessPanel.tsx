@@ -41,25 +41,25 @@ export function TreasuryAccessPanel({
             </span>
             <div>
               <h2 className="font-semibold text-slate-950">权限与治理地址</h2>
-              <p className="text-sm text-slate-500">治理、多签、紧急控制和执行账户的当前配置。</p>
+              <p className="text-sm text-slate-500">查看治理角色和执行账户配置。</p>
             </div>
           </div>
         </div>
         <div className="grid gap-0 divide-y divide-slate-200 md:grid-cols-2 md:divide-x md:divide-y-0 xl:grid-cols-4">
           <div className="p-5">
-            <p className="text-xs text-slate-500">Treasury</p>
+            <p className="text-xs text-slate-500">金库</p>
             <p className="mt-2 font-mono text-sm font-semibold text-slate-900">{shortAddress(treasuryAddress)}</p>
           </div>
           <div className="p-5">
-            <p className="text-xs text-slate-500">Multisig</p>
+            <p className="text-xs text-slate-500">多签</p>
             <p className="mt-2 font-mono text-sm font-semibold text-slate-900">{shortAddress(multisig)}</p>
           </div>
           <div className="p-5">
-            <p className="text-xs text-slate-500">Guardian</p>
+            <p className="text-xs text-slate-500">守护者</p>
             <p className="mt-2 font-mono text-sm font-semibold text-slate-900">{shortAddress(guardian)}</p>
           </div>
           <div className="p-5">
-            <p className="text-xs text-slate-500">Operator</p>
+            <p className="text-xs text-slate-500">操作员</p>
             <p className="mt-2 font-mono text-sm font-semibold text-slate-900">{shortAddress(operator)}</p>
           </div>
         </div>
@@ -74,7 +74,7 @@ export function TreasuryAccessPanel({
               </span>
               <div>
                 <h2 className="font-semibold text-slate-950">治理操作入口</h2>
-                <p className="text-sm text-slate-500">先识别当前钱包角色，后续排队、执行和取消操作都会基于这里的权限状态。</p>
+                <p className="text-sm text-slate-500">当前钱包角色决定后续排队、执行和取消权限。</p>
               </div>
             </div>
           </div>
@@ -87,9 +87,9 @@ export function TreasuryAccessPanel({
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <StatusPill tone={isMultisig ? 'success' : 'neutral'}>Multisig</StatusPill>
-              <StatusPill tone={isGuardian ? 'success' : 'neutral'}>Guardian</StatusPill>
-              <StatusPill tone={isOperator ? 'success' : 'neutral'}>Operator</StatusPill>
+              <StatusPill tone={isMultisig ? 'success' : 'neutral'}>多签</StatusPill>
+              <StatusPill tone={isGuardian ? 'success' : 'neutral'}>守护者</StatusPill>
+              <StatusPill tone={isOperator ? 'success' : 'neutral'}>操作员</StatusPill>
             </div>
             {!walletConnected ? (
               <button

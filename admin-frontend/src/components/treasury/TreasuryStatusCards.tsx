@@ -74,7 +74,7 @@ export function TreasuryStatusCards({
       </Card>
 
       <Card className="p-5">
-        <p className="text-sm text-slate-500">待执行治理</p>
+        <p className="text-sm text-slate-500">排队中治理</p>
         <p className="mt-3 text-2xl font-semibold text-slate-950">{operationCount}</p>
         <p className="mt-1 text-xs text-slate-500">{readyOperationCount} 个已到可执行时间</p>
       </Card>

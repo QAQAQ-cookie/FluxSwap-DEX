@@ -25,8 +25,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
               <ShieldCheck size={21} />
             </span>
             <span>
-              <span className="block text-base font-semibold text-slate-950">FluxSwap Admin</span>
-              <span className="block text-xs text-slate-500">Protocol Management Console</span>
+              <span className="block text-base font-semibold text-slate-950">FluxSwap 管理端</span>
+              <span className="block text-xs text-slate-500">协议管理控制台</span>
             </span>
           </Link>
 

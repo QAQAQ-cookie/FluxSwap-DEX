@@ -46,9 +46,7 @@ export function TreasuryAssetTable({
           </span>
           <div>
             <h2 className="font-semibold text-slate-950">金库资产</h2>
-            <p className="text-sm text-slate-500">
-              展示配置代币在 Treasury 内的余额、给 MultiPoolManager 的可拉取额度，以及每日额度使用进度。
-            </p>
+            <p className="text-sm text-slate-500">展示金库余额、授权额度和每日额度使用进度。</p>
           </div>
         </div>
       </div>
@@ -60,7 +58,7 @@ export function TreasuryAssetTable({
               <th className="px-5 py-3">资产</th>
               <th className="px-5 py-3">白名单</th>
               <th className="px-5 py-3">金库余额</th>
-              <th className="px-5 py-3">Manager 授权</th>
+              <th className="px-5 py-3">管理合约授权</th>
               <th className="px-5 py-3">每日额度</th>
               <th className="px-5 py-3">今日使用</th>
             </tr>

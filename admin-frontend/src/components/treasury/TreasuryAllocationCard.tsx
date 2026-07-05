@@ -64,7 +64,7 @@ export function TreasuryAllocationCard({
         </span>
         <div>
           <h2 className="font-semibold text-slate-950">金库划拨</h2>
-          <p className="text-sm text-slate-500">Operator 或 Multisig 可向白名单接收方划拨资产。</p>
+          <p className="text-sm text-slate-500">操作员或多签可向白名单接收方划拨资产。</p>
         </div>
       </div>
 
