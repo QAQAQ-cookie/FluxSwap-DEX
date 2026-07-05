@@ -1,8 +1,8 @@
 'use client';
 
-import { AlertCircle, LoaderCircle, RefreshCw } from 'lucide-react';
+import { LoaderCircle, RefreshCw } from 'lucide-react';
 
-import { PageHeader } from '@/components/AdminPrimitives';
+import { PageErrorBanner, PageHeader } from '@/components/AdminPrimitives';
 
 type TokensPageHeaderProps = {
   loading: boolean;
@@ -30,12 +30,7 @@ export function TokensPageHeader({ loading, error, onRefresh }: TokensPageHeader
         </button>
       </div>
 
-      {error ? (
-        <div className="flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          <AlertCircle size={18} />
-          {error}
-        </div>
-      ) : null}
+      {error ? <PageErrorBanner message={error} /> : null}
     </>
   );
 }

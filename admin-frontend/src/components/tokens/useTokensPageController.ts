@@ -126,14 +126,14 @@ export function useTokensPageController() {
   const loadTokens = useCallback(async () => {
     if (!supportedChain) {
       setTokenRows([]);
-      setError('当前网络暂不支持 FluxSwap 管理端。');
+      setError('当前网络还未接入 FluxSwap 管理端。');
       setLoading(false);
       return;
     }
 
     if (!publicClient) {
       setTokenRows([]);
-      setError('当前 RPC 客户端尚未准备好。');
+      setError('RPC 连接尚未就绪，请稍后刷新重试。');
       setLoading(false);
       return;
     }

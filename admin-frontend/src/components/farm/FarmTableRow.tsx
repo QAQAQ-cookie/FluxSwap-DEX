@@ -3,6 +3,7 @@
 import { CircleDollarSign, Settings2, Sprout } from 'lucide-react';
 import type { Dispatch, SetStateAction } from 'react';
 
+import { AdminTableCell } from '@/components/AdminPrimitives';
 import { SecondaryButton, StatusBadge } from '@/components/farm/FarmPrimitives';
 import type { AdminInfo, FarmPoolEdits, FarmRow } from '@/components/farm/FarmTypes';
 import { ALLOC_POINT_HINT, ZERO_BIGINT, shortAddress } from '@/components/farm/FarmUtils';
@@ -30,8 +31,8 @@ export function FarmTableRow({
   const rewardDecimals = farm.rewardToken.decimals || adminInfo?.rewardToken?.decimals || 18;
 
   return (
-    <tr className="align-middle">
-      <td className="px-5 py-4">
+    <tr className="align-middle transition-colors hover:bg-slate-50/70">
+      <AdminTableCell>
         <div className="flex min-w-0 items-center gap-3">
           <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
             {farm.stakingToken.isLp ? <Sprout size={18} /> : <CircleDollarSign size={18} />}
@@ -43,29 +44,29 @@ export function FarmTableRow({
             </p>
           </div>
         </div>
-      </td>
-      <td className="px-5 py-4">
+      </AdminTableCell>
+      <AdminTableCell>
         <StatusBadge active={farm.active} />
-      </td>
-      <td className="px-5 py-4">
+      </AdminTableCell>
+      <AdminTableCell>
         <p className="font-semibold text-slate-900">{farm.allocPoint.toString()}</p>
         <p className="mt-1 text-xs text-slate-500">
           占比 {formatWeight(farm.allocPoint, adminInfo?.totalAllocPoint ?? ZERO_BIGINT)}
         </p>
-      </td>
-      <td className="px-5 py-4 text-sm text-slate-700">
+      </AdminTableCell>
+      <AdminTableCell className="text-sm leading-6 text-slate-700">
         {formatBigIntAmountDown(farm.totalStaked, farm.stakingToken.decimals, 4)}
         <span className="ml-1 text-xs text-slate-400">{farm.stakingToken.symbol}</span>
-      </td>
-      <td className="px-5 py-4 text-sm text-slate-700">
+      </AdminTableCell>
+      <AdminTableCell className="text-sm leading-6 text-slate-700">
         {formatBigIntAmountDown(farm.managerPendingRewards + farm.pendingRewards, rewardDecimals, 4)}
         <span className="ml-1 text-xs text-slate-400">{farm.rewardToken.symbol}</span>
-      </td>
-      <td className="px-5 py-4 text-sm text-slate-700">
+      </AdminTableCell>
+      <AdminTableCell className="text-sm leading-6 text-slate-700">
         {formatBigIntAmountDown(farm.rewardReserve + farm.queuedRewards, rewardDecimals, 4)}
         <span className="ml-1 text-xs text-slate-400">{farm.rewardToken.symbol}</span>
-      </td>
-      <td className="px-5 py-4">
+      </AdminTableCell>
+      <AdminTableCell>
         <div className="flex min-w-[210px] items-center gap-2">
           <div className="space-y-1">
             <input
@@ -104,8 +105,8 @@ export function FarmTableRow({
             启用
           </label>
         </div>
-      </td>
-      <td className="px-5 py-4 text-right">
+      </AdminTableCell>
+      <AdminTableCell align="right">
         <SecondaryButton
           onClick={() => onUpdatePool(farm)}
           disabled={!canUpdatePool}
@@ -114,7 +115,7 @@ export function FarmTableRow({
           <Settings2 size={15} />
           保存
         </SecondaryButton>
-      </td>
+      </AdminTableCell>
     </tr>
   );
 }

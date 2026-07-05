@@ -4,20 +4,20 @@ import { LoaderCircle, RefreshCw } from 'lucide-react';
 
 import { PageErrorBanner, PageHeader } from '@/components/AdminPrimitives';
 
-type TreasuryPageHeaderProps = {
+type LogsPageHeaderProps = {
   loading: boolean;
-  error: string | null;
+  error?: string | null;
   onRefresh: () => void;
 };
 
-export function TreasuryPageHeader({ loading, error, onRefresh }: TreasuryPageHeaderProps) {
+export function LogsPageHeader({ loading, error, onRefresh }: LogsPageHeaderProps) {
   return (
     <>
       <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
         <PageHeader
-          eyebrow="金库"
-          title="金库管理"
-          description="查看金库角色、资产余额、授权额度和治理排队情况。"
+          eyebrow="日志"
+          title="操作记录"
+          description="读取最近的农场和金库管理事件，便于回溯配置变更。"
         />
         <button
           type="button"

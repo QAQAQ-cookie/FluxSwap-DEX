@@ -3,7 +3,7 @@
 import { LoaderCircle, Play, Settings2 } from 'lucide-react';
 import type { Address } from 'viem';
 
-import { Card, shortAddress } from '@/components/AdminPrimitives';
+import { Card, SectionHeader, shortAddress } from '@/components/AdminPrimitives';
 import { FieldLabel, SelectInput, TextInput } from '@/components/treasury/TreasuryFormControls';
 import type { TreasuryOperationKind } from '@/components/treasury/TreasuryTypes';
 
@@ -29,7 +29,6 @@ type TreasuryGovernanceFormProps = {
   withdrawAmountValue: string;
   withdrawRecipientAddress: string;
   active: boolean;
-  mounted: boolean;
   walletConnected: boolean;
   isMultisig: boolean;
   onOperationKindChange: (value: TreasuryOperationKind) => void;
@@ -61,7 +60,6 @@ export function TreasuryGovernanceForm({
   withdrawAmountValue,
   withdrawRecipientAddress,
   active,
-  mounted,
   walletConnected,
   isMultisig,
   onOperationKindChange,
@@ -79,15 +77,11 @@ export function TreasuryGovernanceForm({
   return (
     <Card className="overflow-hidden">
       <div className="border-b border-slate-200 p-5">
-        <div className="flex items-center gap-3">
-          <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-            <Settings2 size={19} />
-          </span>
-          <div>
-            <h2 className="font-semibold text-slate-950">创建治理操作</h2>
-            <p className="text-sm text-slate-500">由多签排队，达到治理延迟后执行，并保留本地参数记录。</p>
-          </div>
-        </div>
+        <SectionHeader
+          icon={<Settings2 size={20} />}
+          title="创建治理操作"
+          description="由多签排队，达到治理延迟后执行，并保留本地参数记录。"
+        />
       </div>
 
       <div className="grid gap-4 p-5 lg:grid-cols-2">
@@ -204,7 +198,7 @@ export function TreasuryGovernanceForm({
           <button
             type="button"
             onClick={onSubmit}
-            disabled={active || !mounted || (walletConnected && !isMultisig)}
+            disabled={active || (walletConnected && !isMultisig)}
             className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:bg-slate-300 disabled:text-slate-500"
           >
             {active ? <LoaderCircle size={16} className="animate-spin" /> : <Play size={16} />}

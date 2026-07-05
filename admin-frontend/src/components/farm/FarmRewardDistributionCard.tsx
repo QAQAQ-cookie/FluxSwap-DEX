@@ -2,6 +2,7 @@
 
 import { CircleDollarSign } from 'lucide-react';
 
+import { MetricCard, SectionHeader } from '@/components/AdminPrimitives';
 import { Card, FieldLabel, PrimaryButton, TextInput } from '@/components/farm/FarmPrimitives';
 import type { AdminInfo } from '@/components/farm/FarmTypes';
 import { formatOptionalTokenAmount, shortAddress } from '@/components/farm/FarmUtils';
@@ -75,25 +76,20 @@ export function FarmRewardDistributionCard({
   return (
     <Card className="p-5">
       <div className="flex flex-col gap-5">
-        <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
-              <CircleDollarSign size={19} />
+        <SectionHeader
+          icon={<CircleDollarSign size={20} />}
+          title="分发奖励"
+          description="按权重向各农场分发奖励。"
+          badge={
+            <span
+              className={`inline-flex min-h-8 w-fit max-w-full items-center rounded-full px-3 py-1 text-xs font-semibold leading-5 ${
+                distributionBlockReason ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'
+              }`}
+            >
+              {distributionBlockReason ? `暂不可分发：${distributionBlockReason}` : '可以分发'}
             </span>
-            <div>
-              <h2 className="font-semibold text-slate-950">分发奖励</h2>
-              <p className="text-sm text-slate-500">按权重向各农场分发奖励</p>
-            </div>
-          </div>
-
-          <span
-            className={`inline-flex min-h-8 w-fit max-w-full items-center rounded-full px-3 py-1 text-xs font-semibold leading-5 ${
-              distributionBlockReason ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'
-            }`}
-          >
-            {distributionBlockReason ? `暂不可分发：${distributionBlockReason}` : '可以分发'}
-          </span>
-        </div>
+          }
+        />
 
         <div className="grid gap-5 xl:grid-cols-[minmax(280px,0.72fr)_1.28fr]">
           <div className="rounded-2xl bg-slate-50 p-4">
@@ -115,12 +111,12 @@ export function FarmRewardDistributionCard({
 
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {metrics.map((metric) => (
-              <div key={metric.label} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <p className="text-xs text-slate-500">{metric.label}</p>
-                <p className={`mt-1 truncate text-sm font-semibold text-slate-900 ${metric.valueClassName ?? ''}`}>
-                  {metric.value}
-                </p>
-              </div>
+              <MetricCard
+                key={metric.label}
+                label={metric.label}
+                value={metric.value}
+                valueClassName={metric.valueClassName ? `text-slate-900 ${metric.valueClassName}` : 'text-slate-900'}
+              />
             ))}
           </div>
         </div>

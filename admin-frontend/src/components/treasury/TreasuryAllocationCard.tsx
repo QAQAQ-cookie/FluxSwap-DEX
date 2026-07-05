@@ -3,7 +3,7 @@
 import { LoaderCircle, Play, Vault } from 'lucide-react';
 import type { Address } from 'viem';
 
-import { Card, shortAddress } from '@/components/AdminPrimitives';
+import { Card, SectionHeader, shortAddress } from '@/components/AdminPrimitives';
 import { FieldLabel, SelectInput, TextInput } from '@/components/treasury/TreasuryFormControls';
 
 const ZERO_BIGINT = BigInt(0);
@@ -28,7 +28,6 @@ type TreasuryAllocationCardProps = {
   recipientAddress: string;
   amountValue: string;
   active: boolean;
-  mounted: boolean;
   walletConnected: boolean;
   canAllocate: boolean;
   onTokenChange: (address: string) => void;
@@ -46,7 +45,6 @@ export function TreasuryAllocationCard({
   recipientAddress,
   amountValue,
   active,
-  mounted,
   walletConnected,
   canAllocate,
   onTokenChange,
@@ -58,15 +56,11 @@ export function TreasuryAllocationCard({
 }: TreasuryAllocationCardProps) {
   return (
     <Card className="p-5">
-      <div className="flex items-center gap-3">
-        <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
-          <Vault size={19} />
-        </span>
-        <div>
-          <h2 className="font-semibold text-slate-950">金库划拨</h2>
-          <p className="text-sm text-slate-500">操作员或多签可向白名单接收方划拨资产。</p>
-        </div>
-      </div>
+      <SectionHeader
+        icon={<Vault size={20} />}
+        title="金库划拨"
+        description="操作员或多签可向白名单接收方划拨资产。"
+      />
 
       <div className="mt-5 space-y-4">
         <div className="space-y-2">
@@ -114,7 +108,7 @@ export function TreasuryAllocationCard({
         <button
           type="button"
           onClick={onSubmit}
-          disabled={active || !mounted || (walletConnected && !canAllocate)}
+          disabled={active || (walletConnected && !canAllocate)}
           className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:bg-slate-300 disabled:text-slate-500"
         >
           {active ? <LoaderCircle size={16} className="animate-spin" /> : <Play size={16} />}

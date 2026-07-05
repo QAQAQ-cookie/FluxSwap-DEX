@@ -1,8 +1,9 @@
 'use client';
 
-import { AlertCircle, LoaderCircle, RefreshCw, ShieldCheck } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { Coins, LoaderCircle, RefreshCw, ScrollText, ShieldCheck, Sprout } from 'lucide-react';
 
-import { Card, StatusPill } from '@/components/AdminPrimitives';
+import { Card, MetricCard, PageErrorBanner, SectionPlaceholder, StatusPill } from '@/components/AdminPrimitives';
 import {
   FarmWeightDonut,
   formatRefreshTime,
@@ -13,9 +14,41 @@ import {
   ZERO_BIGINT,
 } from '@/components/overview/OverviewUtils';
 import { useOverviewPageController } from '@/components/overview/useOverviewPageController';
+import { formatBigIntAmountDown } from '@/lib/amounts';
+
+function OverviewSectionHeader({
+  icon,
+  title,
+  description,
+  badge,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+  badge?: ReactNode;
+}) {
+  return (
+    <div className="mb-5 flex flex-col justify-between gap-4 md:flex-row md:items-center">
+      <div className="flex items-start gap-3">
+        <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
+          {icon}
+        </span>
+        <div>
+          <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
+          <p className="mt-1 text-sm text-slate-500">{description}</p>
+        </div>
+      </div>
+      {badge ? <div className="shrink-0">{badge}</div> : null}
+    </div>
+  );
+}
 
 export default function OverviewPage() {
   const { pageState, loadOverview, healthScore, healthTone, nodes, actionItems } = useOverviewPageController();
+  const overview = pageState.overview;
+  const rewardTokenSymbol = overview?.rewardTokenSymbol ?? 'FLUX';
+  const recentEventCount = (overview?.recentFarmEvents ?? 0) + (overview?.recentTreasuryEvents ?? 0);
+  const healthClasses = getToneClasses(healthTone);
 
   return (
     <div className="space-y-8">
@@ -47,79 +80,99 @@ export default function OverviewPage() {
         </div>
       </section>
 
-      {pageState.error ? (
-        <div className="flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          <AlertCircle size={18} />
-          {pageState.error}
-        </div>
-      ) : null}
+      {pageState.error ? <PageErrorBanner message={pageState.error} /> : null}
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          label="活跃农场"
+          value={overview ? `${overview.activePoolCount} / ${overview.poolLength}` : '--'}
+          helper={overview ? `总权重 ${overview.totalAllocPoint.toString()}` : '等待链上数据'}
+        />
+        <MetricCard
+          label="待分发奖励"
+          value={
+            overview
+              ? `${formatBigIntAmountDown(overview.totalPendingRewards, overview.rewardTokenDecimals, 4)} ${rewardTokenSymbol}`
+              : '--'
+          }
+          helper={
+            overview
+              ? `未分配 ${formatBigIntAmountDown(overview.undistributedRewards, overview.rewardTokenDecimals, 4)} ${rewardTokenSymbol}`
+              : '等待链上数据'
+          }
+        />
+        <MetricCard
+          label="可用授权"
+          value={
+            overview
+              ? `${formatBigIntAmountDown(overview.treasuryApprovedSpendRemaining, overview.rewardTokenDecimals, 4)} ${rewardTokenSymbol}`
+              : '--'
+          }
+          helper={overview ? (overview.treasuryPaused ? '当前金库已暂停' : '当前金库状态正常') : '等待链上数据'}
+          valueClassName={
+            overview
+              ? overview.treasuryPaused || overview.treasuryApprovedSpendRemaining <= ZERO_BIGINT
+                ? 'text-amber-700'
+                : 'text-emerald-700'
+              : 'text-slate-950'
+          }
+        />
+        <MetricCard
+          label="白名单覆盖"
+          value={overview ? `${overview.allowedTokenCount} / ${overview.configuredTokenCount}` : '--'}
+          helper={overview ? `最近窗口 ${recentEventCount} 条管理动作` : '等待链上数据'}
+        />
+      </div>
 
       <Card className="p-5">
-        <div className="mb-5 flex flex-col justify-between gap-4 md:flex-row md:items-center">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-950">整体状态图谱</h2>
-            <p className="mt-1 text-sm text-slate-500">按奖励、授权和分发关系展示整体状态。</p>
-          </div>
-          <div
-            className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 md:w-52 ${
-              healthTone === 'danger'
-                ? 'border-rose-200 bg-rose-50'
-                : healthTone === 'warning'
-                  ? 'border-amber-200 bg-amber-50'
-                  : 'border-emerald-200 bg-emerald-50'
-            }`}
-          >
-            <span className="text-sm font-semibold text-slate-600">健康度</span>
-            <span
-              className={`text-3xl font-semibold ${
-                healthTone === 'danger'
-                  ? 'text-rose-700'
-                  : healthTone === 'warning'
-                    ? 'text-amber-700'
-                    : 'text-emerald-700'
-              }`}
-            >
-              {healthScore}
-            </span>
-          </div>
-        </div>
+        <OverviewSectionHeader
+          icon={<ShieldCheck size={20} />}
+          title="整体状态图谱"
+          description="把白名单、金库、农场和奖励路径放在一张图里看。"
+          badge={
+            <div className={`flex min-w-[164px] items-center justify-between rounded-2xl border px-4 py-3 ${healthClasses.border} ${healthClasses.bg}`}>
+              <span className="text-sm font-semibold text-slate-600">健康度</span>
+              <span className={`text-3xl font-semibold ${healthClasses.text}`}>{healthScore}</span>
+            </div>
+          }
+        />
         {pageState.loading && !pageState.overview ? (
-          <div className="flex min-h-[520px] items-center justify-center rounded-2xl bg-slate-50 text-sm text-slate-500">
-            <LoaderCircle size={18} className="mr-2 animate-spin" />
-            正在生成协议状态图谱
-          </div>
-        ) : (
-          <ProtocolMap nodes={nodes} tone={healthTone} />
-        )}
+          <SectionPlaceholder
+            icon={<LoaderCircle size={20} className="animate-spin" />}
+            title="正在整理协议状态"
+            description="正在汇总白名单、金库、农场和奖励的链上数据。"
+            className="min-h-[520px] rounded-2xl bg-slate-50"
+          />
+      ) : (
+        <ProtocolMap nodes={nodes} tone={healthTone} />
+      )}
       </Card>
 
       <Card className="p-5">
-        <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
-          <div className="flex items-center gap-3">
-            <span
-              className={`inline-flex h-11 w-11 items-center justify-center rounded-2xl ${getToneClasses(healthTone).soft} ${getToneClasses(healthTone).text}`}
-            >
+        <OverviewSectionHeader
+          icon={
+            <span className={`inline-flex h-11 w-11 items-center justify-center rounded-2xl ${healthClasses.soft} ${healthClasses.text}`}>
               <ShieldCheck size={20} />
             </span>
-            <div>
-              <h2 className="font-semibold text-slate-950">待处理事项</h2>
-              <p className="text-sm text-slate-500">按链上状态生成，优先提示异常和授权问题。</p>
-            </div>
-          </div>
-          <StatusPill
-            tone={
-              actionItems.some((item) => item.tone === 'danger')
-                ? 'danger'
-                : actionItems.some((item) => item.tone === 'warning')
-                  ? 'warning'
-                  : 'success'
-            }
-          >
-            {actionItems.length} 项
-          </StatusPill>
-        </div>
+          }
+          title="待处理事项"
+          description="优先提示会影响分发、授权和资产安全的问题。"
+          badge={
+            <StatusPill
+              tone={
+                actionItems.some((item) => item.tone === 'danger')
+                  ? 'danger'
+                  : actionItems.some((item) => item.tone === 'warning')
+                    ? 'warning'
+                    : 'success'
+              }
+            >
+              {actionItems.length} 项
+            </StatusPill>
+          }
+        />
 
-        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {actionItems.map((item) => {
             const toneClasses = getToneClasses(item.tone);
 
@@ -143,48 +196,38 @@ export default function OverviewPage() {
 
       <div className="grid gap-6 xl:grid-cols-2">
         <Card className="p-5">
-          <div className="mb-5 flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-950">奖励容量</h2>
-              <p className="mt-1 text-sm text-slate-500">用同心环对比金库余额、授权额度和待分发奖励。</p>
-            </div>
-            <StatusPill tone={pageState.overview && pageState.overview.treasuryApprovedSpendRemaining > ZERO_BIGINT ? 'success' : 'warning'}>
-              {pageState.overview?.rewardTokenSymbol ?? 'FLUX'}
-            </StatusPill>
-          </div>
-          <RewardCapacityRings overview={pageState.overview} />
+          <OverviewSectionHeader
+            icon={<Coins size={20} />}
+            title="奖励容量"
+            description="用同心环对比金库余额、可用授权和待分发奖励。"
+            badge={
+              <StatusPill tone={overview && overview.treasuryApprovedSpendRemaining > ZERO_BIGINT ? 'success' : 'warning'}>
+                {rewardTokenSymbol}
+              </StatusPill>
+            }
+          />
+          <RewardCapacityRings overview={overview} />
         </Card>
 
         <Card className="p-5">
-          <div className="mb-5 flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-950">农场权重</h2>
-              <p className="mt-1 text-sm text-slate-500">按奖励权重展示农场之间的分配比例。</p>
-            </div>
-            <StatusPill tone={pageState.overview && pageState.overview.activePoolCount > 0 ? 'success' : 'neutral'}>
-              {pageState.overview?.activePoolCount ?? 0} 个启用
-            </StatusPill>
-          </div>
-          <FarmWeightDonut overview={pageState.overview} />
+          <OverviewSectionHeader
+            icon={<Sprout size={20} />}
+            title="农场权重"
+            description="按奖励权重展示各农场之间的分配比例。"
+            badge={<StatusPill tone={overview && overview.activePoolCount > 0 ? 'success' : 'neutral'}>{overview?.activePoolCount ?? 0} 个启用</StatusPill>}
+          />
+          <FarmWeightDonut overview={overview} />
         </Card>
       </div>
 
       <Card className="p-5">
-        <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-center">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-950">管理事件频率</h2>
-          </div>
-          <StatusPill
-            tone={
-              (pageState.overview?.recentFarmEvents ?? 0) + (pageState.overview?.recentTreasuryEvents ?? 0) > 0
-                ? 'success'
-                : 'neutral'
-            }
-          >
-            {(pageState.overview?.recentFarmEvents ?? 0) + (pageState.overview?.recentTreasuryEvents ?? 0)} 条事件
-          </StatusPill>
-        </div>
-        <OperationHeatmap overview={pageState.overview} />
+        <OverviewSectionHeader
+          icon={<ScrollText size={20} />}
+          title="管理事件频率"
+          description="按最近 20,000 个区块的事件密度观察操作节奏。"
+          badge={<StatusPill tone={recentEventCount > 0 ? 'success' : 'neutral'}>{recentEventCount} 条事件</StatusPill>}
+        />
+        <OperationHeatmap overview={overview} />
       </Card>
     </div>
   );

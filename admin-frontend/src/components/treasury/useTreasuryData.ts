@@ -41,7 +41,11 @@ export function useTreasuryData({
       setTreasuryInfo(null);
       setTokenRows([]);
       setOperationRows([]);
-      setError(supportedChain ? '当前链缺少金库合约地址。' : '当前网络暂不支持 FluxSwap 管理端。');
+      setError(
+        supportedChain
+          ? '当前网络缺少金库合约配置，请检查部署和前端配置。'
+          : '当前网络还未接入 FluxSwap 管理端。',
+      );
       return;
     }
 

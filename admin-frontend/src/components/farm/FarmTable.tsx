@@ -1,8 +1,16 @@
 'use client';
 
-import { LoaderCircle, Search } from 'lucide-react';
+import { LoaderCircle, Search, Sprout } from 'lucide-react';
 import type { Dispatch, SetStateAction } from 'react';
 
+import {
+  AdminTable,
+  AdminTableBody,
+  AdminTableHead,
+  AdminTableHeaderCell,
+  PanelToolbar,
+  TablePlaceholderRow,
+} from '@/components/AdminPrimitives';
 import { Card } from '@/components/farm/FarmPrimitives';
 import type { AdminInfo, FarmPoolEdits, FarmRow } from '@/components/farm/FarmTypes';
 import { FarmTableRow } from '@/components/farm/FarmTableRow';
@@ -41,62 +49,67 @@ export function FarmTable({
   return (
     <Card className="overflow-hidden">
       <div className="border-b border-slate-200 p-5">
-        <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-950">农场列表</h2>
-            <p className="mt-1 text-sm text-slate-500">查看质押池并管理权重与启停状态。</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative w-full sm:w-72">
-              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                value={searchQuery}
-                onChange={(event) => onSearchQueryChange(event.target.value)}
-                placeholder="搜索交易对、池地址或代币地址"
-                className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none transition focus:border-slate-500"
-              />
-            </div>
-            <label className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700">
-              <input
-                type="checkbox"
-                checked={activeOnly}
-                onChange={(event) => onActiveOnlyChange(event.target.checked)}
-                className="h-4 w-4 rounded border-slate-300"
-              />
-              只看启用
-            </label>
-          </div>
-        </div>
+        <PanelToolbar
+          icon={<Sprout size={20} />}
+          title="农场列表"
+          description="查看质押池并管理权重与启停状态。"
+          actions={
+            <>
+              <div className="relative w-full sm:w-72">
+                <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={searchQuery}
+                  onChange={(event) => onSearchQueryChange(event.target.value)}
+                  placeholder="搜索交易对、池地址或代币地址"
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none transition focus:border-slate-500"
+                />
+              </div>
+              <label className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={activeOnly}
+                  onChange={(event) => onActiveOnlyChange(event.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300"
+                />
+                只看启用
+              </label>
+            </>
+          }
+        />
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-[1120px] w-full border-collapse text-left">
-          <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-            <tr>
-              <th className="px-5 py-3">农场</th>
-              <th className="px-5 py-3">状态</th>
-              <th className="px-5 py-3">当前权重</th>
-              <th className="px-5 py-3">质押总量</th>
-              <th className="px-5 py-3">待领取奖励</th>
-              <th className="px-5 py-3">池内奖励</th>
-              <th className="px-5 py-3">编辑</th>
-              <th className="px-5 py-3 text-right">操作</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-200">
+      <AdminTable minWidth="1120px">
+        <AdminTableHead>
+          <tr>
+            <AdminTableHeaderCell>农场</AdminTableHeaderCell>
+            <AdminTableHeaderCell>状态</AdminTableHeaderCell>
+            <AdminTableHeaderCell>当前权重</AdminTableHeaderCell>
+            <AdminTableHeaderCell>质押总量</AdminTableHeaderCell>
+            <AdminTableHeaderCell>待领取奖励</AdminTableHeaderCell>
+            <AdminTableHeaderCell>池内奖励</AdminTableHeaderCell>
+            <AdminTableHeaderCell>编辑</AdminTableHeaderCell>
+            <AdminTableHeaderCell align="right">操作</AdminTableHeaderCell>
+          </tr>
+        </AdminTableHead>
+        <AdminTableBody>
             {loading && farms.length === 0 ? (
-              <tr>
-                <td colSpan={8} className="px-5 py-12 text-center text-sm text-slate-500">
-                  <LoaderCircle size={18} className="mx-auto mb-2 animate-spin" />
-                  正在加载农场数据
-                </td>
-              </tr>
+              <TablePlaceholderRow
+                colSpan={8}
+                icon={<LoaderCircle size={20} className="animate-spin" />}
+                title="正在加载农场数据"
+                description="正在读取质押池、权重、奖励和启停状态。"
+              />
             ) : filteredFarms.length === 0 ? (
-              <tr>
-                <td colSpan={8} className="px-5 py-12 text-center text-sm text-slate-500">
-                  暂无农场数据
-                </td>
-              </tr>
+              <TablePlaceholderRow
+                colSpan={8}
+                icon={<Sprout size={20} />}
+                title={farms.length === 0 ? '当前还没有农场' : '没有符合条件的农场'}
+                description={
+                  farms.length === 0
+                    ? '先创建并启用质押池，这里才会开始展示农场数据。'
+                    : '试试调整搜索词或筛选条件。'
+                }
+              />
             ) : (
               filteredFarms.map((farm) => (
                 <FarmTableRow
@@ -116,9 +129,8 @@ export function FarmTable({
                 />
               ))
             )}
-          </tbody>
-        </table>
-      </div>
+        </AdminTableBody>
+      </AdminTable>
     </Card>
   );
 }

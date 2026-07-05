@@ -95,7 +95,7 @@ export function useFarmPageController() {
   const connectButton = (
     <PrimaryButton
       onClick={environment.openConnectModal ?? undefined}
-      disabled={!pageState.mounted || environment.isConnected}
+      disabled={environment.isConnected}
     >
       <Wallet size={16} />
       连接钱包

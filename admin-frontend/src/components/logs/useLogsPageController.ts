@@ -24,7 +24,9 @@ export function useLogsPageController() {
     if (!environment.publicClient || !environment.supportedChain) {
       pageState.setLogs([]);
       pageState.setError(
-        environment.supportedChain ? '当前 RPC 客户端尚未准备好。' : '当前网络暂不支持 FluxSwap 管理端。',
+        environment.supportedChain
+          ? 'RPC 连接尚未就绪，请稍后刷新重试。'
+          : '当前网络还未接入 FluxSwap 管理端。',
       );
       return;
     }

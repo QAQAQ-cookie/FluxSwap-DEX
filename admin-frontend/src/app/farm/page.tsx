@@ -49,7 +49,7 @@ export default function AdminFarmPage() {
           error={error}
           loading={loading}
           lastUpdatedAt={lastUpdatedAt}
-          showConnectButton={!pageState.mounted || !environment.isConnected}
+          showConnectButton={pageState.mounted && !environment.isConnected}
           connectButton={connectButton}
           onRefresh={() => void loadAdminData()}
         />

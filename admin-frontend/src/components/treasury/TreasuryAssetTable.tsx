@@ -3,7 +3,18 @@
 import { LoaderCircle, Vault } from 'lucide-react';
 import type { Address } from 'viem';
 
-import { Card, shortAddress, StatusPill } from '@/components/AdminPrimitives';
+import {
+  AdminTable,
+  AdminTableBody,
+  AdminTableCell,
+  AdminTableHead,
+  AdminTableHeaderCell,
+  Card,
+  PanelToolbar,
+  shortAddress,
+  StatusPill,
+  TablePlaceholderRow,
+} from '@/components/AdminPrimitives';
 
 const ZERO_BIGINT = BigInt(0);
 
@@ -40,68 +51,64 @@ export function TreasuryAssetTable({
   return (
     <Card className="overflow-hidden">
       <div className="border-b border-slate-200 p-5">
-        <div className="flex items-center gap-3">
-          <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
-            <Vault size={19} />
-          </span>
-          <div>
-            <h2 className="font-semibold text-slate-950">金库资产</h2>
-            <p className="text-sm text-slate-500">展示金库余额、授权额度和每日额度使用进度。</p>
-          </div>
-        </div>
+        <PanelToolbar
+          icon={<Vault size={20} />}
+          title="金库资产"
+          description="展示金库余额、授权额度和每日额度使用进度。"
+        />
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1040px] border-collapse text-left">
-          <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-            <tr>
-              <th className="px-5 py-3">资产</th>
-              <th className="px-5 py-3">白名单</th>
-              <th className="px-5 py-3">金库余额</th>
-              <th className="px-5 py-3">管理合约授权</th>
-              <th className="px-5 py-3">每日额度</th>
-              <th className="px-5 py-3">今日使用</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-200">
+      <AdminTable minWidth="1040px">
+        <AdminTableHead>
+          <tr>
+            <AdminTableHeaderCell>资产</AdminTableHeaderCell>
+            <AdminTableHeaderCell>白名单</AdminTableHeaderCell>
+            <AdminTableHeaderCell>金库余额</AdminTableHeaderCell>
+            <AdminTableHeaderCell>管理合约授权</AdminTableHeaderCell>
+            <AdminTableHeaderCell>每日额度</AdminTableHeaderCell>
+            <AdminTableHeaderCell>今日使用</AdminTableHeaderCell>
+          </tr>
+        </AdminTableHead>
+        <AdminTableBody>
             {loading && tokenRows.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-5 py-12 text-center text-sm text-slate-500">
-                  <LoaderCircle size={18} className="mx-auto mb-2 animate-spin" />
-                  正在加载金库数据
-                </td>
-              </tr>
+              <TablePlaceholderRow
+                colSpan={6}
+                icon={<LoaderCircle size={20} className="animate-spin" />}
+                title="正在加载金库资产"
+                description="正在读取余额、授权额度和每日额度使用情况。"
+              />
             ) : tokenRows.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-5 py-12 text-center text-sm text-slate-500">
-                  暂无配置代币
-                </td>
-              </tr>
+              <TablePlaceholderRow
+                colSpan={6}
+                icon={<Vault size={20} />}
+                title="当前没有可展示的金库资产"
+                description="先检查代币配置、金库地址和链上部署状态。"
+              />
             ) : (
               tokenRows.map((token) => {
                 const spendRatio = getDailySpendRatio(token);
 
                 return (
-                  <tr key={token.address} className="align-middle">
-                    <td className="px-5 py-4">
+                  <tr key={token.address} className="align-middle transition-colors hover:bg-slate-50/70">
+                    <AdminTableCell>
                       <p className="font-semibold text-slate-950">{token.symbol}</p>
                       <p className="mt-1 font-mono text-xs text-slate-500">{shortAddress(token.address)}</p>
-                    </td>
-                    <td className="px-5 py-4">
+                    </AdminTableCell>
+                    <AdminTableCell>
                       <StatusPill tone={token.allowed || token.isNative ? 'success' : 'neutral'}>
                         {token.isNative ? '原生资产' : token.allowed ? '允许' : '未允许'}
                       </StatusPill>
-                    </td>
-                    <td className="px-5 py-4 text-sm font-semibold text-slate-900">
+                    </AdminTableCell>
+                    <AdminTableCell className="text-sm font-semibold leading-6 text-slate-900">
                       {formatTokenAmount(token.balance, token)}
-                    </td>
-                    <td className="px-5 py-4 text-sm text-slate-700">
+                    </AdminTableCell>
+                    <AdminTableCell className="text-sm leading-6 text-slate-700">
                       {token.isNative ? '不适用' : formatTokenAmount(token.approvedSpendRemaining, token)}
-                    </td>
-                    <td className="px-5 py-4 text-sm text-slate-700">
+                    </AdminTableCell>
+                    <AdminTableCell className="text-sm leading-6 text-slate-700">
                       {token.dailySpendCap > ZERO_BIGINT ? formatTokenAmount(token.dailySpendCap, token) : '未设置'}
-                    </td>
-                    <td className="px-5 py-4">
+                    </AdminTableCell>
+                    <AdminTableCell>
                       <div className="min-w-[190px]">
                         <div className="flex items-center justify-between gap-3 text-sm">
                           <span className="font-medium text-slate-800">{formatTokenAmount(token.spentToday, token)}</span>
@@ -114,14 +121,13 @@ export function TreasuryAssetTable({
                           />
                         </div>
                       </div>
-                    </td>
+                    </AdminTableCell>
                   </tr>
                 );
               })
             )}
-          </tbody>
-        </table>
-      </div>
+        </AdminTableBody>
+      </AdminTable>
     </Card>
   );
 }

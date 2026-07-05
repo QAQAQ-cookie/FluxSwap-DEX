@@ -62,7 +62,6 @@ export function FarmCreatePoolCards({
         title="创建 LP 质押池"
         description="从交易对创建 LP 质押池"
         icon={Plus}
-        iconClassName="bg-sky-50 text-sky-600"
         manualMode={lpManualMode}
         address={lpTokenAddress}
         allocPoint={lpAllocPoint}
@@ -85,7 +84,6 @@ export function FarmCreatePoolCards({
         title="创建单币质押池"
         description="从代币创建单币质押池"
         icon={Sprout}
-        iconClassName="bg-emerald-50 text-emerald-600"
         manualMode={singleManualMode}
         address={singleTokenAddress}
         allocPoint={singleAllocPoint}

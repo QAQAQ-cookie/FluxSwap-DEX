@@ -1,7 +1,8 @@
 'use client';
 
-import { AlertCircle, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 
+import { PageErrorBanner, PageHeader } from '@/components/AdminPrimitives';
 import { SecondaryButton } from '@/components/farm/FarmPrimitives';
 import { formatDateTime } from '@/components/farm/FarmUtils';
 
@@ -25,13 +26,11 @@ export function FarmPageHeader({
   return (
     <>
       <section className="flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">农场</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 md:text-4xl">农场与奖励管理</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
-            创建质押池、调整权重、启停农场，并向管理合约分发奖励。
-          </p>
-        </div>
+        <PageHeader
+          eyebrow="农场"
+          title="农场与奖励管理"
+          description="创建质押池、调整权重、启停农场，并向管理合约分发奖励。"
+        />
 
         <div className="flex flex-wrap items-center gap-3">
           {lastUpdatedAt ? (
@@ -47,12 +46,7 @@ export function FarmPageHeader({
         </div>
       </section>
 
-      {error ? (
-        <div className="flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          <AlertCircle size={18} />
-          {error}
-        </div>
-      ) : null}
+      {error ? <PageErrorBanner message={error} /> : null}
     </>
   );
 }

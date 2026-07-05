@@ -53,7 +53,11 @@ export function useFarmData({
         setAdminInfo(null);
         setFarms([]);
         setLoading(false);
-        setError(supportedChain ? '当前链缺少管理合约地址。' : '当前网络暂不支持 FluxSwap 管理端。');
+        setError(
+          supportedChain
+            ? '当前网络缺少农场管理合约配置，请检查部署和前端配置。'
+            : '当前网络还未接入 FluxSwap 管理端。',
+        );
         return;
       }
 

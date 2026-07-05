@@ -2,6 +2,7 @@
 
 import type { LucideIcon } from 'lucide-react';
 
+import { SectionHeader } from '@/components/AdminPrimitives';
 import { Card, FieldLabel, PrimaryButton, SelectInput, TextInput } from '@/components/farm/FarmPrimitives';
 import { ALLOC_POINT_HINT } from '@/components/farm/FarmUtils';
 
@@ -15,7 +16,6 @@ type FarmCreatePoolCardProps = {
   title: string;
   description: string;
   icon: LucideIcon;
-  iconClassName: string;
   manualMode: boolean;
   address: string;
   allocPoint: string;
@@ -38,7 +38,6 @@ export function FarmCreatePoolCard({
   title,
   description,
   icon: Icon,
-  iconClassName,
   manualMode,
   address,
   allocPoint,
@@ -58,15 +57,12 @@ export function FarmCreatePoolCard({
 }: FarmCreatePoolCardProps) {
   return (
     <Card className="flex h-full flex-col p-5">
-      <div className="mb-5 flex items-center gap-3">
-        <span className={`inline-flex h-10 w-10 items-center justify-center rounded-xl ${iconClassName}`}>
-          <Icon size={19} />
-        </span>
-        <div>
-          <h2 className="font-semibold text-slate-950">{title}</h2>
-          <p className="text-sm text-slate-500">{description}</p>
-        </div>
-      </div>
+      <SectionHeader
+        icon={<Icon size={20} />}
+        title={title}
+        description={description}
+        className="mb-5"
+      />
 
       <div className="flex flex-1 flex-col space-y-4">
         <div className="space-y-2">

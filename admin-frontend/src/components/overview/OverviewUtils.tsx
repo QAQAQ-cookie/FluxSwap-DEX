@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import type { Address } from 'viem';
 
-import { StatusPill } from '@/components/AdminPrimitives';
+import { SectionPlaceholder, StatusPill } from '@/components/AdminPrimitives';
 import type {
   ActionItem,
   OperationBucket,
@@ -254,7 +254,7 @@ export function buildActionItems(overview: OverviewData | null): ActionItem[] {
   if (overview.treasuryPaused) {
     items.push({
       title: '金库处于暂停状态',
-      detail: '暂停状态下不能正常拉取奖励。',
+      detail: '暂停状态下，依赖金库的奖励拉取和业务执行都会受影响。',
       tone: 'danger',
     });
   }
@@ -283,7 +283,7 @@ export function buildActionItems(overview: OverviewData | null): ActionItem[] {
   if (items.length === 0) {
     items.push({
       title: '当前没有明显待处理事项',
-      detail: '农场、奖励、金库和白名单状态正常。',
+      detail: '农场、奖励、金库和白名单状态目前都比较稳定。',
       tone: 'success',
     });
   }
@@ -308,7 +308,7 @@ export function ProtocolMap({
       node: {
         label: '核心',
         value: tone === 'success' ? '正常' : tone === 'warning' ? '关注' : '处理',
-        detail: tone === 'success' ? '核心正常' : tone === 'warning' ? '需要关注' : '需要处理',
+        detail: tone === 'success' ? '核心稳定' : tone === 'warning' ? '需要关注' : '等待处理',
         tone,
         href: '/farm',
         icon: null,
@@ -339,13 +339,22 @@ export function ProtocolMap({
                 <span className="absolute -right-3 top-1/2 z-10 hidden h-0.5 w-6 -translate-y-1/2 bg-slate-200 xl:block" />
               ) : null}
               <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className={`text-xs font-semibold uppercase tracking-[0.14em] ${isCore ? 'text-slate-400' : 'text-slate-400'}`}>
-                    {stage.helper}
-                  </p>
-                  <h3 className={`mt-2 truncate text-base font-semibold ${isCore ? 'text-white' : 'text-slate-950'}`}>
-                    {stage.label}
-                  </h3>
+                <div className="flex min-w-0 items-start gap-3">
+                  <span
+                    className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                      isCore ? 'bg-white/10 text-white' : `${stageTone.soft} ${stageTone.text}`
+                    }`}
+                  >
+                    {stage.node?.icon ?? <Activity size={16} />}
+                  </span>
+                  <div className="min-w-0">
+                    <p className={`text-xs font-semibold uppercase tracking-[0.14em] ${isCore ? 'text-slate-400' : 'text-slate-400'}`}>
+                      {stage.helper}
+                    </p>
+                    <h3 className={`mt-2 truncate text-base font-semibold ${isCore ? 'text-white' : 'text-slate-950'}`}>
+                      {stage.label}
+                    </h3>
+                  </div>
                 </div>
                 <span
                   className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${isCore ? 'ring-4 ring-white/10' : ''}`}
@@ -424,9 +433,12 @@ export function FarmWeightDonut({ overview }: { overview: OverviewData | null })
 
   if (slices.length === 0 || totalAllocPoint <= ZERO_BIGINT) {
     return (
-      <div className="flex min-h-72 items-center justify-center rounded-xl bg-slate-50 text-sm text-slate-500">
-        暂无可展示的权重分布
-      </div>
+      <SectionPlaceholder
+        icon={<Sprout size={20} />}
+        title="当前没有可展示的权重分布"
+        description="创建并启用农场后，这里会展示各池子的权重结构。"
+        className="min-h-72 rounded-xl bg-slate-50"
+      />
     );
   }
 
@@ -559,9 +571,12 @@ export function OperationHeatmap({ overview }: { overview: OverviewData | null }
 
   if (buckets.length === 0) {
     return (
-      <div className="flex min-h-44 items-center justify-center rounded-xl bg-slate-50 text-sm text-slate-500">
-        暂无管理事件
-      </div>
+      <SectionPlaceholder
+        icon={<ScrollText size={20} />}
+        title="最近没有管理事件"
+        description="有操作发生后，这里会按时间密度展示管理事件。"
+        className="min-h-44 rounded-xl bg-slate-50"
+      />
     );
   }
 

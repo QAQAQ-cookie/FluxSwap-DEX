@@ -67,7 +67,6 @@ export default function TreasuryPage() {
           operationCount={operationRows.length}
           readyOperationCount={readyOperationCount}
           pauseBusy={activeAction === 'pause' || activeAction === 'unpause'}
-          mounted={pageState.mounted}
           onPauseToggle={handlePauseToggle}
         />
 
@@ -78,7 +77,6 @@ export default function TreasuryPage() {
           operator={treasuryInfo?.operator}
           walletConnected={walletConnected}
           walletAddress={environment.address}
-          mounted={pageState.mounted}
           isMultisig={isMultisig}
           isGuardian={isGuardian}
           isOperator={isOperator}
@@ -102,7 +100,6 @@ export default function TreasuryPage() {
             withdrawAmountValue={pageState.withdrawAmountValue}
             withdrawRecipientAddress={pageState.withdrawRecipientAddress}
             active={activeAction === 'schedule'}
-            mounted={pageState.mounted}
             walletConnected={walletConnected}
             isMultisig={isMultisig}
             onOperationKindChange={pageState.setOperationKind}
@@ -125,7 +122,6 @@ export default function TreasuryPage() {
             recipientAddress={pageState.allocationRecipientAddress}
             amountValue={pageState.allocationAmountValue}
             active={activeAction === 'allocate'}
-            mounted={pageState.mounted}
             walletConnected={walletConnected}
             canAllocate={canAllocate}
             onTokenChange={pageState.setAllocationTokenAddress}

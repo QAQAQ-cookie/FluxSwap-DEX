@@ -1,5 +1,8 @@
 'use client';
 
+import { ShieldCheck } from 'lucide-react';
+
+import { SectionHeader, StatusPill } from '@/components/AdminPrimitives';
 import { Card } from '@/components/farm/FarmPrimitives';
 import type { AdminInfo } from '@/components/farm/FarmTypes';
 import { shortAddress } from '@/components/farm/FarmUtils';
@@ -22,19 +25,12 @@ export function FarmAccessPanel({
   return (
     <Card className="overflow-hidden">
       <div className="border-b border-slate-200 p-5">
-        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-950">权限与合约状态</h2>
-            <p className="mt-1 text-sm text-slate-500">当前钱包需具备对应权限后才能执行管理操作。</p>
-          </div>
-          <span
-            className={`inline-flex h-8 items-center rounded-full px-3 text-xs font-semibold ${
-              hasPermission ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-            }`}
-          >
-            {hasPermission ? '当前钱包有管理权限' : '当前钱包暂无管理权限'}
-          </span>
-        </div>
+        <SectionHeader
+          icon={<ShieldCheck size={20} />}
+          title="权限与合约状态"
+          description="当前钱包需具备对应权限后才能执行管理操作。"
+          badge={<StatusPill tone={hasPermission ? 'success' : 'warning'}>{hasPermission ? '当前钱包有管理权限' : '当前钱包暂无管理权限'}</StatusPill>}
+        />
       </div>
       <div className="grid gap-0 divide-y divide-slate-200 md:grid-cols-2 md:divide-x md:divide-y-0 xl:grid-cols-4">
         <div className="p-5">

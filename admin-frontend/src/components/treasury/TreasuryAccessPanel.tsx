@@ -2,7 +2,7 @@
 
 import { ShieldCheck, Wallet } from 'lucide-react';
 
-import { Card, shortAddress, StatusPill } from '@/components/AdminPrimitives';
+import { Card, SectionHeader, shortAddress, StatusPill } from '@/components/AdminPrimitives';
 
 type TreasuryAccessPanelProps = {
   treasuryAddress?: string;
@@ -11,7 +11,6 @@ type TreasuryAccessPanelProps = {
   operator?: string;
   walletConnected: boolean;
   walletAddress?: string;
-  mounted: boolean;
   isMultisig: boolean;
   isGuardian: boolean;
   isOperator: boolean;
@@ -25,7 +24,6 @@ export function TreasuryAccessPanel({
   operator,
   walletConnected,
   walletAddress,
-  mounted,
   isMultisig,
   isGuardian,
   isOperator,
@@ -35,15 +33,11 @@ export function TreasuryAccessPanel({
     <>
       <Card className="overflow-hidden">
         <div className="border-b border-slate-200 p-5">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
-              <ShieldCheck size={19} />
-            </span>
-            <div>
-              <h2 className="font-semibold text-slate-950">权限与治理地址</h2>
-              <p className="text-sm text-slate-500">查看治理角色和执行账户配置。</p>
-            </div>
-          </div>
+          <SectionHeader
+            icon={<ShieldCheck size={20} />}
+            title="权限与治理地址"
+            description="查看治理角色和执行账户配置。"
+          />
         </div>
         <div className="grid gap-0 divide-y divide-slate-200 md:grid-cols-2 md:divide-x md:divide-y-0 xl:grid-cols-4">
           <div className="p-5">
@@ -67,17 +61,11 @@ export function TreasuryAccessPanel({
 
       <Card className="p-5">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="flex items-center gap-3">
-              <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-                <Wallet size={19} />
-              </span>
-              <div>
-                <h2 className="font-semibold text-slate-950">治理操作入口</h2>
-                <p className="text-sm text-slate-500">当前钱包角色决定后续排队、执行和取消权限。</p>
-              </div>
-            </div>
-          </div>
+          <SectionHeader
+            icon={<Wallet size={20} />}
+            title="治理操作入口"
+            description="当前钱包角色决定后续排队、执行和取消权限。"
+          />
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -95,7 +83,6 @@ export function TreasuryAccessPanel({
               <button
                 type="button"
                 onClick={onConnect}
-                disabled={!mounted}
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:bg-slate-300 disabled:text-slate-500"
               >
                 <Wallet size={15} />

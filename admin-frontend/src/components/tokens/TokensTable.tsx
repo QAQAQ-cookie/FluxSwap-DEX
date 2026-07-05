@@ -3,7 +3,17 @@
 import { Coins, LoaderCircle } from 'lucide-react';
 import Link from 'next/link';
 
-import { Card, shortAddress, StatusPill } from '@/components/AdminPrimitives';
+import {
+  AdminTable,
+  AdminTableBody,
+  AdminTableCell,
+  AdminTableHead,
+  AdminTableHeaderCell,
+  Card,
+  shortAddress,
+  StatusPill,
+  TablePlaceholderRow,
+} from '@/components/AdminPrimitives';
 import { TokensMismatchBadges } from '@/components/tokens/TokensMismatchBadges';
 import type { TokenRow } from '@/components/tokens/TokensTypes';
 import { TokensUsageBadges } from '@/components/tokens/TokensUsageBadges';
@@ -17,34 +27,34 @@ type TokensTableProps = {
 export function TokensTable({ loading, tokenRows }: TokensTableProps) {
   return (
     <Card className="overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="min-w-[1380px] w-full border-collapse text-left">
-          <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-            <tr>
-              <th className="px-5 py-3">代币</th>
-              <th className="px-5 py-3">链上信息</th>
-              <th className="px-5 py-3">配置差异</th>
-              <th className="px-5 py-3">用途</th>
-              <th className="px-5 py-3">总供应</th>
-              <th className="px-5 py-3">金库白名单</th>
-              <th className="px-5 py-3">金库余额</th>
-              <th className="px-5 py-3 text-right">操作</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-200">
+      <AdminTable minWidth="1380px">
+        <AdminTableHead>
+          <tr>
+            <AdminTableHeaderCell>代币</AdminTableHeaderCell>
+            <AdminTableHeaderCell>链上信息</AdminTableHeaderCell>
+            <AdminTableHeaderCell>配置差异</AdminTableHeaderCell>
+            <AdminTableHeaderCell>用途</AdminTableHeaderCell>
+            <AdminTableHeaderCell>总供应</AdminTableHeaderCell>
+            <AdminTableHeaderCell>金库白名单</AdminTableHeaderCell>
+            <AdminTableHeaderCell>金库余额</AdminTableHeaderCell>
+            <AdminTableHeaderCell align="right">操作</AdminTableHeaderCell>
+          </tr>
+        </AdminTableHead>
+        <AdminTableBody>
             {loading && tokenRows.length === 0 ? (
-              <tr>
-                <td colSpan={8} className="px-5 py-12 text-center text-sm text-slate-500">
-                  <LoaderCircle size={18} className="mx-auto mb-2 animate-spin" />
-                  正在加载代币数据
-                </td>
-              </tr>
+              <TablePlaceholderRow
+                colSpan={8}
+                icon={<LoaderCircle size={20} className="animate-spin" />}
+                title="正在加载代币数据"
+                description="正在读取链上元数据、用途关系和金库状态。"
+              />
             ) : tokenRows.length === 0 ? (
-              <tr>
-                <td colSpan={8} className="px-5 py-12 text-center text-sm text-slate-500">
-                  暂无符合条件的代币
-                </td>
-              </tr>
+              <TablePlaceholderRow
+                colSpan={8}
+                icon={<Coins size={20} />}
+                title="没有符合条件的代币"
+                description="试试调整筛选条件，或者清空当前搜索词。"
+              />
             ) : (
               tokenRows.map((token) => {
                 const treasuryQuery = new URLSearchParams({
@@ -67,8 +77,8 @@ export function TokensTable({ loading, tokenRows }: TokensTableProps) {
                       : '可前往治理';
 
                 return (
-                  <tr key={token.address} className="align-middle">
-                    <td className="px-5 py-4">
+                  <tr key={token.address} className="align-middle transition-colors hover:bg-slate-50/70">
+                    <AdminTableCell>
                       <div className="flex min-w-0 items-center gap-3">
                         <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
                           <Coins size={18} />
@@ -78,9 +88,9 @@ export function TokensTable({ loading, tokenRows }: TokensTableProps) {
                           <p className="mt-1 font-mono text-xs text-slate-500">{shortAddress(token.address)}</p>
                         </div>
                       </div>
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="space-y-1 text-sm text-slate-700">
+                    </AdminTableCell>
+                    <AdminTableCell>
+                      <div className="max-w-[210px] space-y-1.5 text-sm leading-5 text-slate-700">
                         <p>
                           名称：<span className="font-medium text-slate-900">{token.readFailed ? '--' : token.chainName}</span>
                         </p>
@@ -91,9 +101,9 @@ export function TokensTable({ loading, tokenRows }: TokensTableProps) {
                           精度：<span className="font-medium text-slate-900">{token.readFailed ? '--' : token.chainDecimals}</span>
                         </p>
                       </div>
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="space-y-2">
+                    </AdminTableCell>
+                    <AdminTableCell>
+                      <div className="max-w-[220px] space-y-2">
                         {token.readFailed ? (
                           <StatusPill tone="danger">读取失败</StatusPill>
                         ) : (
@@ -103,41 +113,40 @@ export function TokensTable({ loading, tokenRows }: TokensTableProps) {
                           配置 {token.configuredSymbol} / {token.configuredName} / {token.configuredDecimals}
                         </p>
                       </div>
-                    </td>
-                    <td className="px-5 py-4">
+                    </AdminTableCell>
+                    <AdminTableCell>
                       <TokensUsageBadges usage={token.usage} />
-                    </td>
-                    <td className="px-5 py-4 text-sm text-slate-700">
+                    </AdminTableCell>
+                    <AdminTableCell className="text-sm leading-6 text-slate-700">
                       {formatBigIntAmountDown(token.totalSupply, token.chainDecimals, 2)}
-                    </td>
-                    <td className="px-5 py-4">
+                    </AdminTableCell>
+                    <AdminTableCell>
                       <StatusPill tone={token.treasuryAllowed ? 'success' : 'neutral'}>
                         {token.treasuryAllowed ? '已允许' : '未允许'}
                       </StatusPill>
-                    </td>
-                    <td className="px-5 py-4 text-sm text-slate-700">
+                    </AdminTableCell>
+                    <AdminTableCell className="text-sm leading-6 text-slate-700">
                       {token.treasuryBalance === undefined
                         ? '--'
                         : `${formatBigIntAmountDown(token.treasuryBalance, token.chainDecimals, 4)} ${token.readFailed ? token.configuredSymbol : token.chainSymbol}`}
-                    </td>
-                    <td className="px-5 py-4 text-right">
-                      <div className="flex flex-col items-end gap-1">
+                    </AdminTableCell>
+                    <AdminTableCell align="right">
+                      <div className="flex flex-col items-end gap-1.5">
                         <Link
                           href={`/treasury?${treasuryQuery}`}
                           className="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                         >
                           {actionLabel}
                         </Link>
-                        <span className="text-[11px] text-slate-400">{actionHint}</span>
+                        <span className="max-w-[112px] text-right text-[11px] leading-5 text-slate-400">{actionHint}</span>
                       </div>
-                    </td>
+                    </AdminTableCell>
                   </tr>
                 );
               })
             )}
-          </tbody>
-        </table>
-      </div>
+        </AdminTableBody>
+      </AdminTable>
     </Card>
   );
 }

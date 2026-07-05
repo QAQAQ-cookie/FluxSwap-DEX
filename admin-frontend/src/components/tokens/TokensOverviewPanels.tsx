@@ -97,7 +97,7 @@ export function TokensOverviewPanels({
         </div>
       </Card>
 
-      <Card className="xl:col-span-2 p-5">
+      <Card className="p-5 xl:col-span-2">
         <div className="grid gap-5 lg:grid-cols-2">
           <div>
             <div className="flex items-center justify-between gap-3">
@@ -132,9 +132,7 @@ export function TokensOverviewPanels({
 
             <div className="mt-3 space-y-3">
               {pendingTreasuryRows.length === 0 ? (
-                <p className="text-sm leading-6 text-slate-500">
-                  当前没有已被协议使用但尚未加入金库白名单的代币。
-                </p>
+                <p className="text-sm leading-6 text-slate-500">当前没有协议已使用但尚未放行到金库的代币。</p>
               ) : (
                 pendingTreasuryRows.slice(0, 4).map((token) => {
                   const treasuryQuery = new URLSearchParams({

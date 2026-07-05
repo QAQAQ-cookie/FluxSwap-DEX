@@ -1,6 +1,8 @@
 'use client';
 
-import { Card } from '@/components/farm/FarmPrimitives';
+import { CircleDollarSign, Scale, Sprout } from 'lucide-react';
+
+import { SummaryStatCard } from '@/components/AdminPrimitives';
 import type { AdminInfo } from '@/components/farm/FarmTypes';
 import { formatBigIntAmountDown } from '@/lib/amounts';
 
@@ -12,24 +14,34 @@ type FarmStatusCardsProps = {
 export function FarmStatusCards({ adminInfo, activeFarmCount }: FarmStatusCardsProps) {
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-      <Card className="p-5">
-        <p className="text-sm text-slate-500">总农场数</p>
-        <p className="mt-3 text-2xl font-semibold text-slate-950">{adminInfo?.poolLength ?? 0}</p>
-      </Card>
-      <Card className="p-5">
-        <p className="text-sm text-slate-500">启用中</p>
-        <p className="mt-3 text-2xl font-semibold text-slate-950">{activeFarmCount}</p>
-      </Card>
-      <Card className="p-5">
-        <p className="text-sm text-slate-500">总权重</p>
-        <p className="mt-3 text-2xl font-semibold text-slate-950">{adminInfo?.totalAllocPoint.toString() ?? '0'}</p>
-      </Card>
-      <Card className="p-5">
-        <p className="text-sm text-slate-500">待分发奖励</p>
-        <p className="mt-3 text-2xl font-semibold text-slate-950">
-          {formatBigIntAmountDown(adminInfo?.totalPendingRewards, adminInfo?.rewardToken?.decimals ?? 18, 4)}
-        </p>
-      </Card>
+      <SummaryStatCard
+        label="总农场数"
+        value={adminInfo?.poolLength ?? 0}
+        helper="当前已创建的全部质押池数量"
+        icon={<Sprout size={19} />}
+        tone="neutral"
+      />
+      <SummaryStatCard
+        label="启用中"
+        value={activeFarmCount}
+        helper={adminInfo ? `${adminInfo.poolLength - activeFarmCount} 个未启用` : '等待链上数据'}
+        icon={<Sprout size={19} />}
+        tone={activeFarmCount > 0 ? 'success' : 'warning'}
+      />
+      <SummaryStatCard
+        label="总权重"
+        value={adminInfo?.totalAllocPoint.toString() ?? '0'}
+        helper="用于决定奖励分发比例"
+        icon={<Scale size={19} />}
+        tone="neutral"
+      />
+      <SummaryStatCard
+        label="待分发奖励"
+        value={formatBigIntAmountDown(adminInfo?.totalPendingRewards, adminInfo?.rewardToken?.decimals ?? 18, 4)}
+        helper={adminInfo?.rewardToken?.symbol ?? 'FLUX'}
+        icon={<CircleDollarSign size={19} />}
+        tone={adminInfo?.totalPendingRewards ? 'success' : 'neutral'}
+      />
     </div>
   );
 }

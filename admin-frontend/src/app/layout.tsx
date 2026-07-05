@@ -7,7 +7,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'FluxSwap 管理端',
-  description: '管理 FluxSwap 的农场、奖励分配、金库治理和代币配置。',
+  description: '管理 FluxSwap 的农场、奖励分发、金库治理和代币配置。',
 };
 
 export default function RootLayout({
