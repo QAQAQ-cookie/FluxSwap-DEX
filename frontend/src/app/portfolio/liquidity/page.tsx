@@ -1,7 +1,7 @@
 'use client';
 
 import { useConnectModal } from '@rainbow-me/rainbowkit';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { Address, Hash } from 'viem';
@@ -251,7 +251,7 @@ function TokenSelectorModal({
   );
 }
 
-export default function PortfolioLiquidityPage() {
+function PortfolioLiquidityPageContent() {
   const { i18n } = useTranslation();
   const isZh = i18n.language.startsWith('zh');
   const router = useRouter();
@@ -1435,5 +1435,13 @@ export default function PortfolioLiquidityPage() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+export default function PortfolioLiquidityPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-white" />}>
+      <PortfolioLiquidityPageContent />
+    </Suspense>
   );
 }
