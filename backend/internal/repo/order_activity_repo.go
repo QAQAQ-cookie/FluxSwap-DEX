@@ -8,6 +8,7 @@ import (
 	"fluxswap-backend/internal/domain"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // OrderActivityRepository 封装订单活动表访问逻辑。
@@ -26,7 +27,13 @@ func (r *OrderActivityRepository) Create(ctx context.Context, activity *domain.O
 		return errors.New("order activity repository unavailable")
 	}
 
-	return r.db.WithContext(ctx).Create(activity).Error
+	return r.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "dedupe_key"}},
+			DoNothing: true,
+		}).
+		Create(activity).
+		Error
 }
 
 // ListByOrderHash 按订单查询活动列表，按发生时间倒序返回。

@@ -77,6 +77,78 @@ func TestRecordOrderActivityNormalizesLongDedupeKey(t *testing.T) {
 	require.LessOrEqual(t, len(activities[0].DedupeKey), maxOrderActivityDedupeKeyLength)
 }
 
+func TestRecordOrderActivityDuplicateInsideTransactionDoesNotRollback(t *testing.T) {
+	db := openOrderActivityTestDB(t)
+
+	order := &domain.Order{
+		ChainID:           31337,
+		SettlementAddress: "0x1111111111111111111111111111111111111111",
+		OrderHash:         "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+		Maker:             "0x2222222222222222222222222222222222222222",
+		InputToken:        "0x3333333333333333333333333333333333333333",
+		OutputToken:       "0x4444444444444444444444444444444444444444",
+		AmountIn:          "100",
+		MinAmountOut:      "90",
+		ExecutorFee:       "1",
+		ExecutorFeeToken:  "0x4444444444444444444444444444444444444444",
+		TriggerPriceX18:   "1",
+		Expiry:            "9999999999",
+		Nonce:             "8",
+		Recipient:         "0x5555555555555555555555555555555555555555",
+		Signature:         "0x" + strings.Repeat("22", 65),
+		Source:            "test",
+		Status:            "open",
+		CreatedAt:         time.Now().UTC(),
+		UpdatedAt:         time.Now().UTC(),
+	}
+	require.NoError(t, repo.NewOrderRepository(db).Create(context.Background(), order))
+
+	params := RecordOrderActivityParams{
+		Order:        order,
+		ActivityType: domain.OrderActivityTypeExecutionClaimed,
+		FromStatus:   "open",
+		ToStatus:     "submitting_execute",
+		ReasonCode:   "claimed_for_submission",
+		Source:       domain.OrderActivitySourceExecutor,
+		DedupeKey:    "executor:claim:test",
+		OccurredAt:   time.Now().UTC(),
+	}
+
+	err := db.WithContext(context.Background()).Transaction(func(tx *gorm.DB) error {
+		if err := RecordOrderActivity(context.Background(), tx, params); err != nil {
+			return err
+		}
+		if err := RecordOrderActivity(context.Background(), tx, params); err != nil {
+			return err
+		}
+		order.Status = "submitting_execute"
+		return tx.Model(&domain.Order{}).
+			Where("id = ?", order.ID).
+			Update("status", order.Status).
+			Error
+	})
+	require.NoError(t, err)
+
+	storedOrder, err := repo.NewOrderRepository(db).GetByOrderHash(
+		context.Background(),
+		order.ChainID,
+		order.SettlementAddress,
+		order.OrderHash,
+	)
+	require.NoError(t, err)
+	require.Equal(t, "submitting_execute", storedOrder.Status)
+
+	activities, err := repo.NewOrderActivityRepository(db).ListByOrderHash(
+		context.Background(),
+		order.ChainID,
+		order.SettlementAddress,
+		order.OrderHash,
+		10,
+	)
+	require.NoError(t, err)
+	require.Len(t, activities, 1)
+}
+
 func openOrderActivityTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
