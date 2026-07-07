@@ -25,7 +25,12 @@ export function useTreasuryTransactionRunner({
   const [activeAction, setActiveAction] = useState<ActiveTreasuryAction>(null);
 
   const runTransaction = useCallback(
-    async (action: ActiveTreasuryAction, title: string, tx: () => Promise<Hex>, onConfirmed?: () => void) => {
+    async (
+      action: ActiveTreasuryAction,
+      title: string,
+      tx: () => Promise<Hex>,
+      onConfirmed?: (hash: Hex) => void | Promise<void>,
+    ) => {
       if (!publicClient) {
         onResult({
           kind: 'error',
@@ -40,7 +45,11 @@ export function useTreasuryTransactionRunner({
       try {
         const hash = await tx();
         await publicClient.waitForTransactionReceipt({ hash });
-        onConfirmed?.();
+        try {
+          await onConfirmed?.(hash);
+        } catch (syncError) {
+          console.warn('sync confirmed treasury transaction failed', syncError);
+        }
         onResult({
           kind: 'success',
           title,

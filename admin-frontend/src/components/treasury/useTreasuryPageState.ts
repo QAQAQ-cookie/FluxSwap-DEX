@@ -17,7 +17,7 @@ export function useTreasuryPageState() {
   const [targetAddress, setTargetAddress] = useState('');
   const [spenderAddress, setSpenderAddress] = useState('');
   const [amountValue, setAmountValue] = useState('');
-  const [delaySeconds, setDelaySeconds] = useState('');
+  const [delaySeconds, setDelaySeconds] = useState('10');
   const [newMinDelayValue, setNewMinDelayValue] = useState('');
   const [withdrawRecipientAddress, setWithdrawRecipientAddress] = useState('');
   const [withdrawAmountValue, setWithdrawAmountValue] = useState('');

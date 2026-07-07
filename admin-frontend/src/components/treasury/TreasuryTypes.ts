@@ -79,4 +79,5 @@ export type TreasuryOperationRow = {
   status: 'pending' | 'ready';
   blockNumber: bigint;
   metadata?: TreasuryOperationMetadata;
+  source?: 'chain' | 'backend';
 };

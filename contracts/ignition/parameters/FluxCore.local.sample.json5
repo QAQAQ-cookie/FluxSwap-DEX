@@ -21,8 +21,8 @@
     initialSupply: "0",
     tokenCap: "1000000000000000000000000000",
 
-    // Treasury 最小时间锁延迟，示例为 86400 秒，即 1 天。
-    treasuryMinDelay: "86400",
+    // Treasury 最小时间锁延迟，本地联调用 10 秒，方便快速验证治理操作。
+    treasuryMinDelay: "10",
 
     // 收入分配参数：
     // 10000 表示 100% 先进入回购，

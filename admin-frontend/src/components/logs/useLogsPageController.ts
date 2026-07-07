@@ -15,6 +15,7 @@ import {
 } from '@/lib/contracts';
 import { formatErrorMessage } from '@/lib/errors';
 import { shortAddress } from '@/components/AdminPrimitives';
+import { listAdminOperationLogs } from '@/lib/admin-api';
 
 export function useLogsPageController() {
   const environment = useLogsPageEnvironment();
@@ -40,6 +41,22 @@ export function useLogsPageController() {
       const rows: LogRow[] = [];
       let rewardTokenDecimals = 18;
       let rewardTokenSymbol = 'FLUX';
+      const backendLogs = await listAdminOperationLogs({
+        chainId: environment.chainId,
+        pageSize: 80,
+      }).catch(() => null);
+
+      for (const log of backendLogs?.items ?? []) {
+        rows.push({
+          id: `backend-${log.id}`,
+          scope: toLogScope(log.moduleCode),
+          action: log.actionLabel || log.actionCode,
+          summary: buildBackendLogSummary(log),
+          blockNumber: BigInt(0),
+          transactionHash: log.txHash ?? '',
+          createdAt: log.createdAt,
+        });
+      }
 
       if (environment.rewardTokenAddress) {
         const [decimals, symbol] = await Promise.all([
@@ -238,4 +255,18 @@ export function useLogsPageController() {
     pageState,
     loadLogs,
   };
+}
+
+function toLogScope(moduleCode: string): LogRow['scope'] {
+  if (moduleCode === 'farm' || moduleCode === 'treasury' || moduleCode === 'auth' || moduleCode === 'sync' || moduleCode === 'token') {
+    return moduleCode;
+  }
+  return 'treasury';
+}
+
+function buildBackendLogSummary(log: Awaited<ReturnType<typeof listAdminOperationLogs>>['items'][number]) {
+  const target = log.targetId ? `对象 ${shortAddress(log.targetId)}` : '';
+  const result = log.resultLabel ? `结果 ${log.resultLabel}` : '';
+  const tx = log.txHash ? `交易 ${shortAddress(log.txHash)}` : '';
+  return [target, result, tx].filter(Boolean).join('，') || log.moduleLabel || '管理端操作';
 }

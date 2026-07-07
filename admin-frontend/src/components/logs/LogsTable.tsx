@@ -22,13 +22,29 @@ type LogsTableProps = {
 };
 
 export function LogsTable({ loading, logs }: LogsTableProps) {
+  const scopeLabelByScope: Record<LogRow['scope'], string> = {
+    farm: '农场',
+    treasury: '金库',
+    auth: '认证',
+    sync: '同步',
+    token: '代币',
+  };
+
+  const scopeToneByScope: Record<LogRow['scope'], 'success' | 'warning' | 'neutral' | 'danger'> = {
+    farm: 'success',
+    treasury: 'warning',
+    auth: 'neutral',
+    sync: 'neutral',
+    token: 'neutral',
+  };
+
   return (
     <Card className="overflow-hidden">
       <div className="border-b border-slate-200 p-5">
         <PanelToolbar
           icon={<ScrollText size={20} />}
           title="最近操作"
-          description="默认读取最近 20,000 个区块内最多 80 条农场与金库管理事件。"
+          description="合并展示管理后端审计日志，以及最近 20,000 个区块内的农场与金库链上事件。"
         />
       </div>
 
@@ -38,7 +54,7 @@ export function LogsTable({ loading, logs }: LogsTableProps) {
             <AdminTableHeaderCell>模块</AdminTableHeaderCell>
             <AdminTableHeaderCell>动作</AdminTableHeaderCell>
             <AdminTableHeaderCell>内容</AdminTableHeaderCell>
-            <AdminTableHeaderCell>区块</AdminTableHeaderCell>
+            <AdminTableHeaderCell>区块 / 时间</AdminTableHeaderCell>
             <AdminTableHeaderCell>交易</AdminTableHeaderCell>
           </tr>
         </AdminTableHead>
@@ -61,15 +77,15 @@ export function LogsTable({ loading, logs }: LogsTableProps) {
               logs.map((log) => (
                 <tr key={log.id} className="align-middle transition-colors hover:bg-slate-50/70">
                   <AdminTableCell>
-                    <StatusPill tone={log.scope === 'farm' ? 'success' : 'warning'}>
-                      {log.scope === 'farm' ? '农场' : '金库'}
-                    </StatusPill>
+                    <StatusPill tone={scopeToneByScope[log.scope]}>{scopeLabelByScope[log.scope]}</StatusPill>
                   </AdminTableCell>
                   <AdminTableCell className="text-sm font-semibold leading-6 text-slate-900">{log.action}</AdminTableCell>
                   <AdminTableCell className="text-sm leading-6 text-slate-700">
                     <div className="max-w-[420px]">{log.summary}</div>
                   </AdminTableCell>
-                  <AdminTableCell className="font-mono text-sm leading-6 text-slate-600">{log.blockNumber.toString()}</AdminTableCell>
+                  <AdminTableCell className="font-mono text-sm leading-6 text-slate-600">
+                    {log.blockNumber > BigInt(0) ? log.blockNumber.toString() : log.createdAt ? new Date(log.createdAt).toLocaleString('zh-CN', { hour12: false }) : '--'}
+                  </AdminTableCell>
                   <AdminTableCell className="font-mono text-sm leading-6 text-slate-600">{shortAddress(log.transactionHash)}</AdminTableCell>
                 </tr>
               ))

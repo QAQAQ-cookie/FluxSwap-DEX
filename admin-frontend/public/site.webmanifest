@@ -1,0 +1,15 @@
+{
+  "name": "FluxSwap 管理端",
+  "short_name": "FluxSwap Admin",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f8fb",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

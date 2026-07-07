@@ -1,6 +1,6 @@
 'use client';
 
-export type LogScope = 'farm' | 'treasury';
+export type LogScope = 'farm' | 'treasury' | 'auth' | 'sync' | 'token';
 
 export type LogRow = {
   id: string;
@@ -9,4 +9,5 @@ export type LogRow = {
   summary: string;
   blockNumber: bigint;
   transactionHash: string;
+  createdAt?: string;
 };

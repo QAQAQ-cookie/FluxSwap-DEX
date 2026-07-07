@@ -8,9 +8,15 @@ import { usePublicClient } from 'wagmi';
 import type { AdminTokenOption } from '@/config/tokens';
 import { fluxSwapErc20Abi, fluxSwapTreasuryAbi } from '@/lib/contracts';
 import { formatErrorMessage } from '@/lib/errors';
+import { listAdminTreasuryOperations } from '@/lib/admin-api';
 
 import type { TreasuryInfo, TreasuryOperationMetadata, TreasuryOperationRow, TreasuryTokenRow } from './TreasuryTypes';
-import { EVENT_LOOKBACK_BLOCKS, ZERO_BIGINT, sortOperations } from './TreasuryUtils';
+import {
+  EVENT_LOOKBACK_BLOCKS,
+  ZERO_BIGINT,
+  sortOperations,
+  treasuryMetadataFromAdminOperation,
+} from './TreasuryUtils';
 
 type UseTreasuryDataParameters = {
   chainId: number;
@@ -84,7 +90,7 @@ export function useTreasuryData({
 
       const fromBlock = latestBlock > EVENT_LOOKBACK_BLOCKS ? latestBlock - EVENT_LOOKBACK_BLOCKS : ZERO_BIGINT;
 
-      const [erc20Rows, nativeBalance, nativeDailySpendCap, nativeSpentToday, scheduledLogs] = await Promise.all([
+      const [erc20Rows, nativeBalance, nativeDailySpendCap, nativeSpentToday, scheduledLogs, backendOperationsResult] = await Promise.all([
         Promise.all(
           tokens.map(async (token) => {
             const [balance, approvedSpendRemaining, dailySpendCap, spentToday, allowed] = await Promise.all([
@@ -152,8 +158,20 @@ export function useTreasuryData({
           fromBlock,
           toBlock: latestBlock,
         }),
+        listAdminTreasuryOperations({
+          chainId,
+          treasuryAddress,
+          pageSize: 100,
+        }).catch(() => null),
       ]);
 
+      const backendMetadataById = (backendOperationsResult?.items ?? []).reduce<Record<Hex, TreasuryOperationMetadata>>(
+        (metadataById, operation) => {
+          metadataById[operation.operationId] = treasuryMetadataFromAdminOperation(operation);
+          return metadataById;
+        },
+        {},
+      );
       const scheduledById = new Map<Hex, TreasuryOperationRow>();
 
       for (const log of scheduledLogs) {
@@ -196,7 +214,7 @@ export function useTreasuryData({
             ...operation,
             executeAfter: readyAt,
             status: readyAt <= nowSeconds ? 'ready' : 'pending',
-            metadata: operationMetadataById[operation.operationId],
+            metadata: backendMetadataById[operation.operationId] ?? operationMetadataById[operation.operationId],
           };
         }),
       );
@@ -232,7 +250,7 @@ export function useTreasuryData({
     } finally {
       setLoading(false);
     }
-  }, [managerAddress, operationMetadataById, publicClient, supportedChain, tokens, treasuryAddress]);
+  }, [chainId, managerAddress, operationMetadataById, publicClient, supportedChain, tokens, treasuryAddress]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {

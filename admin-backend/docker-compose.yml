@@ -1,0 +1,17 @@
+services:
+  admin-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fluxswap-admin-api
+    env_file:
+      - .env
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8081/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped

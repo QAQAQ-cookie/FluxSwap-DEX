@@ -17,9 +17,16 @@ import type {
   TreasuryOperationRow,
   TreasuryTokenRow,
 } from '@/components/treasury/TreasuryTypes';
-import { ZERO_BIGINT } from '@/components/treasury/TreasuryUtils';
+import { ZERO_BIGINT, treasuryMetadataToAdminParams } from '@/components/treasury/TreasuryUtils';
 import type { AdminTokenOption } from '@/config/tokens';
 import { fluxSwapTreasuryAbi } from '@/lib/contracts';
+import { formatErrorMessage } from '@/lib/errors';
+import {
+  ensureAdminSession,
+  type AdminSignMessage,
+  updateAdminTreasuryOperationStatus,
+  upsertAdminTreasuryOperation,
+} from '@/lib/admin-api';
 
 type TreasuryPublicClient = NonNullable<UsePublicClientReturnType>;
 type WriteContractAsync = UseWriteContractReturnType['writeContractAsync'];
@@ -28,7 +35,7 @@ type RunTreasuryTransaction = (
   action: ActiveTreasuryAction,
   title: string,
   tx: () => Promise<Hex>,
-  onConfirmed?: () => void,
+  onConfirmed?: (hash: Hex) => void | Promise<void>,
 ) => void;
 
 type UseTreasuryActionsParams = {
@@ -57,12 +64,14 @@ type UseTreasuryActionsParams = {
   allocationRecipientAddress: string;
   allocationAmountValue: string;
   writeContractAsync: WriteContractAsync;
+  signMessageAsync: AdminSignMessage;
   openConnectModal?: () => void;
   setResultModal: (state: ResultModalState) => void;
   setConfirmModal: (state: ConfirmModalState) => void;
   runTransaction: RunTreasuryTransaction;
   persistMetadata: (metadata: TreasuryOperationMetadata) => void;
   removeMetadata: (operationId: Hex) => void;
+  actorAddress?: Address;
 };
 
 export function useTreasuryActions({
@@ -91,12 +100,14 @@ export function useTreasuryActions({
   allocationRecipientAddress,
   allocationAmountValue,
   writeContractAsync,
+  signMessageAsync,
   openConnectModal,
   setResultModal,
   setConfirmModal,
   runTransaction,
   persistMetadata,
   removeMetadata,
+  actorAddress,
 }: UseTreasuryActionsParams) {
   const buildOperationDraft = useCallback(async (): Promise<TreasuryOperationMetadata | null> => {
     return buildTreasuryOperationDraft({
@@ -134,6 +145,24 @@ export function useTreasuryActions({
     withdrawRecipientAddress,
   ]);
 
+  const ensureBackendSession = useCallback(async () => {
+    await ensureAdminSession(actorAddress, signMessageAsync);
+  }, [actorAddress, signMessageAsync]);
+
+  const ensureBackendSessionOrReport = useCallback(async () => {
+    try {
+      await ensureBackendSession();
+      return true;
+    } catch (error) {
+      setResultModal({
+        kind: 'error',
+        title: '管理端登录失败',
+        message: formatErrorMessage(error),
+      });
+      return false;
+    }
+  }, [ensureBackendSession, setResultModal]);
+
   const handleScheduleOperation = useCallback(async () => {
     if (!treasuryAddress) {
       setResultModal({ kind: 'error', title: '暂无法创建操作', message: '金库合约地址尚未加载完成。' });
@@ -160,6 +189,9 @@ export function useTreasuryActions({
     }
 
     const delay = effectiveDelaySeconds.trim() ? BigInt(effectiveDelaySeconds.trim()) : (treasuryInfo?.minDelay ?? ZERO_BIGINT);
+    if (!(await ensureBackendSessionOrReport())) {
+      return;
+    }
 
     runTransaction(
       'schedule',
@@ -172,11 +204,31 @@ export function useTreasuryActions({
           args: [draft.operationId, delay],
           ...localGasOverride,
         }),
-      () => persistMetadata(draft),
+      async (hash) => {
+        persistMetadata(draft);
+        await ensureBackendSession();
+        await upsertAdminTreasuryOperation({
+          operationId: draft.operationId,
+          chainId: draft.chainId,
+          treasuryAddress: draft.treasuryAddress,
+          operationTypeCode: draft.kind,
+          operationTypeLabel: draft.label,
+          statusCode: 'queued',
+          statusLabel: '待执行',
+          proposerAddress: actorAddress ?? draft.treasuryAddress,
+          scheduleTxHash: hash,
+          readyAt: new Date((Math.floor(Date.now() / 1000) + Number(delay)) * 1000).toISOString(),
+          params: treasuryMetadataToAdminParams(draft),
+          summary: draft.summary,
+        });
+      },
     );
   }, [
+    actorAddress,
     buildOperationDraft,
     effectiveDelaySeconds,
+    ensureBackendSession,
+    ensureBackendSessionOrReport,
     isConnected,
     isMultisig,
     localGasOverride,
@@ -327,7 +379,7 @@ export function useTreasuryActions({
   ]);
 
   const submitCancelOperation = useCallback(
-    (operation: TreasuryOperationRow) => {
+    async (operation: TreasuryOperationRow) => {
       if (!treasuryAddress) {
         return;
       }
@@ -342,6 +394,10 @@ export function useTreasuryActions({
         return;
       }
 
+      if (!(await ensureBackendSessionOrReport())) {
+        return;
+      }
+
       runTransaction(
         `cancel:${operation.operationId}`,
         '已取消治理操作',
@@ -352,11 +408,24 @@ export function useTreasuryActions({
             functionName: 'cancelOperation',
             args: [operation.operationId],
             ...localGasOverride,
-          }),
-        () => removeMetadata(operation.operationId),
+        }),
+        async (hash) => {
+          await ensureBackendSession();
+          removeMetadata(operation.operationId);
+          await updateAdminTreasuryOperationStatus(operation.operationId, {
+            statusCode: 'cancelled',
+            statusLabel: '已取消',
+            actorAddress,
+            cancelTxHash: hash,
+            requestData: { operationId: operation.operationId },
+          });
+        },
       );
     },
     [
+      actorAddress,
+      ensureBackendSession,
+      ensureBackendSessionOrReport,
       isConnected,
       isMultisig,
       localGasOverride,
@@ -386,7 +455,7 @@ export function useTreasuryActions({
   );
 
   const submitExecuteOperation = useCallback(
-    (operation: TreasuryOperationRow) => {
+    async (operation: TreasuryOperationRow) => {
       if (!treasuryAddress) {
         return;
       }
@@ -416,13 +485,37 @@ export function useTreasuryActions({
       });
 
       if (executionRequest) {
-        runTransaction(action, executionRequest.title, executionRequest.tx, () => removeMetadata(operation.operationId));
+        if (!(await ensureBackendSessionOrReport())) {
+          return;
+        }
+
+        runTransaction(action, executionRequest.title, executionRequest.tx, async (hash) => {
+          await ensureBackendSession();
+          removeMetadata(operation.operationId);
+          await updateAdminTreasuryOperationStatus(operation.operationId, {
+            statusCode: 'executed',
+            statusLabel: '已执行',
+            actorAddress,
+            executeTxHash: hash,
+            requestData: { operationId: operation.operationId, kind: metadata.kind },
+          });
+        });
         return;
       }
 
       setResultModal({ kind: 'error', title: '参数不完整', message: '该操作的本地参数记录不完整，不能安全执行。' });
     },
-    [localGasOverride, removeMetadata, runTransaction, setResultModal, treasuryAddress, writeContractAsync],
+    [
+      actorAddress,
+      ensureBackendSession,
+      ensureBackendSessionOrReport,
+      localGasOverride,
+      removeMetadata,
+      runTransaction,
+      setResultModal,
+      treasuryAddress,
+      writeContractAsync,
+    ],
   );
 
   const handleExecuteOperation = useCallback(

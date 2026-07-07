@@ -1,6 +1,7 @@
 import type { Address, Hex } from 'viem';
 
 import { formatBigIntAmountDown } from '@/lib/amounts';
+import type { AdminTreasuryOperation } from '@/lib/admin-api';
 
 import type { TreasuryOperationMetadata, TreasuryOperationRow, TreasuryTokenRow } from './TreasuryTypes';
 
@@ -154,4 +155,22 @@ export function saveTreasuryOperationMetadata(
   }
 
   window.localStorage.setItem(getTreasuryOperationStorageKey(chainId, treasuryAddress), JSON.stringify(metadataById));
+}
+
+export function treasuryMetadataFromAdminOperation(operation: AdminTreasuryOperation): TreasuryOperationMetadata {
+  return {
+    version: 1,
+    chainId: operation.chainId,
+    treasuryAddress: operation.treasuryAddress,
+    operationId: operation.operationId,
+    kind: operation.operationTypeCode as TreasuryOperationMetadata['kind'],
+    label: operation.operationTypeLabel,
+    summary: operation.summary || operation.operationTypeLabel,
+    params: operation.params as TreasuryOperationMetadata['params'],
+    createdAt: new Date(operation.createdAt).getTime(),
+  };
+}
+
+export function treasuryMetadataToAdminParams(metadata: TreasuryOperationMetadata): Record<string, unknown> {
+  return { ...metadata.params };
 }

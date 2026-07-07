@@ -2,7 +2,7 @@
 
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { useMemo } from 'react';
-import { useAccount, useChainId, useWriteContract } from 'wagmi';
+import { useAccount, useChainId, useSignMessage, useWriteContract } from 'wagmi';
 
 import { getContractAddress, getLocalGasOverride, isFluxSupportedChain } from '@/config/contracts';
 import { getAdminTokenOptions } from '@/config/tokens';
@@ -12,6 +12,7 @@ export function useTreasuryPageEnvironment() {
   const { address, isConnected } = useAccount();
   const { openConnectModal } = useConnectModal();
   const { writeContractAsync } = useWriteContract();
+  const { signMessageAsync } = useSignMessage();
 
   const supportedChain = isFluxSupportedChain(chainId);
   const treasuryAddress = getContractAddress('FluxSwapTreasury', chainId);
@@ -25,6 +26,7 @@ export function useTreasuryPageEnvironment() {
     isConnected,
     openConnectModal,
     writeContractAsync,
+    signMessageAsync,
     supportedChain,
     treasuryAddress,
     managerAddress,

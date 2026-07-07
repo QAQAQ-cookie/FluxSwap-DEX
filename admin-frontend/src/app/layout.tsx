@@ -8,6 +8,12 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'FluxSwap 管理端',
   description: '管理 FluxSwap 的农场、奖励分发、金库治理和代币配置。',
+  manifest: '/site.webmanifest',
+  icons: {
+    icon: '/favicon.svg',
+    shortcut: '/favicon.svg',
+    apple: '/favicon.svg',
+  },
 };
 
 export default function RootLayout({
@@ -16,7 +22,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN" suppressHydrationWarning>
+    <html lang="zh-CN" suppressHydrationWarning data-scroll-behavior="smooth">
       <body className="antialiased">
         <Providers>
           <AdminShell>{children}</AdminShell>

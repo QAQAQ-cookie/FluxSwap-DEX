@@ -150,12 +150,14 @@ export function useTreasuryPageController() {
     allocationRecipientAddress: pageState.allocationRecipientAddress,
     allocationAmountValue: pageState.allocationAmountValue,
     writeContractAsync: environment.writeContractAsync,
+    signMessageAsync: environment.signMessageAsync,
     openConnectModal: environment.openConnectModal ?? undefined,
     setResultModal: pageState.setResultModal,
     setConfirmModal: pageState.setConfirmModal,
     runTransaction: (action, title, tx, onConfirmed) => void runTransaction(action, title, tx, onConfirmed),
     persistMetadata,
     removeMetadata,
+    actorAddress: environment.address,
   });
 
   return {
