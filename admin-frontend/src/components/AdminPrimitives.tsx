@@ -94,6 +94,27 @@ export function PageErrorBanner({ message }: { message: string }) {
   );
 }
 
+export function PageInfoBanner({
+  message,
+  tone = 'neutral',
+}: {
+  message: string;
+  tone?: 'neutral' | 'warning' | 'success';
+}) {
+  const classNameByTone = {
+    neutral: 'border-slate-200 bg-slate-50 text-slate-700',
+    warning: 'border-amber-200 bg-amber-50 text-amber-700',
+    success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  };
+
+  return (
+    <div className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm ${classNameByTone[tone]}`}>
+      <AlertCircle size={18} />
+      {message}
+    </div>
+  );
+}
+
 export function SectionPlaceholder({
   icon,
   title,

@@ -22,8 +22,19 @@ export type FarmWeightSlice = {
 
 export type OperationBucket = {
   label: string;
+  startBlock: bigint;
+  endBlock: bigint;
+  startTimeMs: number;
+  endTimeMs: number;
   farm: number;
   treasury: number;
+};
+
+export type OperationWindow = {
+  fromBlock: bigint;
+  toBlock: bigint;
+  fromTimeMs: number;
+  toTimeMs: number;
 };
 
 export type OverviewData = {
@@ -45,6 +56,7 @@ export type OverviewData = {
   recentTreasuryEvents: number;
   farmWeightSlices: FarmWeightSlice[];
   operationBuckets: OperationBucket[];
+  operationWindow: OperationWindow;
 };
 
 export type Tone = 'success' | 'warning' | 'danger' | 'neutral';

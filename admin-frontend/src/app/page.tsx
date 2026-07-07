@@ -1,9 +1,10 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { Coins, LoaderCircle, RefreshCw, ScrollText, ShieldCheck, Sprout } from 'lucide-react';
+import Link from 'next/link';
+import { Coins, LoaderCircle, RefreshCw, ScrollText, ShieldCheck, Sprout, Vault } from 'lucide-react';
 
-import { Card, MetricCard, PageErrorBanner, SectionPlaceholder, StatusPill } from '@/components/AdminPrimitives';
+import { Card, MetricCard, PageErrorBanner, PageInfoBanner, SectionPlaceholder, StatusPill } from '@/components/AdminPrimitives';
 import {
   FarmWeightDonut,
   formatRefreshTime,
@@ -44,11 +45,13 @@ function OverviewSectionHeader({
 }
 
 export default function OverviewPage() {
-  const { pageState, loadOverview, healthScore, healthTone, nodes, actionItems } = useOverviewPageController();
+  const { pageState, loadOverview, healthScore, healthTone, nodes, actionItems, environment } = useOverviewPageController();
   const overview = pageState.overview;
   const rewardTokenSymbol = overview?.rewardTokenSymbol ?? 'FLUX';
   const recentEventCount = (overview?.recentFarmEvents ?? 0) + (overview?.recentTreasuryEvents ?? 0);
   const healthClasses = getToneClasses(healthTone);
+  const hasContracts = Boolean(environment.managerAddress && environment.treasuryAddress);
+  const showStatePlaceholder = !pageState.loading && !overview;
 
   return (
     <div className="space-y-8">
@@ -78,9 +81,58 @@ export default function OverviewPage() {
             </button>
           </div>
         </div>
+
+        <div className="mt-6 grid gap-3 md:grid-cols-3">
+          <Link
+            href="/farm"
+            className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 transition hover:bg-white/10"
+          >
+            <div className="flex items-center gap-3">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-300">
+                <Sprout size={18} />
+              </span>
+              <div>
+                <p className="text-sm font-semibold text-white">农场管理</p>
+                <p className="mt-1 text-xs leading-5 text-slate-300">创建质押池、调权重、分发奖励</p>
+              </div>
+            </div>
+          </Link>
+          <Link
+            href="/treasury"
+            className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 transition hover:bg-white/10"
+          >
+            <div className="flex items-center gap-3">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-sky-500/15 text-sky-300">
+                <Vault size={18} />
+              </span>
+              <div>
+                <p className="text-sm font-semibold text-white">金库管理</p>
+                <p className="mt-1 text-xs leading-5 text-slate-300">查看资产、授权额度与治理队列</p>
+              </div>
+            </div>
+          </Link>
+          <Link
+            href="/tokens"
+            className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 transition hover:bg-white/10"
+          >
+            <div className="flex items-center gap-3">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-300">
+                <Coins size={18} />
+              </span>
+              <div>
+                <p className="text-sm font-semibold text-white">代币管理</p>
+                <p className="mt-1 text-xs leading-5 text-slate-300">核对白名单、用途和链上配置</p>
+              </div>
+            </div>
+          </Link>
+        </div>
       </section>
 
       {pageState.error ? <PageErrorBanner message={pageState.error} /> : null}
+      {!environment.supportedChain ? <PageInfoBanner message="当前网络还未接入 FluxSwap 管理端，请切换到受支持网络后再查看。" tone="warning" /> : null}
+      {environment.supportedChain && !hasContracts ? (
+        <PageInfoBanner message="当前网络缺少管理端合约地址配置，概览数据暂时无法加载。" tone="warning" />
+      ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
@@ -143,9 +195,16 @@ export default function OverviewPage() {
             description="正在汇总白名单、金库、农场和奖励的链上数据。"
             className="min-h-[520px] rounded-2xl bg-slate-50"
           />
-      ) : (
-        <ProtocolMap nodes={nodes} tone={healthTone} />
-      )}
+        ) : showStatePlaceholder ? (
+          <SectionPlaceholder
+            icon={<ShieldCheck size={20} />}
+            title="概览数据暂时不可用"
+            description="确认网络、管理合约地址和 RPC 状态后，再刷新一次。"
+            className="min-h-[520px] rounded-2xl bg-slate-50"
+          />
+        ) : (
+          <ProtocolMap nodes={nodes} tone={healthTone} />
+        )}
       </Card>
 
       <Card className="p-5">

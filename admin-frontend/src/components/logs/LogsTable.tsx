@@ -28,7 +28,7 @@ export function LogsTable({ loading, logs }: LogsTableProps) {
         <PanelToolbar
           icon={<ScrollText size={20} />}
           title="最近操作"
-          description="默认读取最近 20,000 个区块内最多 80 条事件。"
+          description="默认读取最近 20,000 个区块内最多 80 条农场与金库管理事件。"
         />
       </div>
 

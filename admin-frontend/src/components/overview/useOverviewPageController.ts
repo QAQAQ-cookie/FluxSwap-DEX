@@ -1,11 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import type { FarmWeightSlice } from '@/components/overview/OverviewTypes';
 import {
   buildActionItems,
   buildOperationBuckets,
+  FALLBACK_BLOCK_TIME_MS,
   buildProtocolNodes,
   getHealthScore,
   getToneByScore,
@@ -29,46 +30,57 @@ import { shortAddress } from '@/components/AdminPrimitives';
 export function useOverviewPageController() {
   const environment = useOverviewPageEnvironment();
   const pageState = useOverviewPageState();
+  const autoLoadKeyRef = useRef<string | null>(null);
+  const {
+    chainId,
+    configuredTokens,
+    managerAddress,
+    publicClient,
+    supportedChain,
+    treasuryAddress,
+    wrappedNativeAddress,
+  } = environment;
+  const { setError, setLastUpdatedAt, setLoading, setOverview } = pageState;
 
   const readTokenMeta = useCallback(
     async (tokenAddress: `0x${string}`) => {
-      if (!environment.publicClient) {
+      if (!publicClient) {
         throw new Error('public_client_unavailable');
       }
 
       try {
         const [token0, token1, decimals] = await Promise.all([
-          environment.publicClient.readContract({
+          publicClient.readContract({
             address: tokenAddress,
             abi: fluxSwapPairAbi,
             functionName: 'token0',
           }),
-          environment.publicClient.readContract({
+          publicClient.readContract({
             address: tokenAddress,
             abi: fluxSwapPairAbi,
             functionName: 'token1',
           }),
-          environment.publicClient.readContract({
+          publicClient.readContract({
             address: tokenAddress,
             abi: fluxSwapPairAbi,
             functionName: 'decimals',
           }),
         ]);
         const [token0Symbol, token1Symbol] = await Promise.all([
-          environment.publicClient.readContract({
+          publicClient.readContract({
             address: token0,
             abi: fluxSwapErc20Abi,
             functionName: 'symbol',
           }),
-          environment.publicClient.readContract({
+          publicClient.readContract({
             address: token1,
             abi: fluxSwapErc20Abi,
             functionName: 'symbol',
           }),
         ]);
 
-        const normalizedToken0 = normalizeSymbol(token0Symbol, token0, environment.wrappedNativeAddress);
-        const normalizedToken1 = normalizeSymbol(token1Symbol, token1, environment.wrappedNativeAddress);
+        const normalizedToken0 = normalizeSymbol(token0Symbol, token0, wrappedNativeAddress);
+        const normalizedToken1 = normalizeSymbol(token1Symbol, token1, wrappedNativeAddress);
 
         return {
           label: `${normalizedToken0} / ${normalizedToken1}`,
@@ -76,14 +88,14 @@ export function useOverviewPageController() {
           decimals: Number(decimals),
         };
       } catch {
-        const configured = environment.configuredTokens.find((token) => sameAddress(token.address, tokenAddress));
+        const configured = configuredTokens.find((token) => sameAddress(token.address, tokenAddress));
         const [symbolResult, decimalsResult] = await Promise.allSettled([
-          environment.publicClient.readContract({
+          publicClient.readContract({
             address: tokenAddress,
             abi: fluxSwapErc20Abi,
             functionName: 'symbol',
           }),
-          environment.publicClient.readContract({
+          publicClient.readContract({
             address: tokenAddress,
             abi: fluxSwapErc20Abi,
             functionName: 'decimals',
@@ -94,33 +106,29 @@ export function useOverviewPageController() {
           label: configured?.symbol ?? shortAddress(tokenAddress),
           symbol:
             symbolResult.status === 'fulfilled'
-              ? normalizeSymbol(symbolResult.value, tokenAddress, environment.wrappedNativeAddress)
+              ? normalizeSymbol(symbolResult.value, tokenAddress, wrappedNativeAddress)
               : configured?.symbol ?? 'TOKEN',
           decimals: decimalsResult.status === 'fulfilled' ? Number(decimalsResult.value) : configured?.decimals ?? 18,
         };
       }
     },
-    [environment],
+    [configuredTokens, publicClient, wrappedNativeAddress],
   );
 
   const loadOverview = useCallback(async () => {
-    if (!environment.publicClient || !environment.supportedChain || !environment.managerAddress || !environment.treasuryAddress) {
-      pageState.setOverview(null);
-      pageState.setLoading(false);
-      pageState.setError(
-        environment.supportedChain
+    if (!publicClient || !supportedChain || !managerAddress || !treasuryAddress) {
+      setOverview(null);
+      setLoading(false);
+      setError(
+        supportedChain
           ? '当前网络缺少管理端合约配置，请检查部署和前端配置。'
           : '当前网络还未接入 FluxSwap 管理端。',
       );
       return;
     }
 
-    const publicClient = environment.publicClient;
-    const managerAddress = environment.managerAddress;
-    const treasuryAddress = environment.treasuryAddress;
-
-    pageState.setLoading(true);
-    pageState.setError(null);
+    setLoading(true);
+    setError(null);
 
     try {
       const [
@@ -236,7 +244,7 @@ export function useOverviewPageController() {
         ]);
 
       const allowedTokenResults = await Promise.allSettled(
-        environment.configuredTokens.map((token) =>
+        configuredTokens.map((token) =>
           publicClient.readContract({
             address: resolvedTreasuryAddress,
             abi: fluxSwapTreasuryAbi,
@@ -248,6 +256,19 @@ export function useOverviewPageController() {
 
       const latestBlock = await publicClient.getBlockNumber();
       const fromBlock = latestBlock > RECENT_BLOCK_WINDOW ? latestBlock - RECENT_BLOCK_WINDOW : ZERO_BIGINT;
+      const [fromBlockDataResult, latestBlockDataResult] = await Promise.allSettled([
+        publicClient.getBlock({ blockNumber: fromBlock }),
+        publicClient.getBlock({ blockNumber: latestBlock }),
+      ]);
+      const nowMs = Date.now();
+      const latestBlockTimeMs =
+        latestBlockDataResult.status === 'fulfilled'
+          ? Number(latestBlockDataResult.value.timestamp) * 1_000
+          : nowMs;
+      const fromBlockTimeMs =
+        fromBlockDataResult.status === 'fulfilled'
+          ? Number(fromBlockDataResult.value.timestamp) * 1_000
+          : latestBlockTimeMs - Number(latestBlock - fromBlock) * FALLBACK_BLOCK_TIME_MS;
       const [poolUpdatedResult, rewardsDistributedResult, spenderApprovedResult, dailyCapResult, pausedResult, unpausedResult] =
         await Promise.allSettled([
           publicClient.getContractEvents({
@@ -305,7 +326,7 @@ export function useOverviewPageController() {
         ...(unpausedResult.status === 'fulfilled' ? unpausedResult.value : []),
       ];
 
-      pageState.setOverview({
+      setOverview({
         poolLength: poolCount,
         activePoolCount: poolRows.filter((pool) => pool.active && pool.allocPoint > ZERO_BIGINT).length,
         totalAllocPoint,
@@ -322,7 +343,7 @@ export function useOverviewPageController() {
           treasuryApprovedSpendRemainingResult.status === 'fulfilled'
             ? treasuryApprovedSpendRemainingResult.value
             : ZERO_BIGINT,
-        configuredTokenCount: environment.configuredTokens.length,
+        configuredTokenCount: configuredTokens.length,
         allowedTokenCount: allowedTokenResults.filter((result) => result.status === 'fulfilled' && result.value).length,
         recentFarmEvents: farmEvents.length,
         recentTreasuryEvents: treasuryEvents.length,
@@ -336,25 +357,50 @@ export function useOverviewPageController() {
         operationBuckets: buildOperationBuckets({
           latestBlock,
           fromBlock,
+          fromTimeMs: fromBlockTimeMs,
+          toTimeMs: latestBlockTimeMs,
           farmEvents,
           treasuryEvents,
         }),
+        operationWindow: {
+          fromBlock,
+          toBlock: latestBlock,
+          fromTimeMs: fromBlockTimeMs,
+          toTimeMs: latestBlockTimeMs,
+        },
       });
-      pageState.setLastUpdatedAt(new Date());
+      setLastUpdatedAt(new Date());
     } catch (loadError) {
-      pageState.setError(formatErrorMessage(loadError));
+      setError(formatErrorMessage(loadError));
     } finally {
-      pageState.setLoading(false);
+      setLoading(false);
     }
-  }, [environment, pageState, readTokenMeta]);
+  }, [
+    configuredTokens,
+    managerAddress,
+    publicClient,
+    readTokenMeta,
+    setError,
+    setLastUpdatedAt,
+    setLoading,
+    setOverview,
+    supportedChain,
+    treasuryAddress,
+  ]);
 
   useEffect(() => {
+    const autoLoadKey = `${chainId}:${supportedChain}:${managerAddress ?? ''}:${treasuryAddress ?? ''}`;
+    if (autoLoadKeyRef.current === autoLoadKey) {
+      return undefined;
+    }
+    autoLoadKeyRef.current = autoLoadKey;
+
     const timer = window.setTimeout(() => {
       void loadOverview();
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [loadOverview]);
+  }, [chainId, loadOverview, managerAddress, supportedChain, treasuryAddress]);
 
   const healthScore = useMemo(() => getHealthScore(pageState.overview), [pageState.overview]);
   const healthTone = useMemo(() => getToneByScore(healthScore), [healthScore]);

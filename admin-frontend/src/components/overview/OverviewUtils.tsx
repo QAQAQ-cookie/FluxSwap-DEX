@@ -22,6 +22,7 @@ import { formatBigIntAmountDown } from '@/lib/amounts';
 export const ZERO_BIGINT = BigInt(0);
 export const RECENT_BLOCK_WINDOW = BigInt(20_000);
 export const OPERATION_BUCKET_COUNT = 280;
+export const FALLBACK_BLOCK_TIME_MS = 2_000;
 export const CHART_COLORS = ['#4f46e5', '#059669', '#d97706', '#dc2626', '#0891b2', '#7c3aed', '#475569', '#be123c'];
 
 export function sameAddress(left?: string, right?: string) {
@@ -66,24 +67,88 @@ export function formatRefreshTime(value: Date | null) {
   });
 }
 
+export function formatDateTime(valueMs?: number) {
+  if (!valueMs) {
+    return '--';
+  }
+
+  return new Date(valueMs).toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+export function formatAxisDateTime(valueMs?: number) {
+  if (!valueMs) {
+    return '--';
+  }
+
+  return new Date(valueMs).toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+export function formatDuration(valueMs: number) {
+  if (valueMs <= 0) {
+    return '不足 1 分钟';
+  }
+
+  const minute = 60 * 1_000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+
+  if (valueMs >= day) {
+    return `约 ${Math.max(1, Math.round(valueMs / day))} 天`;
+  }
+  if (valueMs >= hour) {
+    return `约 ${Math.max(1, Math.round(valueMs / hour))} 小时`;
+  }
+  if (valueMs >= minute) {
+    return `约 ${Math.max(1, Math.round(valueMs / minute))} 分钟`;
+  }
+
+  return `约 ${Math.max(1, Math.round(valueMs / 1_000))} 秒`;
+}
+
 export function buildOperationBuckets({
   latestBlock,
   fromBlock,
+  fromTimeMs,
+  toTimeMs,
   farmEvents,
   treasuryEvents,
 }: {
   latestBlock: bigint;
   fromBlock: bigint;
+  fromTimeMs: number;
+  toTimeMs: number;
   farmEvents: { blockNumber?: bigint | null }[];
   treasuryEvents: { blockNumber?: bigint | null }[];
 }): OperationBucket[] {
   const span = latestBlock >= fromBlock ? latestBlock - fromBlock + BigInt(1) : BigInt(1);
   const bucketSize = span / BigInt(OPERATION_BUCKET_COUNT) || BigInt(1);
+  const windowMs = Math.max(1, toTimeMs - fromTimeMs);
   const buckets = Array.from({ length: OPERATION_BUCKET_COUNT }, (_, index) => {
     const distance = OPERATION_BUCKET_COUNT - index - 1;
+    const startBlock = fromBlock + BigInt(index) * bucketSize;
+    const isLast = index === OPERATION_BUCKET_COUNT - 1;
+    const endBlock = isLast ? latestBlock : startBlock + bucketSize - BigInt(1);
+    const startTimeMs = fromTimeMs + Math.floor((windowMs * index) / OPERATION_BUCKET_COUNT);
+    const endTimeMs = isLast ? toTimeMs : fromTimeMs + Math.floor((windowMs * (index + 1)) / OPERATION_BUCKET_COUNT);
 
     return {
       label: distance === 0 ? '最新' : `-${distance}`,
+      startBlock,
+      endBlock,
+      startTimeMs,
+      endTimeMs,
       farm: 0,
       treasury: 0,
     };
@@ -568,6 +633,20 @@ export function OperationHeatmap({ overview }: { overview: OverviewData | null }
   const maxValue = Math.max(1, ...buckets.map((bucket) => bucket.farm + bucket.treasury));
   const totalEvents = (overview?.recentFarmEvents ?? 0) + (overview?.recentTreasuryEvents ?? 0);
   const columns = Math.ceil(buckets.length / 7);
+  const windowDurationMs = overview ? Math.max(1, overview.operationWindow.toTimeMs - overview.operationWindow.fromTimeMs) : 0;
+  const bucketDurationMs = buckets.length > 0 ? windowDurationMs / buckets.length : 0;
+  const windowLabel = overview
+    ? `${formatDateTime(overview.operationWindow.fromTimeMs)} - ${formatDateTime(overview.operationWindow.toTimeMs)}`
+    : '--';
+  const axisTicks = overview
+    ? [
+        { label: '开始', time: overview.operationWindow.fromTimeMs, align: 'text-left' },
+        { label: '25%', time: overview.operationWindow.fromTimeMs + windowDurationMs * 0.25, align: 'text-center' },
+        { label: '50%', time: overview.operationWindow.fromTimeMs + windowDurationMs * 0.5, align: 'text-center' },
+        { label: '75%', time: overview.operationWindow.fromTimeMs + windowDurationMs * 0.75, align: 'text-center' },
+        { label: '最新', time: overview.operationWindow.toTimeMs, align: 'text-right' },
+      ]
+    : [];
 
   if (buckets.length === 0) {
     return (
@@ -599,26 +678,32 @@ export function OperationHeatmap({ overview }: { overview: OverviewData | null }
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center gap-4 text-sm text-slate-500">
-        <span>
-          农场 <strong className="font-semibold text-slate-950">{overview?.recentFarmEvents ?? 0}</strong>
-        </span>
-        <span>
-          金库 <strong className="font-semibold text-slate-950">{overview?.recentTreasuryEvents ?? 0}</strong>
-        </span>
-        <span>
-          总计 <strong className="font-semibold text-slate-950">{totalEvents}</strong>
-        </span>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500">
+        <div className="flex flex-wrap items-center gap-4">
+          <span>
+            农场 <strong className="font-semibold text-slate-950">{overview?.recentFarmEvents ?? 0}</strong>
+          </span>
+          <span>
+            金库 <strong className="font-semibold text-slate-950">{overview?.recentTreasuryEvents ?? 0}</strong>
+          </span>
+          <span>
+            总计 <strong className="font-semibold text-slate-950">{totalEvents}</strong>
+          </span>
+        </div>
+        <div className="text-xs leading-5 text-slate-400">
+          {windowLabel}，每格 {formatDuration(bucketDurationMs)}
+        </div>
       </div>
 
       <div className="overflow-x-auto pb-2">
         <div className="min-w-[760px]">
-          <div className="mb-2 grid grid-cols-5 text-xs text-slate-400">
-            <span>最早</span>
-            <span className="text-center">前段</span>
-            <span className="text-center">中段</span>
-            <span className="text-center">近段</span>
-            <span className="text-right">最新</span>
+          <div className="mb-3 grid grid-cols-5 gap-3 text-xs text-slate-500">
+            {axisTicks.map((tick) => (
+              <div key={tick.label} className={tick.align}>
+                <div className="font-semibold text-slate-600">{tick.label}</div>
+                <div className="mt-1 font-mono text-[11px] leading-4 text-slate-400">{formatAxisDateTime(tick.time)}</div>
+              </div>
+            ))}
           </div>
 
           <div
@@ -632,7 +717,7 @@ export function OperationHeatmap({ overview }: { overview: OverviewData | null }
                 <span
                   key={`${bucket.label}-${index}`}
                   className={`aspect-square rounded-[3px] transition hover:ring-2 hover:ring-slate-300 ${getCellClassName(total)}`}
-                  title={`${bucket.label}：共 ${total} 条，农场 ${bucket.farm} / 金库 ${bucket.treasury}`}
+                  title={`${formatDateTime(bucket.startTimeMs)} - ${formatDateTime(bucket.endTimeMs)}，区块 ${bucket.startBlock.toString()} - ${bucket.endBlock.toString()}：共 ${total} 条，农场 ${bucket.farm} / 金库 ${bucket.treasury}`}
                 />
               );
             })}

@@ -1,5 +1,8 @@
 'use client';
 
+import { Coins } from 'lucide-react';
+
+import { Card, SectionPlaceholder } from '@/components/AdminPrimitives';
 import { TokensFilterBar } from '@/components/tokens/TokensFilterBar';
 import { TokensOverviewPanels } from '@/components/tokens/TokensOverviewPanels';
 import { TokensSummaryCards } from '@/components/tokens/TokensSummaryCards';
@@ -25,6 +28,19 @@ export function TokensPageBody({ controller }: TokensPageBodyProps) {
     mismatchTokenCount,
     activeUsageTokenCount,
   } = controller;
+
+  if (!environment.supportedChain) {
+    return (
+      <Card className="overflow-hidden">
+        <SectionPlaceholder
+          icon={<Coins size={20} />}
+          title="当前网络不支持代币管理"
+          description="切换到已部署 FluxSwap 管理合约的网络后，再查看代币白名单和用途状态。"
+          className="min-h-[320px]"
+        />
+      </Card>
+    );
+  }
 
   return (
     <>
