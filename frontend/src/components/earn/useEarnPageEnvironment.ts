@@ -1,4 +1,5 @@
 import { useConnectModal } from '@rainbow-me/rainbowkit';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAccount, useChainId, usePublicClient } from 'wagmi';
 
@@ -12,6 +13,11 @@ export function useEarnPageEnvironment() {
   const publicClient = usePublicClient({ chainId });
   const { address, isConnected } = useAccount();
   const { openConnectModal } = useConnectModal();
+  const supportedChain = useMemo(() => isFluxSupportedChain(chainId), [chainId]);
+  const managerAddress = useMemo(() => getContractAddress('FluxMultiPoolManager', chainId), [chainId]);
+  const wrappedNativeAddress = useMemo(() => getContractAddress('MockWETH', chainId), [chainId]);
+  const knownTokens = useMemo(() => getSwapTokenOptions(chainId), [chainId]);
+  const localGasOverride = useMemo(() => getLocalGasOverride(chainId), [chainId]);
 
   return {
     isZh,
@@ -20,11 +26,11 @@ export function useEarnPageEnvironment() {
     address,
     isConnected,
     openConnectModal,
-    supportedChain: isFluxSupportedChain(chainId),
-    managerAddress: getContractAddress('FluxMultiPoolManager', chainId),
-    wrappedNativeAddress: getContractAddress('MockWETH', chainId),
-    knownTokens: getSwapTokenOptions(chainId),
-    localGasOverride: getLocalGasOverride(chainId),
+    supportedChain,
+    managerAddress,
+    wrappedNativeAddress,
+    knownTokens,
+    localGasOverride,
   };
 }
 

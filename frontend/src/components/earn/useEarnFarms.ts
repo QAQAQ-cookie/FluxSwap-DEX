@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Address, PublicClient } from 'viem';
 
 import type { getSwapTokenOptions } from '@/config/tokens';
@@ -6,7 +6,6 @@ import { fluxMultiPoolManagerAbi } from '@/lib/contracts';
 
 import type { FarmRow } from './EarnTypes';
 import { readEarnFarmRow } from './earnFarmLoader';
-import { FARM_REFRESH_INTERVAL_MS } from './EarnUtils';
 
 type UseEarnFarmsParams = {
   publicClient?: PublicClient;
@@ -30,6 +29,7 @@ export function useEarnFarms({
   const [farms, setFarms] = useState<FarmRow[]>([]);
   const [farmLoading, setFarmLoading] = useState(false);
   const [farmError, setFarmError] = useState<string | null>(null);
+  const autoLoadKeyRef = useRef<string | null>(null);
 
   const loadFarms = useCallback(
     async ({ background = false }: { background?: boolean } = {}) => {
@@ -101,27 +101,14 @@ export function useEarnFarms({
   );
 
   useEffect(() => {
-    let cancelled = false;
+    const autoLoadKey = `${supportedChain}:${managerAddress ?? ''}:${address ?? ''}:${isConnected}:${publicClient ? 'ready' : 'missing'}`;
+    if (autoLoadKeyRef.current === autoLoadKey) {
+      return;
+    }
+    autoLoadKeyRef.current = autoLoadKey;
 
-    const refresh = async (options?: { background?: boolean }) => {
-      if (cancelled) {
-        return;
-      }
-
-      await loadFarms(options);
-    };
-
-    void refresh();
-
-    const refreshTimer = window.setInterval(() => {
-      void refresh({ background: true });
-    }, FARM_REFRESH_INTERVAL_MS);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(refreshTimer);
-    };
-  }, [loadFarms]);
+    void loadFarms();
+  }, [address, isConnected, loadFarms, managerAddress, publicClient, supportedChain]);
 
   return {
     farms,
