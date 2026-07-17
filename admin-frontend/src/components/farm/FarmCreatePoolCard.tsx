@@ -4,7 +4,7 @@ import type { LucideIcon } from 'lucide-react';
 
 import { SectionHeader } from '@/components/AdminPrimitives';
 import { Card, FieldLabel, PrimaryButton, SelectInput, TextInput } from '@/components/farm/FarmPrimitives';
-import { ALLOC_POINT_HINT } from '@/components/farm/FarmUtils';
+import { ALLOC_POINT_HINT, MAX_ALLOC_POINT_INPUT_LENGTH, sanitizeAllocPointInput } from '@/components/farm/FarmUtils';
 
 type FarmCreatePoolOption = {
   address: string;
@@ -105,7 +105,14 @@ export function FarmCreatePoolCard({
               创建后启用
             </label>
           </div>
-          <TextInput value={allocPoint} onChange={onAllocPointChange} placeholder="100" disabled={!canCreatePool} />
+          <TextInput
+            value={allocPoint}
+            onChange={(value) => onAllocPointChange(sanitizeAllocPointInput(value))}
+            placeholder="100"
+            disabled={!canCreatePool}
+            inputMode="numeric"
+            maxLength={MAX_ALLOC_POINT_INPUT_LENGTH}
+          />
           <p className="text-xs leading-5 text-slate-500">{ALLOC_POINT_HINT}</p>
         </div>
 

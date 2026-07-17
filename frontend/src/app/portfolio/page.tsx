@@ -33,6 +33,9 @@ import {
   formatDisplayAmount,
   formatPairLpAmountDown,
 } from '@/lib/amounts';
+import type { FarmRow } from '@/components/earn/EarnTypes';
+import { formatWeight as formatFarmWeight } from '@/components/earn/EarnUtils';
+import { useEarnFarms } from '@/components/earn/useEarnFarms';
 import { fluxSignedOrderSettlementAbi, fluxSwapPairAbi, fluxSwapRouterAbi } from '@/lib/contracts';
 import { fluxSwapErc20Abi } from '@/lib/contracts/generated/FluxSwapERC20';
 import { formatErrorMessage } from '@/lib/errors';
@@ -197,6 +200,21 @@ type PositionDisplayRow = {
   totalSupply: bigint;
   reserve0: bigint;
   reserve1: bigint;
+};
+
+type StakingDisplayRow = {
+  farm: FarmRow;
+  poolLabel: string;
+  typeLabel: string;
+  stakedLabel: string;
+  claimableLabel: string;
+  pendingSyncLabel: string;
+  totalStakedLabel: string;
+  weightLabel: string;
+  statusLabel: string;
+  statusClassName: string;
+  poolAddressLabel: string;
+  earnHref: string;
 };
 
 type LimitOrderTokenMeta = {
@@ -659,6 +677,27 @@ function formatPoolShare(balance: bigint, totalSupply: bigint) {
   })}%`;
 }
 
+function getFarmStatusMeta(farm: FarmRow, isZh: boolean) {
+  if (!farm.active) {
+    return {
+      label: isZh ? '已停用' : 'Inactive',
+      className: 'bg-gray-100 text-gray-700 dark:bg-white/[0.06] dark:text-gray-300',
+    };
+  }
+
+  if (farm.allocPoint <= ZERO_BIGINT) {
+    return {
+      label: isZh ? '无权重' : 'No weight',
+      className: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
+    };
+  }
+
+  return {
+    label: isZh ? '启用中' : 'Active',
+    className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
+  };
+}
+
 function parsePercentToBasisPoints(value: string) {
   const trimmed = value.trim();
   if (!/^\d*(?:\.\d{0,2})?$/.test(trimmed) || trimmed === '' || trimmed === '.') {
@@ -978,6 +1017,7 @@ export default function PortfolioPage() {
   const wrappedNativeAddress = getContractAddress('MockWETH', chainId);
   const routerAddress = getContractAddress('FluxSwapRouter', chainId);
   const limitSettlementAddress = getContractAddress('FluxSignedOrderSettlement', chainId);
+  const farmManagerAddress = getContractAddress('FluxMultiPoolManager', chainId);
   const trackedTokens = useMemo(() => getSwapTokenOptions(chainId), [chainId]);
   const [pairs, setPairs] = useState<PoolViewModel[]>([]);
   const [lpBalances, setLpBalances] = useState<Record<string, bigint>>({});
@@ -1004,6 +1044,22 @@ export default function PortfolioPage() {
   const [removeLiquidityResultModal, setRemoveLiquidityResultModal] = useState<LimitOrderResultModalState>(null);
   const [removeLpAllowance, setRemoveLpAllowance] = useState<bigint | null>(null);
   const [removeLpAllowanceLoading, setRemoveLpAllowanceLoading] = useState(false);
+  const [isStakingModalOpen, setIsStakingModalOpen] = useState(false);
+
+  const {
+    farms,
+    farmLoading,
+    farmError,
+    loadFarms,
+  } = useEarnFarms({
+    publicClient,
+    supportedChain,
+    managerAddress: farmManagerAddress,
+    wrappedNativeAddress,
+    knownTokens: trackedTokens,
+    address,
+    isConnected,
+  });
 
   const { data: nativeBalance, refetch: refetchNativeBalance } = useBalance({
     address,
@@ -1200,6 +1256,24 @@ export default function PortfolioPage() {
       window.clearInterval(refreshTimer);
     };
   }, [refreshTokenBalances]);
+
+  useEffect(() => {
+    if (!supportedChain || !farmManagerAddress || !isConnected || !address) {
+      return;
+    }
+
+    let cancelled = false;
+    const refreshTimer = window.setInterval(() => {
+      if (!cancelled) {
+        void loadFarms({ background: true });
+      }
+    }, TOKEN_BALANCE_REFRESH_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(refreshTimer);
+    };
+  }, [address, farmManagerAddress, isConnected, loadFarms, supportedChain]);
 
   useEffect(() => {
     if (!supportedChain || !isConnected || !address) {
@@ -1438,6 +1512,52 @@ export default function PortfolioPage() {
         return left.rawLpBalance > right.rawLpBalance ? -1 : 1;
       });
   }, [lpBalances, pairs, wrappedNativeAddress]);
+  const stakingRows = useMemo<StakingDisplayRow[]>(() => {
+    return farms
+      .filter(
+        (farm) =>
+          farm.stakedBalance > ZERO_BIGINT ||
+          farm.earnedRewards > ZERO_BIGINT ||
+          (farm.managerPendingRewards > ZERO_BIGINT && farm.stakedBalance > ZERO_BIGINT),
+      )
+      .map((farm) => {
+        const statusMeta = getFarmStatusMeta(farm, isZh);
+
+        return {
+          farm,
+          poolLabel: farm.label,
+          typeLabel: farm.isLp ? (isZh ? 'LP 农场' : 'LP Farm') : isZh ? '单币池' : 'Single Token',
+          stakedLabel: `${formatBigIntAmountDown(farm.stakedBalance, farm.tokenDecimals, 6)} ${farm.tokenSymbol}`,
+          claimableLabel: `${formatBigIntAmountDown(farm.earnedRewards, 18, 6)} FLUX`,
+          pendingSyncLabel: `${formatBigIntAmountDown(farm.managerPendingRewards, 18, 6)} FLUX`,
+          totalStakedLabel: `${formatBigIntAmountDown(farm.totalStaked, farm.tokenDecimals, 6)} ${farm.tokenSymbol}`,
+          weightLabel: formatFarmWeight(farm.allocPoint, farm.totalAllocPoint),
+          statusLabel: statusMeta.label,
+          statusClassName: statusMeta.className,
+          poolAddressLabel: truncateAddress(farm.poolAddress),
+          earnHref: `/earn?pool=${farm.poolAddress}`,
+        };
+      })
+      .sort((left, right) => {
+        if (left.farm.stakedBalance !== right.farm.stakedBalance) {
+          return left.farm.stakedBalance > right.farm.stakedBalance ? -1 : 1;
+        }
+
+        if (left.farm.earnedRewards !== right.farm.earnedRewards) {
+          return left.farm.earnedRewards > right.farm.earnedRewards ? -1 : 1;
+        }
+
+        return left.farm.pid - right.farm.pid;
+      });
+  }, [farms, isZh]);
+  const totalClaimableRewards = useMemo(
+    () => stakingRows.reduce((sum, row) => sum + row.farm.earnedRewards, ZERO_BIGINT),
+    [stakingRows],
+  );
+  const totalPendingSyncRewards = useMemo(
+    () => stakingRows.reduce((sum, row) => sum + row.farm.managerPendingRewards, ZERO_BIGINT),
+    [stakingRows],
+  );
   const removePercentBps = parsePercentToBasisPoints(removePercentInput);
   const removeLiquidityAmount =
     removePosition && removePercentBps
@@ -2199,6 +2319,12 @@ export default function PortfolioPage() {
     }
   }, [address, isConnected, positionRows.length]);
 
+  useEffect(() => {
+    if (!isConnected || !address || stakingRows.length === 0) {
+      setIsStakingModalOpen(false);
+    }
+  }, [address, isConnected, stakingRows.length]);
+
   const closeLimitOrdersModal = () => {
     setIsLimitOrdersModalOpen(false);
     setExpandedLimitOrderKey(null);
@@ -2207,6 +2333,10 @@ export default function PortfolioPage() {
 
   const closePositionsModal = () => {
     setIsPositionsModalOpen(false);
+  };
+
+  const closeStakingModal = () => {
+    setIsStakingModalOpen(false);
   };
 
   const openRemoveLiquidityModal = (row: PositionDisplayRow) => {
@@ -2720,26 +2850,107 @@ export default function PortfolioPage() {
                 : 'Staking balances and reward status'
             }
             icon={ShieldCheck}
-            emptyContent={
-              <div className="flex flex-col items-center justify-center">
+            contentClassName="mt-6 flex h-[360px] min-h-0 overflow-hidden rounded-[1.5rem] border border-dashed border-black/10 bg-gray-50/80 dark:border-white/10 dark:bg-white/[0.03]"
+          >
+            {!isConnected || !address ? (
+              <div className="flex h-full w-full flex-1 flex-col items-center justify-center px-5 text-center">
+                <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                  {isZh ? '连接钱包后查看质押' : 'Connect wallet to view staking'}
+                </div>
+                <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                  {isZh
+                    ? '这里会展示当前钱包的质押余额和奖励状态。'
+                    : 'Staking balances and rewards for this wallet will appear here.'}
+                </div>
+              </div>
+            ) : farmLoading ? (
+              <div className="flex h-full w-full flex-1 flex-col items-center justify-center px-5 text-center">
+                <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                  {isZh ? '正在加载质押' : 'Loading staking'}
+                </div>
+              </div>
+            ) : farmError ? (
+              <div className="flex h-full w-full flex-1 flex-col items-center justify-center px-5 text-center">
+                <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
+                  {isZh ? '质押加载失败' : 'Failed to load staking'}
+                </div>
+                <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">{farmError}</div>
+              </div>
+            ) : stakingRows.length > 0 ? (
+              <div className="flex h-full min-h-0 w-full flex-col">
+                <div className="flex items-center justify-between border-b border-black/5 px-5 py-4 dark:border-white/10">
+                  <div>
+                    <div className="text-sm font-black tracking-tight text-gray-900 dark:text-white">
+                      {isZh ? '当前质押' : 'Current staking'}
+                    </div>
+                    <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      {isZh
+                        ? `可领取 ${formatBigIntAmountDown(totalClaimableRewards, 18, 4)} FLUX`
+                        : `${formatBigIntAmountDown(totalClaimableRewards, 18, 4)} FLUX claimable`}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsStakingModalOpen(true)}
+                    className="inline-flex min-w-8 items-center justify-center rounded-full bg-violet-100 px-2.5 py-1 text-xs font-bold text-violet-700 transition-colors hover:bg-violet-200 dark:bg-violet-500/15 dark:text-violet-300 dark:hover:bg-violet-500/25"
+                    title={isZh ? '查看质押详情' : 'View staking details'}
+                  >
+                    {stakingRows.length}
+                  </button>
+                </div>
+
+                <div className="flex min-h-0 flex-1 flex-col px-5 pb-5 pt-1">
+                  <div className="grid grid-cols-[minmax(0,1fr)_124px_104px] items-center gap-x-4 border-b border-black/5 px-3 py-3 text-[13px] font-semibold text-gray-500 dark:border-white/10 dark:text-gray-400">
+                    <div className="min-w-0 whitespace-nowrap">{isZh ? '农场' : 'Farm'}</div>
+                    <div className="whitespace-nowrap text-right">{isZh ? '已质押' : 'Staked'}</div>
+                    <div className="whitespace-nowrap text-right">{isZh ? '可领取' : 'Claimable'}</div>
+                  </div>
+
+                  <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1 [scrollbar-gutter:stable]">
+                    {stakingRows.map((row) => (
+                      <button
+                        type="button"
+                        key={row.farm.poolAddress}
+                        onClick={() => setIsStakingModalOpen(true)}
+                        className="grid w-full grid-cols-[minmax(0,1fr)_124px_104px] items-center gap-x-4 border-b border-black/5 px-3 py-4 text-left transition-colors last:border-b-0 hover:bg-violet-50/60 dark:border-white/10 dark:hover:bg-white/[0.05]"
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate text-[15px] font-semibold tracking-tight text-gray-900 dark:text-white">
+                            {row.poolLabel}
+                          </div>
+                          <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{row.typeLabel}</div>
+                        </div>
+                        <div className="min-w-0 truncate text-right text-[14px] font-semibold tabular-nums text-gray-800 dark:text-gray-200">
+                          {row.stakedLabel}
+                        </div>
+                        <div className="min-w-0 truncate text-right text-[14px] font-semibold tabular-nums text-gray-800 dark:text-gray-200">
+                          {row.claimableLabel}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex h-full w-full flex-1 flex-col items-center justify-center px-5 text-center">
                 <div className="text-lg font-black tracking-tight text-gray-900 dark:text-white">
                   {isZh ? '还没有质押' : 'No staking yet'}
                 </div>
                 <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
                   {isZh
-                    ? '去赚币页面查看可用池子并开始质押。'
-                    : 'Visit the earn page to view available pools and start staking.'}
+                    ? '去农场页查看可用池子并开始质押。'
+                    : 'Visit the farm page to view available pools and start staking.'}
                 </div>
                 <Link
                   href="/earn"
                   className="mt-5 inline-flex items-center gap-2 rounded-full bg-gray-900 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
                 >
-                  <span>{isZh ? '查看质押' : 'View staking'}</span>
+                  <span>{isZh ? '去农场页' : 'Go to farms'}</span>
                   <ArrowRight size={16} />
                 </Link>
               </div>
-            }
-          />
+            )}
+          </PortfolioSection>
         </div>
 
         <div className="mt-8 grid gap-6 xl:grid-cols-2">
@@ -3387,6 +3598,164 @@ export default function PortfolioPage() {
               >
                 {removeLiquidityButtonLabel}
               </button>
+            </div>
+          </div>
+        ) : null}
+
+        {isStakingModalOpen && stakingRows.length > 0 ? (
+          <div
+            className="fixed inset-0 z-[90] flex items-center justify-center bg-black/35 p-4 backdrop-blur-sm"
+            onClick={closeStakingModal}
+          >
+            <div
+              className="flex h-[760px] max-h-[calc(100vh-2rem)] w-full max-w-[76rem] flex-col rounded-[1.75rem] border border-black/5 bg-white p-5 shadow-2xl dark:border-white/10 dark:bg-[#0f1726] xl:p-6"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-2xl font-black tracking-tight text-gray-900 dark:text-white">
+                    {isZh ? '我的质押' : 'My Staking'}
+                  </div>
+                  <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    {isZh ? `共 ${stakingRows.length} 个质押农场` : `${stakingRows.length} staked farm${stakingRows.length > 1 ? 's' : ''}`}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeStakingModal}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-600 transition-colors hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.10]"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-[1.25rem] border border-black/5 bg-gray-50/80 px-4 py-3 dark:border-white/10 dark:bg-white/[0.04]">
+                  <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                    {isZh ? '质押农场' : 'Staked farms'}
+                  </div>
+                  <div className="mt-2 text-2xl font-black tracking-tight text-gray-900 dark:text-white">
+                    {stakingRows.length}
+                  </div>
+                </div>
+                <div className="rounded-[1.25rem] border border-black/5 bg-gray-50/80 px-4 py-3 dark:border-white/10 dark:bg-white/[0.04]">
+                  <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                    {isZh ? '已同步可领取' : 'Synced claimable'}
+                  </div>
+                  <div className="mt-2 truncate text-2xl font-black tracking-tight text-gray-900 dark:text-white">
+                    {formatBigIntAmountDown(totalClaimableRewards, 18, 4)} FLUX
+                  </div>
+                </div>
+                <div className="rounded-[1.25rem] border border-black/5 bg-gray-50/80 px-4 py-3 dark:border-white/10 dark:bg-white/[0.04]">
+                  <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                    {isZh ? '池待同步奖励' : 'Pool pending sync'}
+                  </div>
+                  <div className="mt-2 truncate text-2xl font-black tracking-tight text-gray-900 dark:text-white">
+                    {formatBigIntAmountDown(totalPendingSyncRewards, 18, 4)} FLUX
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 flex-1 overflow-hidden rounded-[1.5rem] border border-black/5 dark:border-white/10">
+                <div className="hidden h-full overflow-y-auto overflow-x-hidden xl:block">
+                  <div className="sticky top-0 z-10 grid grid-cols-[1.15fr_1fr_1fr_1fr_0.78fr_0.78fr_0.82fr] items-center gap-x-3 border-b border-black/5 bg-white/95 px-5 py-3 text-xs font-bold tracking-[0.08em] text-gray-500 backdrop-blur-sm dark:border-white/10 dark:bg-[#0f1726]/95 dark:text-gray-400">
+                    <div>{isZh ? '农场' : 'Farm'}</div>
+                    <div className="text-right">{isZh ? '已质押' : 'Staked'}</div>
+                    <div className="text-right">{isZh ? '可领取' : 'Claimable'}</div>
+                    <div className="text-right">{isZh ? '待同步奖励' : 'Pending Sync'}</div>
+                    <div className="text-right">{isZh ? '总质押' : 'Total Staked'}</div>
+                    <div className="text-right">{isZh ? '权重' : 'Weight'}</div>
+                    <div className="text-right">{isZh ? '操作' : 'Action'}</div>
+                  </div>
+
+                  <div className="divide-y divide-black/5 dark:divide-white/10">
+                    {stakingRows.map((row) => (
+                      <div
+                        key={row.farm.poolAddress}
+                        className="grid grid-cols-[1.15fr_1fr_1fr_1fr_0.78fr_0.78fr_0.82fr] items-center gap-x-3 px-5 py-4 text-sm text-gray-700 dark:text-gray-300"
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate font-black tracking-tight text-gray-900 dark:text-white">
+                            {row.poolLabel}
+                          </div>
+                          <div className="mt-1 flex items-center gap-2">
+                            <span className="font-mono text-xs text-gray-500 dark:text-gray-400">
+                              {row.poolAddressLabel}
+                            </span>
+                            <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${row.statusClassName}`}>
+                              {row.statusLabel}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="min-w-0 truncate text-right font-semibold tabular-nums">{row.stakedLabel}</div>
+                        <div className="min-w-0 truncate text-right font-semibold tabular-nums">{row.claimableLabel}</div>
+                        <div className="min-w-0 truncate text-right font-semibold tabular-nums">{row.pendingSyncLabel}</div>
+                        <div className="min-w-0 truncate text-right font-semibold tabular-nums">{row.totalStakedLabel}</div>
+                        <div className="text-right font-semibold tabular-nums">{row.weightLabel}</div>
+                        <div className="flex justify-end">
+                          <Link
+                            href={row.earnHref}
+                            className="inline-flex h-9 items-center justify-center rounded-full bg-gray-900 px-3 text-xs font-semibold text-white transition-colors hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
+                          >
+                            {isZh ? '管理' : 'Manage'}
+                          </Link>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="h-full space-y-3 overflow-y-auto p-4 xl:hidden">
+                  {stakingRows.map((row) => (
+                    <div
+                      key={row.farm.poolAddress}
+                      className="rounded-[1.35rem] border border-black/5 bg-gray-50/80 p-4 dark:border-white/10 dark:bg-white/[0.03]"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-base font-black tracking-tight text-gray-900 dark:text-white">
+                            {row.poolLabel}
+                          </div>
+                          <div className="mt-1 font-mono text-xs text-gray-500 dark:text-gray-400">
+                            {row.poolAddressLabel}
+                          </div>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${row.statusClassName}`}>
+                          {row.statusLabel}
+                        </span>
+                      </div>
+
+                      <div className="mt-4 grid gap-2.5 text-sm">
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-gray-500 dark:text-gray-400">{isZh ? '已质押' : 'Staked'}</span>
+                          <span className="min-w-0 truncate font-semibold tabular-nums text-gray-900 dark:text-white">{row.stakedLabel}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-gray-500 dark:text-gray-400">{isZh ? '可领取' : 'Claimable'}</span>
+                          <span className="min-w-0 truncate font-semibold tabular-nums text-gray-900 dark:text-white">{row.claimableLabel}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-gray-500 dark:text-gray-400">{isZh ? '待同步奖励' : 'Pending Sync'}</span>
+                          <span className="min-w-0 truncate font-semibold tabular-nums text-gray-900 dark:text-white">{row.pendingSyncLabel}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-gray-500 dark:text-gray-400">{isZh ? '权重' : 'Weight'}</span>
+                          <span className="font-semibold tabular-nums text-gray-900 dark:text-white">{row.weightLabel}</span>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex justify-end">
+                        <Link
+                          href={row.earnHref}
+                          className="inline-flex h-9 items-center justify-center rounded-full bg-gray-900 px-3 text-xs font-semibold text-white transition-colors hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
+                        >
+                          {isZh ? '去管理' : 'Manage'}
+                        </Link>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         ) : null}

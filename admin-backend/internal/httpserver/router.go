@@ -38,7 +38,7 @@ func NewRouter(cfg config.Config, repos repo.Repositories) *gin.Engine {
 }
 
 func registerAdminRoutes(group *gin.RouterGroup, cfg config.Config, repos repo.Repositories) {
-	allowlist := auth.NewAdminAllowlist(cfg.AdminWallets)
+	allowlist := auth.NewAdminAllowlist(cfg.AdminWallets, cfg.AppEnv)
 	authHandlers := authHandlers{repos: repos, cfg: cfg, allowlist: allowlist}
 	treasury := treasuryHandlers{repos: repos, cfg: cfg}
 	logs := logHandlers{repos: repos}

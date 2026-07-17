@@ -42,12 +42,12 @@ docker compose down
 | `ADMIN_HTTP_ADDR` | API 监听地址，本地默认 `:8081` |
 | `ADMIN_ALLOWED_ORIGINS` | 允许跨域访问的前端地址 |
 | `ADMIN_DATABASE_DSN` | 管理端数据库连接串 |
-| `ADMIN_WALLETS` | 管理员钱包白名单，多个地址用英文逗号分隔 |
+| `ADMIN_WALLETS` | 管理员钱包白名单，多个地址用英文逗号分隔；本地环境为空时允许任意有效钱包登录 |
 | `ADMIN_SESSION_TTL_HOURS` | 管理员登录会话有效小时数 |
 | `ADMIN_CHAIN_CONFIGS` | 多链 JSON 配置，按 `chainId`、`rpcUrl`、`treasuryAddress`、`enabled` 描述每条链 |
 | `ADMIN_SYNC_LOOKBACK_BLOCKS` | 后续链上同步任务的默认回看区块数 |
 
-本地 Docker Compose 会读取同名环境变量。最重要的是 `ADMIN_WALLETS`，如果不配置，所有受保护写接口都会拒绝访问。
+本地 Docker Compose 会读取同名环境变量。`ADMIN_APP_ENV=local` 且 `ADMIN_WALLETS` 为空时，会放宽为任意有效钱包都能登录，方便本地联调；只要配置了 `ADMIN_WALLETS`，即使是本地环境也会按白名单校验。非本地环境必须配置 `ADMIN_WALLETS`，否则所有受保护写接口都会拒绝访问。
 
 示例：
 
@@ -78,16 +78,23 @@ docker compose up -d --build
 ]
 ```
 
+生产环境会做额外启动校验，避免误连本地资源：
+
+- `ADMIN_WALLETS` 必须至少配置一个有效管理员钱包。
+- `ADMIN_DATABASE_DSN` 不能为空，且不能指向 `localhost`、`127.0.0.1`、`0.0.0.0`、`host.docker.internal`。
+- `ADMIN_ALLOWED_ORIGINS` 不能使用 `*`，也不能包含本地前端地址。
+- `ADMIN_CHAIN_CONFIGS` 至少要有一条启用链，不能使用 Hardhat 常见链 ID `31337`、`1337`，RPC 也不能指向本地地址。
+
 ## 认证模型
 
 管理端前端在调用受保护写接口前，会走一次钱包签名登录：
 
 1. 前端调用 `POST /api/admin/auth/nonce`，提交钱包地址。
-2. 后端校验钱包是否在 `ADMIN_WALLETS` 白名单内。
+2. 后端校验钱包权限。本地环境空白名单会放行任意有效钱包；配置白名单或非本地环境时，会校验钱包是否在 `ADMIN_WALLETS` 内。
 3. 后端生成一次性随机数和待签名消息。
 4. 前端调用钱包签名消息。
 5. 前端调用 `POST /api/admin/auth/verify`，提交随机数和签名。
-6. 后端恢复签名地址，确认地址和白名单一致。
+6. 后端恢复签名地址，再次确认地址符合管理端权限规则。
 7. 后端创建登录会话，返回短期 token。
 8. 前端后续写接口携带 `Authorization: Bearer <token>`。
 

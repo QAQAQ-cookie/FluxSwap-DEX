@@ -39,6 +39,10 @@ export function useFarmDerivedState({
   const canDistribute = mounted && isConnected && (isManagerOwner || isManagerOperator) && Boolean(managerAddress);
 
   const activeFarmCount = useMemo(() => farms.filter((farm) => farm.active).length, [farms]);
+  const emptyWeightedFarms = useMemo(
+    () => farms.filter((farm) => farm.active && farm.allocPoint > ZERO_BIGINT && farm.totalStaked <= ZERO_BIGINT),
+    [farms],
+  );
 
   const dailySpendRemaining = useMemo(() => {
     const treasuryStatus = adminInfo?.treasuryStatus;
@@ -67,6 +71,14 @@ export function useFarmDerivedState({
     if (adminInfo.totalAllocPoint <= ZERO_BIGINT || adminInfo.activePoolCount <= 0) {
       return '暂无可分发农场，请先创建并启用质押池。';
     }
+    if (emptyWeightedFarms.length > 0) {
+      const farmNames = emptyWeightedFarms
+        .slice(0, 2)
+        .map((farm) => farm.stakingToken.label)
+        .join('、');
+      const suffix = emptyWeightedFarms.length > 2 ? ` 等 ${emptyWeightedFarms.length} 个` : '';
+      return `存在无人质押但仍有权重的农场：${farmNames}${suffix}。请先停用或把权重调为 0，避免奖励进入空池。`;
+    }
     if (adminInfo.treasuryStatusError || !adminInfo.treasuryStatus) {
       return adminInfo.treasuryStatusError ?? '金库状态尚未加载完成。';
     }
@@ -93,6 +105,7 @@ export function useFarmDerivedState({
   }, [
     adminInfo,
     dailySpendRemaining,
+    emptyWeightedFarms,
     isConnected,
     isManagerOperator,
     isManagerOwner,
@@ -129,6 +142,7 @@ export function useFarmDerivedState({
     canUpdatePool,
     canDistribute,
     activeFarmCount,
+    emptyWeightedFarms,
     dailySpendRemaining,
     distributionBlockReason,
     canSubmitDistribution: canDistribute && distributionBlockReason === null,

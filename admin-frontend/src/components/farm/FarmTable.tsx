@@ -25,6 +25,7 @@ type FarmTableProps = {
   poolEdits: FarmPoolEdits;
   canUpdatePool: boolean;
   activeAction: string | null;
+  emptyWeightedFarmCount: number;
   onSearchQueryChange: (value: string) => void;
   onActiveOnlyChange: (value: boolean) => void;
   onPoolEditsChange: Dispatch<SetStateAction<FarmPoolEdits>>;
@@ -41,6 +42,7 @@ export function FarmTable({
   poolEdits,
   canUpdatePool,
   activeAction,
+  emptyWeightedFarmCount,
   onSearchQueryChange,
   onActiveOnlyChange,
   onPoolEditsChange,
@@ -76,6 +78,11 @@ export function FarmTable({
             </>
           }
         />
+        {emptyWeightedFarmCount > 0 ? (
+          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
+            当前有 {emptyWeightedFarmCount} 个启用农场无人质押但仍参与权重分配。分发奖励前请先停用，或将权重调整为 0。
+          </div>
+        ) : null}
       </div>
 
       <AdminTable minWidth="1120px">
@@ -85,8 +92,8 @@ export function FarmTable({
             <AdminTableHeaderCell>状态</AdminTableHeaderCell>
             <AdminTableHeaderCell>当前权重</AdminTableHeaderCell>
             <AdminTableHeaderCell>质押总量</AdminTableHeaderCell>
-            <AdminTableHeaderCell>待领取奖励</AdminTableHeaderCell>
-            <AdminTableHeaderCell>池内奖励</AdminTableHeaderCell>
+            <AdminTableHeaderCell>待同步奖励（池）</AdminTableHeaderCell>
+            <AdminTableHeaderCell>池内已到账奖励</AdminTableHeaderCell>
             <AdminTableHeaderCell>编辑</AdminTableHeaderCell>
             <AdminTableHeaderCell align="right">操作</AdminTableHeaderCell>
           </tr>

@@ -8,7 +8,9 @@ export const ZERO_BIGINT = BigInt(0);
 export const REWARD_PRECISION = BigInt(10) ** BigInt(18);
 export const MIN_ALLOC_POINT = BigInt(1);
 export const MAX_ALLOC_POINT = BigInt(1_000_000);
+export const MAX_ALLOC_POINT_INPUT_LENGTH = MAX_ALLOC_POINT.toString().length;
 export const ALLOC_POINT_HINT = '建议 1 - 1,000,000；系统按所有启用池权重的相对比例分配奖励。';
+export const EDIT_ALLOC_POINT_HINT = '可填 0 - 1,000,000；填 0 表示该池不参与奖励分配。';
 
 export function shortAddress(address?: string) {
   if (!address) {
@@ -42,7 +44,7 @@ export function formatDateTime(value = new Date()) {
   });
 }
 
-export function parseAllocPoint(value: string): bigint | null {
+export function parseAllocPoint(value: string, { allowZero = false }: { allowZero?: boolean } = {}): bigint | null {
   const normalized = value.trim().replace(/,/g, '');
 
   if (!/^\d+$/.test(normalized)) {
@@ -50,12 +52,17 @@ export function parseAllocPoint(value: string): bigint | null {
   }
 
   const allocPoint = BigInt(normalized);
+  const minAllocPoint = allowZero ? ZERO_BIGINT : MIN_ALLOC_POINT;
 
-  if (allocPoint < MIN_ALLOC_POINT || allocPoint > MAX_ALLOC_POINT) {
+  if (allocPoint < minAllocPoint || allocPoint > MAX_ALLOC_POINT) {
     return null;
   }
 
   return allocPoint;
+}
+
+export function sanitizeAllocPointInput(value: string): string {
+  return value.replace(/\D/g, '').slice(0, MAX_ALLOC_POINT_INPUT_LENGTH);
 }
 
 export function formatOptionalTokenAmount(value: bigint | undefined, token?: TokenMeta, fractionDigits = 4): string {

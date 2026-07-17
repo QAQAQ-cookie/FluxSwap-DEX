@@ -26,9 +26,9 @@ export function formatWeight(allocPoint: bigint, totalAllocPoint: bigint) {
     return '0%';
   }
 
-  const basisPoints = Number((allocPoint * BigInt(1_000_000)) / totalAllocPoint) / 100;
-  return `${basisPoints.toLocaleString('en-US', {
-    minimumFractionDigits: basisPoints >= 100 ? 0 : 2,
+  const value = Number((allocPoint * BigInt(1_000_000)) / totalAllocPoint) / 10_000;
+  return `${value.toLocaleString('en-US', {
+    minimumFractionDigits: value >= 10 ? 1 : 2,
     maximumFractionDigits: 2,
   })}%`;
 }

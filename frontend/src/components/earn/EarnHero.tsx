@@ -73,7 +73,7 @@ export function EarnHero({ isZh, viewModel }: EarnHeroProps) {
         <div className="rounded-[1.25rem] bg-gray-50 p-4 dark:bg-white/[0.04]">
           <div className="flex items-center gap-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
             <Gift size={15} />
-            <span>{isZh ? '待领取奖励' : 'Claimable Rewards'}</span>
+            <span>{isZh ? '已同步可领取' : 'Synced Claimable'}</span>
           </div>
           <div className="mt-2 text-2xl font-black text-gray-950 dark:text-white">
             {formatBigIntAmountDown(totalEarnedRewards, 18, 4)}
@@ -82,7 +82,7 @@ export function EarnHero({ isZh, viewModel }: EarnHeroProps) {
         <div className="rounded-[1.25rem] bg-gray-50 p-4 dark:bg-white/[0.04]">
           <div className="flex items-center gap-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
             <Coins size={15} />
-            <span>{isZh ? '待分发奖励' : 'Rewards to Distribute'}</span>
+            <span>{isZh ? '待同步奖励（池）' : 'Pool Rewards Pending Sync'}</span>
           </div>
           <div className="mt-2 text-2xl font-black text-gray-950 dark:text-white">
             {formatBigIntAmountDown(totalManagerPendingRewards, 18, 4)}

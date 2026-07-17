@@ -32,9 +32,9 @@ export function useFarmUpdatePoolActions({
       }
 
       const edit = poolEdits[farm.pid];
-      const allocPoint = parseAllocPoint(edit?.allocPoint ?? '');
+      const allocPoint = parseAllocPoint(edit?.allocPoint ?? '', { allowZero: true });
       if (allocPoint === null) {
-        setResultModal({ kind: 'error', title: '参数无效', message: '奖励权重请输入 1 到 1,000,000 之间的整数。' });
+        setResultModal({ kind: 'error', title: '参数无效', message: '奖励权重请输入 0 到 1,000,000 之间的整数。' });
         return;
       }
 

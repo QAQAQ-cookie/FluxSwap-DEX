@@ -15,6 +15,7 @@ type FarmRewardDistributionCardProps = {
   canSubmitDistribution: boolean;
   distributionBlockReason: string | null;
   dailySpendRemaining?: bigint;
+  emptyWeightedFarmCount: number;
   distributeBusy: boolean;
   onRewardAmountChange: (value: string) => void;
   onDistributeRewards: () => void;
@@ -27,6 +28,7 @@ export function FarmRewardDistributionCard({
   canSubmitDistribution,
   distributionBlockReason,
   dailySpendRemaining,
+  emptyWeightedFarmCount,
   distributeBusy,
   onRewardAmountChange,
   onDistributeRewards,
@@ -90,6 +92,12 @@ export function FarmRewardDistributionCard({
             </span>
           }
         />
+
+        {emptyWeightedFarmCount > 0 ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
+            有 {emptyWeightedFarmCount} 个启用农场当前无人质押但仍有奖励权重。为避免奖励进入空池，请先在农场列表中停用这些农场，或将权重调整为 0。
+          </div>
+        ) : null}
 
         <div className="grid gap-5 xl:grid-cols-[minmax(280px,0.72fr)_1.28fr]">
           <div className="rounded-2xl bg-slate-50 p-4">

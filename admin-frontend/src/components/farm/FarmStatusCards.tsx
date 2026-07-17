@@ -9,9 +9,10 @@ import { formatBigIntAmountDown } from '@/lib/amounts';
 type FarmStatusCardsProps = {
   adminInfo?: AdminInfo | null;
   activeFarmCount: number;
+  emptyWeightedFarmCount: number;
 };
 
-export function FarmStatusCards({ adminInfo, activeFarmCount }: FarmStatusCardsProps) {
+export function FarmStatusCards({ adminInfo, activeFarmCount, emptyWeightedFarmCount }: FarmStatusCardsProps) {
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       <SummaryStatCard
@@ -31,9 +32,9 @@ export function FarmStatusCards({ adminInfo, activeFarmCount }: FarmStatusCardsP
       <SummaryStatCard
         label="总权重"
         value={adminInfo?.totalAllocPoint.toString() ?? '0'}
-        helper="用于决定奖励分发比例"
+        helper={emptyWeightedFarmCount > 0 ? `${emptyWeightedFarmCount} 个空质押池仍有权重` : '用于决定奖励分发比例'}
         icon={<Scale size={19} />}
-        tone="neutral"
+        tone={emptyWeightedFarmCount > 0 ? 'warning' : 'neutral'}
       />
       <SummaryStatCard
         label="待分发奖励"

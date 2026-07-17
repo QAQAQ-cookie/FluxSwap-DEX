@@ -30,6 +30,7 @@ export default function AdminFarmPage() {
     canUpdatePool,
     canDistribute,
     activeFarmCount,
+    emptyWeightedFarms,
     dailySpendRemaining,
     distributionBlockReason,
     canSubmitDistribution,
@@ -54,7 +55,11 @@ export default function AdminFarmPage() {
           onRefresh={() => void loadAdminData()}
         />
 
-        <FarmStatusCards adminInfo={adminInfo} activeFarmCount={activeFarmCount} />
+        <FarmStatusCards
+          adminInfo={adminInfo}
+          activeFarmCount={activeFarmCount}
+          emptyWeightedFarmCount={emptyWeightedFarms.length}
+        />
 
         <FarmAccessPanel
           adminInfo={adminInfo}
@@ -96,6 +101,7 @@ export default function AdminFarmPage() {
           canSubmitDistribution={canSubmitDistribution}
           distributionBlockReason={distributionBlockReason}
           dailySpendRemaining={dailySpendRemaining}
+          emptyWeightedFarmCount={emptyWeightedFarms.length}
           distributeBusy={activeAction === 'distribute'}
           onRewardAmountChange={pageState.setRewardAmount}
           onDistributeRewards={handleDistributeRewards}
@@ -111,6 +117,7 @@ export default function AdminFarmPage() {
           poolEdits={pageState.poolEdits}
           canUpdatePool={canUpdatePool}
           activeAction={activeAction}
+          emptyWeightedFarmCount={emptyWeightedFarms.length}
           onSearchQueryChange={pageState.setSearchQuery}
           onActiveOnlyChange={pageState.setActiveOnly}
           onPoolEditsChange={pageState.setPoolEdits}

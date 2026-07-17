@@ -6,7 +6,7 @@ import type { Address } from 'viem';
 import { formatBigIntAmountDown } from '@/lib/amounts';
 
 import type { FarmRow } from './EarnTypes';
-import { formatWeight, shortAddress } from './EarnUtils';
+import { formatWeight, shortAddress, ZERO_BIGINT } from './EarnUtils';
 
 type EarnFarmListToolbarProps = {
   isZh: boolean;
@@ -95,6 +95,71 @@ export function EarnFarmListNotice({
   );
 }
 
+export type EarnFarmKind = 'lp' | 'single';
+
+export function EarnFarmKindTabs({
+  isZh,
+  activeKind,
+  lpCount,
+  singleCount,
+  onKindChange,
+}: {
+  isZh: boolean;
+  activeKind: EarnFarmKind;
+  lpCount: number;
+  singleCount: number;
+  onKindChange: (kind: EarnFarmKind) => void;
+}) {
+  const options: Array<{
+    kind: EarnFarmKind;
+    label: string;
+    count: number;
+  }> = [
+    {
+      kind: 'lp',
+      label: isZh ? 'LP 质押' : 'LP Staking',
+      count: lpCount,
+    },
+    {
+      kind: 'single',
+      label: isZh ? '单币质押' : 'Single Token',
+      count: singleCount,
+    },
+  ];
+
+  return (
+    <div className="mt-5 flex flex-wrap items-center gap-2 rounded-[1.25rem] bg-gray-100 p-1.5 dark:bg-white/[0.05]">
+      {options.map((option) => {
+        const active = activeKind === option.kind;
+
+        return (
+          <button
+            key={option.kind}
+            type="button"
+            onClick={() => onKindChange(option.kind)}
+            className={`inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-[1rem] px-4 text-sm font-black transition-colors sm:flex-none ${
+              active
+                ? 'bg-white text-gray-950 shadow-sm dark:bg-white dark:text-gray-900'
+                : 'text-gray-500 hover:bg-white/60 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-white/[0.08] dark:hover:text-gray-200'
+            }`}
+          >
+            <span>{option.label}</span>
+            <span
+              className={`inline-flex min-w-6 items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-bold ${
+                active
+                  ? 'bg-gray-900 text-white dark:bg-gray-900 dark:text-white'
+                  : 'bg-white text-gray-500 dark:bg-white/[0.08] dark:text-gray-400'
+              }`}
+            >
+              {option.count}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function EarnFarmListHeaderRow({ isZh }: { isZh: boolean }) {
   return (
     <div className="hidden grid-cols-[1.25fr_0.7fr_0.85fr_0.85fr_0.85fr_0.75fr_0.7fr] items-center gap-3 border-b border-black/5 bg-gray-50 px-5 py-3 text-xs font-bold tracking-[0.08em] text-gray-500 dark:border-white/10 dark:bg-white/[0.04] dark:text-gray-400 xl:grid">
@@ -102,7 +167,7 @@ export function EarnFarmListHeaderRow({ isZh }: { isZh: boolean }) {
       <div>{isZh ? 'APR' : 'APR'}</div>
       <div className="text-right">{isZh ? '总质押' : 'Total Staked'}</div>
       <div className="text-right">{isZh ? '我的质押' : 'My Stake'}</div>
-      <div className="text-right">{isZh ? '待领取' : 'Claimable'}</div>
+      <div className="text-right">{isZh ? '已同步可领取' : 'Synced Claimable'}</div>
       <div className="text-right">{isZh ? '权重' : 'Weight'}</div>
       <div className="text-right">{isZh ? '操作' : 'Action'}</div>
     </div>
@@ -116,6 +181,8 @@ type EarnFarmListRowProps = {
 };
 
 export function EarnFarmListRow({ isZh, farm, onSelectFarm }: EarnFarmListRowProps) {
+  const hasPendingSyncRewards = farm.managerPendingRewards > ZERO_BIGINT;
+
   return (
     <button
       type="button"
@@ -141,7 +208,9 @@ export function EarnFarmListRow({ isZh, farm, onSelectFarm }: EarnFarmListRowPro
           </div>
         </div>
       </div>
-      <div className="text-sm font-black text-gray-950 dark:text-white">--</div>
+      <div className="text-sm font-black text-gray-950 dark:text-white">
+        {isZh ? '暂无数据' : 'No data'}
+      </div>
       <div className="text-sm font-semibold tabular-nums text-gray-700 dark:text-gray-300 xl:text-right">
         {formatBigIntAmountDown(farm.totalStaked, farm.tokenDecimals, 4)}
       </div>
@@ -149,7 +218,16 @@ export function EarnFarmListRow({ isZh, farm, onSelectFarm }: EarnFarmListRowPro
         {formatBigIntAmountDown(farm.stakedBalance, farm.tokenDecimals, 4)}
       </div>
       <div className="text-sm font-semibold tabular-nums text-gray-700 dark:text-gray-300 xl:text-right">
-        {formatBigIntAmountDown(farm.earnedRewards, 18, 4)} FLUX
+        <div>{formatBigIntAmountDown(farm.earnedRewards, 18, 4)} FLUX</div>
+        <div
+          className={`mt-1 text-[11px] font-medium ${
+            hasPendingSyncRewards
+              ? 'text-amber-600 dark:text-amber-300'
+              : 'text-gray-400 dark:text-gray-500'
+          }`}
+        >
+          {isZh ? '待同步（池）' : 'Pending Sync (Pool)'} {formatBigIntAmountDown(farm.managerPendingRewards, 18, 4)} FLUX
+        </div>
       </div>
       <div className="text-sm font-semibold tabular-nums text-gray-700 dark:text-gray-300 xl:text-right">
         {formatWeight(farm.allocPoint, farm.totalAllocPoint)}

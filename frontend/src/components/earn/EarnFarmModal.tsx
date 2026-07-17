@@ -107,9 +107,9 @@ export function EarnFarmModal({
           </button>
         </div>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <EarnFarmMetricCard
-            label={isZh ? '钱包余额' : 'Wallet Balance'}
+            label={isZh ? '可质押' : 'Available to Stake'}
             value={formatBigIntAmountDown(selectedFarm.walletBalance, selectedFarm.tokenDecimals, 4)}
           />
           <EarnFarmMetricCard
@@ -117,10 +117,22 @@ export function EarnFarmModal({
             value={formatBigIntAmountDown(selectedFarm.stakedBalance, selectedFarm.tokenDecimals, 4)}
           />
           <EarnFarmMetricCard
-            label={isZh ? '待领取' : 'Claimable'}
+            label={isZh ? '已同步可领取' : 'Synced Claimable'}
             value={`${formatBigIntAmountDown(selectedFarm.earnedRewards, 18, 4)} FLUX`}
           />
+          <EarnFarmMetricCard
+            label={isZh ? '待同步奖励（池）' : 'Pool Rewards Pending Sync'}
+            value={`${formatBigIntAmountDown(selectedFarm.managerPendingRewards, 18, 4)} FLUX`}
+          />
         </div>
+
+        {selectedFarm.managerPendingRewards > BigInt(0) && selectedFarm.stakedBalance > BigInt(0) ? (
+          <div className="mt-4 rounded-[1rem] bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800 dark:bg-amber-400/10 dark:text-amber-200">
+            {isZh
+              ? `当前有 ${formatBigIntAmountDown(selectedFarm.managerPendingRewards, 18, 4)} FLUX 仍停留在管理器，领取奖励、质押、解除质押或全部退出时会先同步到该池，再按你的质押份额结算。`
+              : `${formatBigIntAmountDown(selectedFarm.managerPendingRewards, 18, 4)} FLUX is still pending in the manager. Claiming, staking, unstaking, or exiting will sync it into the pool before your rewards are settled.`}
+          </div>
+        ) : null}
 
         <div className="mt-5 grid gap-4 lg:grid-cols-2">
           <EarnFarmAmountCard
@@ -165,12 +177,12 @@ export function EarnFarmModal({
             value={formatWeight(selectedFarm.allocPoint, selectedFarm.totalAllocPoint)}
           />
           <EarnFarmDetailRow
-            label={isZh ? '奖励池余额' : 'Reward Pool'}
+            label={isZh ? '池内已到账奖励' : 'Rewards Already In Pool'}
             value={`${formatBigIntAmountDown(selectedFarm.rewardReserve, 18, 4)} FLUX`}
           />
           <EarnFarmDetailRow
-            label={isZh ? '待分发奖励' : 'Rewards to Distribute'}
-            value={`${formatBigIntAmountDown(selectedFarm.managerPendingRewards + selectedFarm.queuedRewards, 18, 4)} FLUX`}
+            label={isZh ? '待同步奖励（池）' : 'Pool Rewards Pending Sync'}
+            value={`${formatBigIntAmountDown(selectedFarm.managerPendingRewards, 18, 4)} FLUX`}
           />
         </div>
 
