@@ -6,6 +6,11 @@
 
     // 如果 WETH 不是本次部署出来的，而是外部已存在地址，直接在 addresses 里覆盖即可。
     addresses: {
+      // Role aliases are local values used by this initialization script.
+      bootstrapAdmin: "0x1111111111111111111111111111111111111111",
+      executor: "0x2222222222222222222222222222222222222222",
+      liquidityProvider: "0x3333333333333333333333333333333333333333",
+      trader: "0x4444444444444444444444444444444444444444",
       weth: "0x0000000000000000000000000000000000000000",
     },
   },
@@ -17,14 +22,17 @@
 
     // 这里应填写你真正能签名的 EOA。
     // 如果 Treasury.multisig 已经是 Safe 多签，脚本只能用于 plan 校对，不应直接发起 schedule。
-    executeCaller: "0x1111111111111111111111111111111111111111",
-    defaultFundingSender: "0x1111111111111111111111111111111111111111",
+    executeCaller: "bootstrapAdmin",
+    defaultFundingSender: "bootstrapAdmin",
   },
 
   treasury: {
     allowedTokens: [
       { token: "token", allowed: true },
       { token: "weth", allowed: true },
+      { token: "mockUsdt", allowed: true },
+      { token: "mockUsdc", allowed: true },
+      { token: "mockWbtc", allowed: true },
     ],
 
     allowedRecipients: [
@@ -47,9 +55,27 @@
     spenderRevocations: [],
   },
 
+  // Register the off-chain order worker wallet as the only permitted executor.
+  limitOrderSettlement: {
+    restrictedExecutor: "executor",
+    onlyRestrictedExecutor: true,
+  },
+
   funding: {
     nativeTransfers: [],
-    tokenMints: [],
+    // Mock assets are for liquidity and swap testing. Amounts use the token's raw decimals.
+    tokenMints: [
+      { token: "token", to: "treasury", amount: "10000000000000000000000000" },
+      { token: "token", to: "liquidityProvider", amount: "1000000000000000000000000" },
+      { token: "token", to: "trader", amount: "1000000000000000000000000" },
+
+      { token: "mockUsdt", to: "liquidityProvider", amount: "10000000000000" },
+      { token: "mockUsdt", to: "trader", amount: "10000000000000" },
+      { token: "mockUsdc", to: "liquidityProvider", amount: "10000000000000" },
+      { token: "mockUsdc", to: "trader", amount: "10000000000000" },
+      { token: "mockWbtc", to: "liquidityProvider", amount: "100000000000000" },
+      { token: "mockWbtc", to: "trader", amount: "100000000000000" },
+    ],
     tokenTransfers: [],
   },
 

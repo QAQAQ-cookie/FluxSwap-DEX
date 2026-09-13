@@ -15,8 +15,7 @@ type Config struct {
 	App         AppConfig
 	Database    DatabaseConfig
 	RedisClient backendredis.Options `json:",optional"`
-	Chain       ChainConfig          `json:",optional"`
-	Chains      []ChainConfig
+	Chain       ChainConfig
 	Worker      WorkerConfig
 }
 
@@ -61,25 +60,8 @@ type WorkerConfig struct {
 	IndexerHealthListenOn     string
 }
 
-// ActiveChains 返回当前配置中启用的链列表。
-// 若未配置 Chains，则回退到旧的单链 Chain 配置，兼容已有环境。
+// ActiveChains 保持调用方接口稳定，但每个部署实例只返回一个目标链。
 func (c Config) ActiveChains() []ChainConfig {
-	if len(c.Chains) > 0 {
-		active := make([]ChainConfig, 0, len(c.Chains))
-		for _, chainCfg := range c.Chains {
-			if chainCfg.ChainID <= 0 {
-				continue
-			}
-			if strings.TrimSpace(chainCfg.SettlementAddress) == "" {
-				continue
-			}
-			if strings.TrimSpace(chainCfg.HTTPRPCURL) == "" && strings.TrimSpace(chainCfg.WSRPCURL) == "" {
-				continue
-			}
-			active = append(active, chainCfg)
-		}
-		return active
-	}
 	if c.Chain.ChainID > 0 &&
 		strings.TrimSpace(c.Chain.SettlementAddress) != "" &&
 		(strings.TrimSpace(c.Chain.HTTPRPCURL) != "" || strings.TrimSpace(c.Chain.WSRPCURL) != "") {

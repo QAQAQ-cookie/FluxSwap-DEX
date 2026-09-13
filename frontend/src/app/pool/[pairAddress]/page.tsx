@@ -22,6 +22,7 @@ import { useTranslation } from 'react-i18next';
 import { formatUnits, type Address, isAddress, zeroAddress } from 'viem';
 import { useChainId } from 'wagmi';
 
+import { getTransactionExplorerUrl } from '@/config/chain';
 import { getContractAddress, isFluxSupportedChain } from '@/config/contracts';
 import { formatBigIntAmount, formatBigIntAmountDown, formatPairLpAmountDown } from '@/lib/amounts';
 import { useReadFluxSwapFactoryTreasury } from '@/lib/contracts';
@@ -138,18 +139,6 @@ function normalizeTokenSymbol(symbol: string, tokenAddress: string, wrappedNativ
   return symbol.toUpperCase();
 }
 
-function getTransactionHref(chainId: number | undefined, txHash: string): string | undefined {
-  if (!txHash) {
-    return undefined;
-  }
-
-  if (chainId === 11155111) {
-    return `https://sepolia.etherscan.io/tx/${txHash}`;
-  }
-
-  return undefined;
-}
-
 function getActivityToneClass(tone: PoolActivityRow['tone']) {
   if (tone === 'swap') {
     return 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300';
@@ -247,7 +236,7 @@ function buildActivityRow(
   );
   const timeLabel = formatTimestamp(activity.timestamp, isZh ? 'zh-CN' : 'en-US');
   const txHash = activity.txHash;
-  const txHref = getTransactionHref(chainId, txHash);
+  const txHref = getTransactionExplorerUrl(chainId, txHash);
   const walletLabel = truncateAddress(activity.sender);
 
   if (activity.type === 'swap') {
@@ -894,6 +883,8 @@ export default function PoolDetailPage() {
     }
 
     let cancelled = false;
+    setPoolDetail(null);
+    setActivities([]);
     setLoading(true);
     setFetchError(null);
 

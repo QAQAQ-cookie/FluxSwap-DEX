@@ -38,15 +38,17 @@ export default buildModule("FluxCoreModule", (m) => {
   const buybackBps = m.getParameter("buybackBps", 10_000n);
   const burnBps = m.getParameter("burnBps", 0n);
 
-  // 本地链可直接部署 MockWETH，测试网 / 主网则应传入外部已存在的 WETH 地址。
-  const deployMockWeth = m.getParameter("deployMockWeth", false);
+  // 1. 部署 Pair 工厂。
+  const fluxSwapFactory = m.contract("FluxSwapFactory", [treasurySetter]);
 
-  const externalWeth = deployMockWeth ? undefined : m.getParameter("weth");
-  const weth = deployMockWeth
-    ? m.contract("MockWETH")
-    : m.contractAt("IWETH", externalWeth!);
+  // 2. 部署金库。
+  const fluxTreasury = m.contract(
+    "FluxSwapTreasury",
+    [treasuryMultisig, treasuryGuardian, treasuryOperator, treasuryMinDelay],
+    { after: [fluxSwapFactory] },
+  );
 
-  // 1. 部署主代币。
+  // 3. 部署主代币。
   const fluxToken = m.contract("FluxToken", [
     tokenName,
     tokenSymbol,
@@ -54,85 +56,81 @@ export default buildModule("FluxCoreModule", (m) => {
     initialRecipient,
     initialSupply,
     tokenCap,
-  ]);
+  ], { after: [fluxTreasury] });
 
   // 1.1 本地联调额外测试代币，方便前端直接扩展多币种交易与建池。
   const mockUsdt = m.contract("MockERC20", ["Tether USD", "USDT", 6], {
     id: "mockUsdt",
+    after: [fluxToken],
   });
   const mockUsdc = m.contract("MockERC20", ["USD Coin", "USDC", 6], {
     id: "mockUsdc",
+    after: [mockUsdt],
   });
   const mockWbtc = m.contract("MockERC20", ["Wrapped Bitcoin", "WBTC", 8], {
     id: "mockWbtc",
+    after: [mockUsdc],
   });
 
-  // 2. 部署金库。
-  const fluxTreasury = m.contract("FluxSwapTreasury", [
-    treasuryMultisig,
-    treasuryGuardian,
-    treasuryOperator,
-    treasuryMinDelay,
-  ]);
-
-  // 3. 部署 Pair 工厂。
-  const fluxSwapFactory = m.contract("FluxSwapFactory", [treasurySetter]);
+  // 本地链可直接部署 MockWETH，测试网 / 主网则应传入外部已存在的 WETH 地址。
+  const deployMockWeth = m.getParameter("deployMockWeth", false);
+  const externalWeth = deployMockWeth ? undefined : m.getParameter("weth");
+  const weth = deployMockWeth
+    ? m.contract("MockWETH", [], { after: [mockWbtc] })
+    : m.contractAt("IWETH", externalWeth!);
 
   // 4. 部署 Router，并绑定 Pair 工厂与 WETH。
-  const fluxSwapRouter = m.contract("FluxSwapRouter", [
-    fluxSwapFactory,
-    weth,
-  ]);
+  const fluxSwapRouter = m.contract(
+    "FluxSwapRouter",
+    [fluxSwapFactory, weth],
+    { after: [weth] },
+  );
 
-  const fluxSignedOrderSettlement = m.contract("FluxSignedOrderSettlement", [
-    fluxSwapRouter,
-  ]);
+  const fluxSignedOrderSettlement = m.contract(
+    "FluxSignedOrderSettlement",
+    [fluxSwapRouter],
+    { after: [fluxSwapRouter] },
+  );
 
   // 5. 部署多池奖励管理器，奖励代币直接使用主代币。
-  const fluxMultiPoolManager = m.contract("FluxMultiPoolManager", [
-    bootstrapAdmin,
-    fluxTreasury,
-    rewardsOperator,
-    fluxToken,
-  ]);
+  const fluxMultiPoolManager = m.contract(
+    "FluxMultiPoolManager",
+    [bootstrapAdmin, fluxTreasury, rewardsOperator, fluxToken],
+    { after: [fluxSignedOrderSettlement] },
+  );
 
   // 6. 部署池工厂，用于后续创建单币池与 LP 池。
-  const fluxPoolFactory = m.contract("FluxPoolFactory", [
-    bootstrapAdmin,
-    fluxMultiPoolManager,
-    fluxSwapFactory,
-    fluxToken,
-  ]);
+  const fluxPoolFactory = m.contract(
+    "FluxPoolFactory",
+    [bootstrapAdmin, fluxMultiPoolManager, fluxSwapFactory, fluxToken],
+    { after: [fluxMultiPoolManager] },
+  );
 
   // 7. 部署回购执行器。
   // 默认接收地址强制设置为 Treasury，保证回购结果直接回流金库。
-  const fluxBuybackExecutor = m.contract("FluxBuybackExecutor", [
-    bootstrapAdmin,
-    fluxTreasury,
-    buybackOperator,
-    fluxSwapRouter,
-    fluxToken,
-    fluxTreasury,
-  ]);
+  const fluxBuybackExecutor = m.contract(
+    "FluxBuybackExecutor",
+    [bootstrapAdmin, fluxTreasury, buybackOperator, fluxSwapRouter, fluxToken, fluxTreasury],
+    { after: [fluxPoolFactory] },
+  );
 
   // 8. 部署收入分配器，接通“收入 -> 回购 -> 销毁 / 奖励分发”主链路。
-  const fluxRevenueDistributor = m.contract("FluxRevenueDistributor", [
-    bootstrapAdmin,
-    revenueOperator,
-    fluxBuybackExecutor,
-    fluxMultiPoolManager,
-    buybackBps,
-    burnBps,
-  ]);
+  const fluxRevenueDistributor = m.contract(
+    "FluxRevenueDistributor",
+    [bootstrapAdmin, revenueOperator, fluxBuybackExecutor, fluxMultiPoolManager, buybackBps, burnBps],
+    { after: [fluxBuybackExecutor] },
+  );
 
   // 9. 基础联动：把 Pair 工厂里的协议费金库指向 Treasury。
-  m.call(fluxSwapFactory, "setTreasury", [fluxTreasury], {
+  const linkFactoryTreasury = m.call(fluxSwapFactory, "setTreasury", [fluxTreasury], {
     id: "linkFactoryTreasury",
+    after: [fluxRevenueDistributor],
   });
 
   // 10. 基础联动：把多池管理器里的池工厂指向 PoolFactory。
   m.call(fluxMultiPoolManager, "setPoolFactory", [fluxPoolFactory], {
     id: "linkManagerPoolFactory",
+    after: [linkFactoryTreasury],
   });
 
   return {

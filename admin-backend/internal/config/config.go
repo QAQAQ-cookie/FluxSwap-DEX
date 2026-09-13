@@ -1,11 +1,11 @@
 package config
 
 import (
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -26,12 +26,12 @@ type Config struct {
 	AllowedURLs        []string
 	AdminWallets       []string
 	SessionTTLHours    int
-	ChainConfigs       map[int64]ChainConfig
+	ChainConfig        ChainConfig
 	SyncLookbackBlocks uint64
 }
 
 func Load() (Config, error) {
-	chainConfigs, err := loadChainConfigs()
+	chainConfig, err := loadChainConfig()
 	if err != nil {
 		return Config{}, err
 	}
@@ -43,7 +43,7 @@ func Load() (Config, error) {
 		AllowedURLs:        envList("ADMIN_ALLOWED_ORIGINS"),
 		AdminWallets:       normalizeList(envList("ADMIN_WALLETS")),
 		SessionTTLHours:    envInt("ADMIN_SESSION_TTL_HOURS", 12),
-		ChainConfigs:       chainConfigs,
+		ChainConfig:        chainConfig,
 		SyncLookbackBlocks: uint64(envInt("ADMIN_SYNC_LOOKBACK_BLOCKS", 20_000)),
 	}
 	if err := cfg.Validate(); err != nil {
@@ -53,11 +53,10 @@ func Load() (Config, error) {
 }
 
 func (c Config) FindChainConfig(chainID int64) (ChainConfig, bool) {
-	chainConfig, ok := c.ChainConfigs[chainID]
-	if !ok || !chainConfig.Enabled {
+	if !c.ChainConfig.Enabled || c.ChainConfig.ChainID != chainID {
 		return ChainConfig{}, false
 	}
-	return chainConfig, true
+	return c.ChainConfig, true
 }
 
 func (c Config) Validate() error {
@@ -89,21 +88,15 @@ func (c Config) Validate() error {
 		}
 	}
 
-	enabledChains := 0
-	for _, chainConfig := range c.ChainConfigs {
-		if !chainConfig.Enabled {
-			continue
-		}
-		enabledChains++
-		if isLocalChainID(chainConfig.ChainID) {
-			return fmt.Errorf("ADMIN_CHAIN_CONFIGS chainId %d is not allowed in production", chainConfig.ChainID)
-		}
-		if isLocalEndpoint(chainConfig.RPCURL) {
-			return fmt.Errorf("ADMIN_CHAIN_CONFIGS chainId %d rpcUrl must not point to a local host in production", chainConfig.ChainID)
-		}
+	chainConfig := c.ChainConfig
+	if !chainConfig.Enabled {
+		return fmt.Errorf("ADMIN_CHAIN_ID is required in production")
 	}
-	if enabledChains == 0 {
-		return fmt.Errorf("ADMIN_CHAIN_CONFIGS must contain at least one enabled chain in production")
+	if isLocalChainID(chainConfig.ChainID) {
+		return fmt.Errorf("ADMIN_CHAIN_ID %d is not allowed in production", chainConfig.ChainID)
+	}
+	if isLocalEndpoint(chainConfig.RPCURL) {
+		return fmt.Errorf("ADMIN_RPC_URL must not point to a local host in production")
 	}
 
 	return nil
@@ -218,58 +211,30 @@ func endpointHost(raw string) string {
 	return value
 }
 
-type rawChainConfig struct {
-	ChainID         int64  `json:"chainId"`
-	ChainName       string `json:"chainName"`
-	RPCURL          string `json:"rpcUrl"`
-	TreasuryAddress string `json:"treasuryAddress"`
-	Enabled         *bool  `json:"enabled"`
-}
-
-func loadChainConfigs() (map[int64]ChainConfig, error) {
-	raw := strings.TrimSpace(os.Getenv("ADMIN_CHAIN_CONFIGS"))
-	if raw == "" {
-		return map[int64]ChainConfig{}, nil
+func loadChainConfig() (ChainConfig, error) {
+	rawChainID := strings.TrimSpace(os.Getenv("ADMIN_CHAIN_ID"))
+	if rawChainID == "" {
+		return ChainConfig{}, nil
 	}
 
-	var parsed []rawChainConfig
-	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-		return nil, fmt.Errorf("parse ADMIN_CHAIN_CONFIGS: %w", err)
+	chainID, err := strconv.ParseInt(rawChainID, 10, 64)
+	if err != nil || chainID <= 0 {
+		return ChainConfig{}, fmt.Errorf("ADMIN_CHAIN_ID must be a positive integer")
 	}
 
-	chainConfigs := make(map[int64]ChainConfig, len(parsed))
-	for _, item := range parsed {
-		if item.ChainID <= 0 {
-			return nil, fmt.Errorf("ADMIN_CHAIN_CONFIGS contains invalid chainId: %d", item.ChainID)
-		}
-		if _, exists := chainConfigs[item.ChainID]; exists {
-			return nil, fmt.Errorf("ADMIN_CHAIN_CONFIGS contains duplicated chainId: %d", item.ChainID)
-		}
-
-		enabled := true
-		if item.Enabled != nil {
-			enabled = *item.Enabled
-		}
-
-		chainConfig := ChainConfig{
-			ChainID:         item.ChainID,
-			ChainName:       strings.TrimSpace(item.ChainName),
-			RPCURL:          strings.TrimSpace(item.RPCURL),
-			TreasuryAddress: strings.ToLower(strings.TrimSpace(item.TreasuryAddress)),
-			Enabled:         enabled,
-		}
-
-		if chainConfig.Enabled {
-			if chainConfig.RPCURL == "" {
-				return nil, fmt.Errorf("ADMIN_CHAIN_CONFIGS chainId %d is missing rpcUrl", chainConfig.ChainID)
-			}
-			if !common.IsHexAddress(chainConfig.TreasuryAddress) {
-				return nil, fmt.Errorf("ADMIN_CHAIN_CONFIGS chainId %d has invalid treasuryAddress", chainConfig.ChainID)
-			}
-		}
-
-		chainConfigs[chainConfig.ChainID] = chainConfig
+	chainConfig := ChainConfig{
+		ChainID:         chainID,
+		ChainName:       envString("ADMIN_CHAIN_NAME", ""),
+		RPCURL:          envString("ADMIN_RPC_URL", ""),
+		TreasuryAddress: strings.ToLower(envString("ADMIN_TREASURY_ADDRESS", "")),
+		Enabled:         true,
+	}
+	if chainConfig.RPCURL == "" {
+		return ChainConfig{}, fmt.Errorf("ADMIN_RPC_URL is required when ADMIN_CHAIN_ID is configured")
+	}
+	if !common.IsHexAddress(chainConfig.TreasuryAddress) {
+		return ChainConfig{}, fmt.Errorf("ADMIN_TREASURY_ADDRESS must be a valid address when ADMIN_CHAIN_ID is configured")
 	}
 
-	return chainConfigs, nil
+	return chainConfig, nil
 }

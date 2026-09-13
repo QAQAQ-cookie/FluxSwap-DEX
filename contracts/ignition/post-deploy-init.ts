@@ -6,11 +6,12 @@ import JSON5 from "json5";
 import { parseAbi, type Address, type Hash } from "viem";
 
 type InitMode = "plan" | "schedule" | "execute" | "all";
-type AddressAlias =
+type ContractAddressAlias =
   | "token"
   | "treasury"
   | "factory"
   | "router"
+  | "settlement"
   | "manager"
   | "poolFactory"
   | "buybackExecutor"
@@ -19,6 +20,8 @@ type AddressAlias =
   | "mockUsdt"
   | "mockUsdc"
   | "mockWbtc";
+type WalletAddressAlias = "bootstrapAdmin" | "executor" | "liquidityProvider" | "trader";
+type AddressAlias = ContractAddressAlias | WalletAddressAlias;
 type AddressLike = AddressAlias | "native" | Address;
 
 interface DeploymentConfig {
@@ -26,7 +29,7 @@ interface DeploymentConfig {
   deploymentId?: string;
   deploymentsDir?: string;
   moduleId?: string;
-  futureIds?: Partial<Record<AddressAlias, string>>;
+  futureIds?: Partial<Record<ContractAddressAlias, string>>;
   addresses?: Partial<Record<AddressAlias, Address>>;
 }
 
@@ -75,6 +78,11 @@ interface TreasuryInitConfig {
   spenderRevocations?: SpenderRevocationConfig[];
 }
 
+interface LimitOrderSettlementConfig {
+  restrictedExecutor?: AddressLike;
+  onlyRestrictedExecutor?: boolean;
+}
+
 interface NativeTransferConfig {
   to: AddressLike;
   amount: bigint | number | string;
@@ -111,6 +119,7 @@ interface PostDeployInitConfig {
   deployment?: DeploymentConfig;
   options?: ScriptOptions;
   treasury?: TreasuryInitConfig;
+  limitOrderSettlement?: LimitOrderSettlementConfig;
   funding?: FundingConfig;
   ownershipTransfers?: OwnershipTransferConfig[];
 }
@@ -120,20 +129,7 @@ interface CliArgs {
   configPath: string;
 }
 
-interface AddressBook {
-  token?: Address;
-  treasury?: Address;
-  factory?: Address;
-  router?: Address;
-  manager?: Address;
-  poolFactory?: Address;
-  buybackExecutor?: Address;
-  revenueDistributor?: Address;
-  weth?: Address;
-  mockUsdt?: Address;
-  mockUsdc?: Address;
-  mockWbtc?: Address;
-}
+type AddressBook = Partial<Record<AddressAlias, Address>>;
 
 interface TimelockOperation {
   kind:
@@ -153,11 +149,12 @@ interface TimelockOperation {
 }
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
-const DEFAULT_DEPLOYMENT_FUTURE_IDS: Record<AddressAlias, string> = {
+const DEFAULT_DEPLOYMENT_FUTURE_IDS: Record<ContractAddressAlias, string> = {
   token: "FluxCoreModule#FluxToken",
   treasury: "FluxCoreModule#FluxSwapTreasury",
   factory: "FluxCoreModule#FluxSwapFactory",
   router: "FluxCoreModule#FluxSwapRouter",
+  settlement: "FluxCoreModule#FluxSignedOrderSettlement",
   manager: "FluxCoreModule#FluxMultiPoolManager",
   poolFactory: "FluxCoreModule#FluxPoolFactory",
   buybackExecutor: "FluxCoreModule#FluxBuybackExecutor",
@@ -268,7 +265,7 @@ async function resolveAddressBook(
   const deployedAddresses = JSON.parse(raw) as Record<string, string>;
 
   for (const [alias, defaultFutureId] of Object.entries(DEFAULT_DEPLOYMENT_FUTURE_IDS) as Array<
-    [AddressAlias, string]
+    [ContractAddressAlias, string]
   >) {
     if (addressBook[alias] !== undefined) {
       continue;
@@ -358,6 +355,35 @@ async function main(): Promise<void> {
       wallet: executorWallet,
     },
   });
+
+  const limitOrderSettlementConfig = config.limitOrderSettlement;
+  const settlementAddress = addressBook.settlement;
+  const settlementAbi = parseAbi([
+    "function owner() view returns (address)",
+    "function restrictedExecutor() view returns (address)",
+    "function onlyRestrictedExecutor() view returns (bool)",
+    "function setRestrictedExecutor(address executor)",
+    "function setExecutorRestriction(bool restricted)",
+  ]);
+
+  let configuredSettlementExecutor: Address | undefined;
+  let configuredSettlementRestriction: boolean | undefined;
+
+  if (limitOrderSettlementConfig !== undefined) {
+    if (settlementAddress === undefined) {
+      throw new Error("未解析到限价单结算合约地址，无法配置执行器");
+    }
+
+    configuredSettlementExecutor =
+      limitOrderSettlementConfig.restrictedExecutor === undefined
+        ? undefined
+        : resolveAddressLike(limitOrderSettlementConfig.restrictedExecutor, addressBook);
+    configuredSettlementRestriction = limitOrderSettlementConfig.onlyRestrictedExecutor;
+
+    if (configuredSettlementRestriction && configuredSettlementExecutor === ZERO_ADDRESS) {
+      throw new Error("限价单受限执行器不能设置为零地址");
+    }
+  }
 
   const timelockOperations: TimelockOperation[] = [];
 
@@ -472,6 +498,33 @@ async function main(): Promise<void> {
   logSection("已解析合约地址");
   for (const [alias, resolved] of Object.entries(addressBook) as Array<[AddressAlias, Address | undefined]>) {
     console.log(`${alias}: ${resolved ?? "未解析"}`);
+  }
+
+  logSection("限价单执行器配置");
+  if (limitOrderSettlementConfig === undefined || settlementAddress === undefined) {
+    console.log("未配置限价单执行器变更");
+  } else {
+    const [owner, currentExecutor, currentRestricted] = await Promise.all([
+      publicClient.readContract({
+        address: settlementAddress,
+        abi: settlementAbi,
+        functionName: "owner",
+      }),
+      publicClient.readContract({
+        address: settlementAddress,
+        abi: settlementAbi,
+        functionName: "restrictedExecutor",
+      }),
+      publicClient.readContract({
+        address: settlementAddress,
+        abi: settlementAbi,
+        functionName: "onlyRestrictedExecutor",
+      }),
+    ]);
+    console.log(`Settlement: ${settlementAddress}`);
+    console.log(`owner: ${owner}`);
+    console.log(`restrictedExecutor: ${currentExecutor} -> ${configuredSettlementExecutor ?? "保持不变"}`);
+    console.log(`onlyRestrictedExecutor: ${currentRestricted} -> ${configuredSettlementRestriction ?? "保持不变"}`);
   }
 
   logSection("Timelock 计划");
@@ -601,6 +654,64 @@ async function main(): Promise<void> {
       const txHash = await item.operation.execute(item.operationId);
       await publicClient.waitForTransactionReceipt({ hash: txHash });
       console.log(`已执行: ${item.operation.description}, tx=${txHash}`);
+    }
+
+    if (limitOrderSettlementConfig !== undefined && settlementAddress !== undefined) {
+      const owner = await publicClient.readContract({
+        address: settlementAddress,
+        abi: settlementAbi,
+        functionName: "owner",
+      });
+      const ownerWallet = requireWalletClient(owner, "限价单结算合约 owner");
+
+      if (configuredSettlementExecutor !== undefined) {
+        const currentExecutor = await publicClient.readContract({
+          address: settlementAddress,
+          abi: settlementAbi,
+          functionName: "restrictedExecutor",
+        });
+        if (currentExecutor.toLowerCase() !== configuredSettlementExecutor.toLowerCase()) {
+          const txHash = await ownerWallet.writeContract({
+            address: settlementAddress,
+            abi: settlementAbi,
+            functionName: "setRestrictedExecutor",
+            args: [configuredSettlementExecutor],
+            chain: ownerWallet.chain,
+            account: ownerWallet.account,
+          });
+          await publicClient.waitForTransactionReceipt({ hash: txHash });
+          console.log(`限价单执行器已设置: ${configuredSettlementExecutor}, tx=${txHash}`);
+        }
+      }
+
+      if (configuredSettlementRestriction !== undefined) {
+        const currentExecutor = await publicClient.readContract({
+          address: settlementAddress,
+          abi: settlementAbi,
+          functionName: "restrictedExecutor",
+        });
+        if (configuredSettlementRestriction && currentExecutor === ZERO_ADDRESS) {
+          throw new Error("启用限价单受限执行器前必须先设置执行器地址");
+        }
+
+        const currentRestricted = await publicClient.readContract({
+          address: settlementAddress,
+          abi: settlementAbi,
+          functionName: "onlyRestrictedExecutor",
+        });
+        if (currentRestricted !== configuredSettlementRestriction) {
+          const txHash = await ownerWallet.writeContract({
+            address: settlementAddress,
+            abi: settlementAbi,
+            functionName: "setExecutorRestriction",
+            args: [configuredSettlementRestriction],
+            chain: ownerWallet.chain,
+            account: ownerWallet.account,
+          });
+          await publicClient.waitForTransactionReceipt({ hash: txHash });
+          console.log(`限价单执行器限制已更新: ${configuredSettlementRestriction}, tx=${txHash}`);
+        }
+      }
     }
   }
 

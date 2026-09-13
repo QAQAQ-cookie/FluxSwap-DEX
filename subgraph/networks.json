@@ -1,8 +1,8 @@
 {
-  "localhost": {
+  "sepolia": {
     "FluxSwapFactory": {
-      "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-      "startBlock": 0
+      "address": "0x4081e489309CF890838fa6Ce7b563Bc198d5B715",
+      "startBlock": 11624275
     }
   }
 }

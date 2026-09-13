@@ -12,18 +12,41 @@ func TestValidateAllowsLocalDevelopmentConfig(t *testing.T) {
 		AllowedURLs: []string{
 			"http://localhost:3001",
 		},
-		ChainConfigs: map[int64]ChainConfig{
-			31337: {
-				ChainID:         31337,
-				RPCURL:          "http://host.docker.internal:8545",
-				TreasuryAddress: productionTreasuryAddress,
-				Enabled:         true,
-			},
+		ChainConfig: ChainConfig{
+			ChainID:         31337,
+			RPCURL:          "http://host.docker.internal:8545",
+			TreasuryAddress: productionTreasuryAddress,
+			Enabled:         true,
 		},
 	}
 
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("本地开发配置不应该触发生产隔离校验: %v", err)
+	}
+}
+
+func TestLoadReadsSingleChainConfig(t *testing.T) {
+	t.Setenv("ADMIN_CHAIN_ID", "11155111")
+	t.Setenv("ADMIN_CHAIN_NAME", "Sepolia")
+	t.Setenv("ADMIN_RPC_URL", "https://rpc.example.invalid")
+	t.Setenv("ADMIN_TREASURY_ADDRESS", productionTreasuryAddress)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("加载单链配置失败: %v", err)
+	}
+	if cfg.ChainConfig.ChainID != 11155111 || cfg.ChainConfig.ChainName != "Sepolia" {
+		t.Fatalf("未正确加载单链配置: %+v", cfg.ChainConfig)
+	}
+}
+
+func TestLoadRejectsIncompleteSingleChainConfig(t *testing.T) {
+	t.Setenv("ADMIN_CHAIN_ID", "11155111")
+	t.Setenv("ADMIN_RPC_URL", "")
+	t.Setenv("ADMIN_TREASURY_ADDRESS", productionTreasuryAddress)
+
+	if _, err := Load(); err == nil {
+		t.Fatal("缺少 RPC 地址时应拒绝加载单链配置")
 	}
 }
 
@@ -56,13 +79,11 @@ func TestValidateRejectsProductionLocalAllowedOrigin(t *testing.T) {
 
 func TestValidateRejectsProductionLocalChainConfig(t *testing.T) {
 	cfg := validProductionConfig()
-	cfg.ChainConfigs = map[int64]ChainConfig{
-		31337: {
-			ChainID:         31337,
-			RPCURL:          "http://host.docker.internal:8545",
-			TreasuryAddress: productionTreasuryAddress,
-			Enabled:         true,
-		},
+	cfg.ChainConfig = ChainConfig{
+		ChainID:         31337,
+		RPCURL:          "http://host.docker.internal:8545",
+		TreasuryAddress: productionTreasuryAddress,
+		Enabled:         true,
 	}
 
 	if err := cfg.Validate(); err == nil {
@@ -86,13 +107,11 @@ func validProductionConfig() Config {
 			"https://admin.example.com",
 		},
 		AdminWallets: []string{productionAdminWallet},
-		ChainConfigs: map[int64]ChainConfig{
-			11155111: {
-				ChainID:         11155111,
-				RPCURL:          "https://sepolia.infura.io/v3/example",
-				TreasuryAddress: productionTreasuryAddress,
-				Enabled:         true,
-			},
+		ChainConfig: ChainConfig{
+			ChainID:         11155111,
+			RPCURL:          "https://sepolia.infura.io/v3/example",
+			TreasuryAddress: productionTreasuryAddress,
+			Enabled:         true,
 		},
 	}
 }

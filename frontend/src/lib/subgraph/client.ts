@@ -1,3 +1,5 @@
+import { getSubgraphUrl } from '@/config/chain';
+
 type GraphQLResponse<TData> = {
   data?: TData;
   errors?: Array<{
@@ -5,15 +7,13 @@ type GraphQLResponse<TData> = {
   }>;
 };
 
-const DEFAULT_SUBGRAPH_URL =
-  process.env.NEXT_PUBLIC_SUBGRAPH_URL ??
-  'http://localhost:8000/subgraphs/name/fluxswap-subgraph';
-
 export async function fetchSubgraph<TData>(
   query: string,
   variables?: Record<string, unknown>,
 ): Promise<TData> {
-  const response = await fetch(DEFAULT_SUBGRAPH_URL, {
+  const subgraphUrl = getSubgraphUrl();
+
+  const response = await fetch(subgraphUrl, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',

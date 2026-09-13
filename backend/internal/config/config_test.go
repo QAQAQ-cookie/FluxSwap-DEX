@@ -77,21 +77,15 @@ func TestActiveChainsFallsBackToSingleChainWhenOnlyWSRPCURLIsPresent(t *testing.
 	require.Equal(t, "wss://example.invalid/ws", chains[0].WSRPCURL)
 }
 
-func TestActiveChainsSkipsPlaceholderMultiChainEntries(t *testing.T) {
+func TestActiveChainsReturnsConfiguredDeploymentChain(t *testing.T) {
 	cfg := Config{
-		Chains: []ChainConfig{
-			{
-				Name:               "localhost",
-				ChainID:            31337,
-				HTTPRPCURL:         "http://127.0.0.1:8545",
-				WSRPCURL:           "ws://127.0.0.1:8545",
-				SettlementAddress:  "0x1111111111111111111111111111111111111111",
-				ExecutorPrivateKey: "0xabc",
-			},
-			{
-				Name:    "sepolia",
-				ChainID: 11155111,
-			},
+		Chain: ChainConfig{
+			Name:               "localhost",
+			ChainID:            31337,
+			HTTPRPCURL:         "http://127.0.0.1:8545",
+			WSRPCURL:           "ws://127.0.0.1:8545",
+			SettlementAddress:  "0x1111111111111111111111111111111111111111",
+			ExecutorPrivateKey: "0xabc",
 		},
 	}
 

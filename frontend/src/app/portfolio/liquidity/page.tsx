@@ -341,6 +341,16 @@ function PortfolioLiquidityPageContent() {
   );
 
   useEffect(() => {
+    setTokenA(undefined);
+    setTokenB(undefined);
+    setAmountA('');
+    setAmountB('');
+    setDisplayPair(undefined);
+    setSelectorTarget(null);
+    setStep(1);
+  }, [effectiveChainId]);
+
+  useEffect(() => {
     if (!mounted || tokenA || !initialTokenA) {
       return;
     }

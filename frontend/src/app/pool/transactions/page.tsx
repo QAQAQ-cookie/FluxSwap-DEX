@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next';
 import { useChainId, usePublicClient } from 'wagmi';
 
 import { MarketTabs } from '@/components/pool/MarketTabs';
+import { getTransactionExplorerUrl } from '@/config/chain';
 import { getContractAddress, isFluxSupportedChain } from '@/config/contracts';
 import { formatBigIntAmountDown } from '@/lib/amounts';
 import { getTrades, type TradeViewModel } from '@/lib/subgraph/trades';
@@ -46,18 +47,6 @@ type ActivityFilterOption = {
 };
 
 const ALL_ACTIVITY_TYPES: TradeActivityType[] = ['swap', 'add', 'remove'];
-
-function getTransactionHref(chainId: number | undefined, txHash: string): string | undefined {
-  if (!txHash) {
-    return undefined;
-  }
-
-  if (chainId === 11155111) {
-    return `https://sepolia.etherscan.io/tx/${txHash}`;
-  }
-
-  return undefined;
-}
 
 function EmptyTradeState({
   isZh,
@@ -238,6 +227,8 @@ export default function PoolTradePage() {
     }
 
     let cancelled = false;
+    setTrades([]);
+    setWalletByTxHash({});
     setLoading(true);
     setFetchError(null);
 
@@ -428,7 +419,7 @@ export default function PoolTradePage() {
             />
           ) : filteredTradeRows.length > 0 ? (
             filteredTradeRows.map((trade) => {
-              const transactionHref = getTransactionHref(chainId, trade.txHash);
+              const transactionHref = getTransactionExplorerUrl(chainId, trade.txHash);
 
               const content = (
                 <>
@@ -515,7 +506,7 @@ export default function PoolTradePage() {
           ) : filteredTradeRows.length > 0 ? (
             <div className="space-y-4">
               {filteredTradeRows.map((trade) => {
-                const transactionHref = getTransactionHref(chainId, trade.txHash);
+                const transactionHref = getTransactionExplorerUrl(chainId, trade.txHash);
 
                 const content = (
                   <>

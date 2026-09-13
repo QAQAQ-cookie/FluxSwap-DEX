@@ -16,23 +16,23 @@ class TokenMetadata {
 function getKnownTokenMetadata(address: Address): TokenMetadata | null {
   let normalized = address.toHexString().toLowerCase();
 
-  if (normalized == "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9") {
+  if (normalized == "0xf881723bef047da1cd494795a797835241d3be29") {
     return new TokenMetadata("WETH", "Wrapped Ether", 18);
   }
 
-  if (normalized == "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0") {
+  if (normalized == "0x5171c0fec2f9c4413a9aae39f3d3739aa30b1110") {
     return new TokenMetadata("FLUX", "Flux Token", 18);
   }
 
-  if (normalized == "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707") {
+  if (normalized == "0xf4fc2de27781b6401609732e0aa7f7c354bde388") {
     return new TokenMetadata("USDT", "Tether USD", 6);
   }
 
-  if (normalized == "0xdc64a140aa3e981100a9beca4e685f962f0cf6c9") {
+  if (normalized == "0xa4049489d8689a55154c35f9809b1382b0972a79") {
     return new TokenMetadata("USDC", "USD Coin", 6);
   }
 
-  if (normalized == "0x0165878a594ca255338adfa4d48449f69242eb8f") {
+  if (normalized == "0xc97de7b464a4db1910c16ce7835b918b4440c42c") {
     return new TokenMetadata("WBTC", "Wrapped Bitcoin", 8);
   }
 

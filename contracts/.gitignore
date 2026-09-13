@@ -29,3 +29,8 @@
 
 # Local Ignition deployment state generated during localhost verification
 /ignition/deployments/chain-31337
+/ignition/deployments/chain-11155111
+
+# Sepolia deployment parameters contain real role wallets and remain local-only.
+/ignition/parameters/FluxCore.sepolia.local.json5
+/ignition/parameters/post-deploy-init.sepolia.local.json5

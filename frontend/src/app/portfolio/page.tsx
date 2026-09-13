@@ -27,6 +27,7 @@ import { useAccount, useBalance, useChainId, usePublicClient, useSignTypedData, 
 
 import { getContractAddress, getLocalGasOverride, isFluxSupportedChain } from '@/config/contracts';
 import { getSwapTokenOptions, type SwapTokenOption } from '@/config/tokens';
+import { getTransactionExplorerUrl } from '@/config/chain';
 import {
   formatBigIntAmount,
   formatBigIntAmountDown,
@@ -450,18 +451,6 @@ async function fetchAllLimitOrders(params: Omit<FetchLimitOrdersParams, 'cursor'
   }
 
   return mergeLimitOrders(collected);
-}
-
-function getTransactionHref(chainId: number | undefined, txHash: string): string | undefined {
-  if (!txHash) {
-    return undefined;
-  }
-
-  if (chainId === 11155111) {
-    return `https://sepolia.etherscan.io/tx/${txHash}`;
-  }
-
-  return undefined;
 }
 
 function normalizeTokenSymbol(symbol: string, tokenAddress: string, wrappedNativeAddress?: string) {
@@ -1139,6 +1128,7 @@ export default function PortfolioPage() {
     }
 
     let cancelled = false;
+    setPairs([]);
 
     (async () => {
       try {
@@ -1168,6 +1158,8 @@ export default function PortfolioPage() {
     }
 
     let cancelled = false;
+    setTrades([]);
+    setWalletByTxHash({});
     setActivityLoading(true);
     setActivityError(null);
 
@@ -1774,7 +1766,7 @@ export default function PortfolioPage() {
         ),
         recipientLabel: truncateAddress(order.recipient, 8, 6),
         cancelTxHash: order.cancelledTxHash?.trim() ?? '',
-        cancelTxHref: getTransactionHref(order.chainId, order.cancelledTxHash?.trim() ?? ''),
+        cancelTxHref: getTransactionExplorerUrl(order.chainId, order.cancelledTxHash?.trim() ?? ''),
       };
     });
   }, [isZh, tokenLookup, walletLimitOrders, wrappedNativeAddress]);
@@ -3008,7 +3000,7 @@ export default function PortfolioPage() {
 
                     <div className="divide-y divide-black/5 dark:divide-white/10">
                       {connectedWalletActivity.map((trade) => {
-                        const transactionHref = getTransactionHref(chainId, trade.txHash);
+                        const transactionHref = getTransactionExplorerUrl(chainId, trade.txHash);
 
                         const rowContent = (
                           <>
@@ -3067,7 +3059,7 @@ export default function PortfolioPage() {
 
                   <div className="max-h-[560px] space-y-3 overflow-y-auto pr-1 sm:hidden">
                     {connectedWalletActivity.map((trade) => {
-                      const transactionHref = getTransactionHref(chainId, trade.txHash);
+                      const transactionHref = getTransactionExplorerUrl(chainId, trade.txHash);
 
                       const mobileContent = (
                         <>

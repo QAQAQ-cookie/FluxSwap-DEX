@@ -44,7 +44,10 @@ docker compose down
 | `ADMIN_DATABASE_DSN` | 管理端数据库连接串 |
 | `ADMIN_WALLETS` | 管理员钱包白名单，多个地址用英文逗号分隔；本地环境为空时允许任意有效钱包登录 |
 | `ADMIN_SESSION_TTL_HOURS` | 管理员登录会话有效小时数 |
-| `ADMIN_CHAIN_CONFIGS` | 多链 JSON 配置，按 `chainId`、`rpcUrl`、`treasuryAddress`、`enabled` 描述每条链 |
+| `ADMIN_CHAIN_ID` | 当前部署绑定的唯一链 ID |
+| `ADMIN_CHAIN_NAME` | 当前部署链的展示名称 |
+| `ADMIN_RPC_URL` | 当前部署链的 RPC 地址 |
+| `ADMIN_TREASURY_ADDRESS` | 当前部署链的金库合约地址 |
 | `ADMIN_SYNC_LOOKBACK_BLOCKS` | 后续链上同步任务的默认回看区块数 |
 
 本地 Docker Compose 会读取同名环境变量。`ADMIN_APP_ENV=local` 且 `ADMIN_WALLETS` 为空时，会放宽为任意有效钱包都能登录，方便本地联调；只要配置了 `ADMIN_WALLETS`，即使是本地环境也会按白名单校验。非本地环境必须配置 `ADMIN_WALLETS`，否则所有受保护写接口都会拒绝访问。
@@ -53,37 +56,21 @@ docker compose down
 
 ```powershell
 $env:ADMIN_WALLETS="0x你的管理员钱包地址"
-$env:ADMIN_CHAIN_CONFIGS='[{"chainId":31337,"chainName":"Local Hardhat","rpcUrl":"http://host.docker.internal:8545","treasuryAddress":"0x你的金库合约地址","enabled":true}]'
+$env:ADMIN_CHAIN_ID="31337"
+$env:ADMIN_CHAIN_NAME="Local Hardhat"
+$env:ADMIN_RPC_URL="http://host.docker.internal:8545"
+$env:ADMIN_TREASURY_ADDRESS="0x你的金库合约地址"
 docker compose up -d --build
 ```
 
-`ADMIN_CHAIN_CONFIGS` 支持多条链，例如：
-
-```json
-[
-  {
-    "chainId": 31337,
-    "chainName": "Local Hardhat",
-    "rpcUrl": "http://host.docker.internal:8545",
-    "treasuryAddress": "0x...",
-    "enabled": true
-  },
-  {
-    "chainId": 11155111,
-    "chainName": "Sepolia",
-    "rpcUrl": "https://sepolia.infura.io/v3/xxx",
-    "treasuryAddress": "0x...",
-    "enabled": true
-  }
-]
-```
+管理端按单链部署：本地、Sepolia 与正式网络分别使用自己的环境变量、数据库和服务实例，不在同一个实例中同时配置多条链。
 
 生产环境会做额外启动校验，避免误连本地资源：
 
 - `ADMIN_WALLETS` 必须至少配置一个有效管理员钱包。
 - `ADMIN_DATABASE_DSN` 不能为空，且不能指向 `localhost`、`127.0.0.1`、`0.0.0.0`、`host.docker.internal`。
 - `ADMIN_ALLOWED_ORIGINS` 不能使用 `*`，也不能包含本地前端地址。
-- `ADMIN_CHAIN_CONFIGS` 至少要有一条启用链，不能使用 Hardhat 常见链 ID `31337`、`1337`，RPC 也不能指向本地地址。
+- `ADMIN_CHAIN_ID`、`ADMIN_RPC_URL` 和 `ADMIN_TREASURY_ADDRESS` 必须完整配置；生产环境不能使用 Hardhat 常见链 ID `31337`、`1337`，RPC 也不能指向本地地址。
 
 ## 认证模型
 
@@ -156,7 +143,7 @@ POST /api/admin/maintenance/reset-local-data
 
 管理后端会对金库治理操作做三层校验：
 
-- 请求里的 `chainId` 必须能在 `ADMIN_CHAIN_CONFIGS` 中找到启用的链配置。
+- 请求里的 `chainId` 必须等于当前部署的 `ADMIN_CHAIN_ID`。
 - 请求里的金库地址必须匹配该链配置中的 `treasuryAddress`。
 - 后端会读取该链配置里的 `rpcUrl`，调用链上的 `operationReadyAt(bytes32)`，确认操作确实存在或已经被链上消费。
 

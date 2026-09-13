@@ -133,6 +133,7 @@ export default function PoolMarketsPage() {
     }
 
     let cancelled = false;
+    setPairs([]);
     setLoading(true);
     setFetchError(null);
 
