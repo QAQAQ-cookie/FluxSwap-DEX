@@ -12,7 +12,7 @@ dataSources:
     source:
       address: "0x4081e489309CF890838fa6Ce7b563Bc198d5B715"
       abi: FluxSwapFactory
-      startBlock: 11624275
+      startBlock: 11702180
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9

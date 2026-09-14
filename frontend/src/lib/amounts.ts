@@ -80,29 +80,12 @@ export function formatBigIntAmountDown(
   return formatDisplayAmountDown(formatUnits(value, decimals), fractionDigits)
 }
 
-export function getPairLpDisplayDecimals(
-  token0Decimals: number,
-  token1Decimals: number,
-): number {
-  const normalizeDecimals = (decimals: number) =>
-    Number.isFinite(decimals) && decimals >= 0 ? Math.floor(decimals) : 18
-
-  return Math.floor(
-    (normalizeDecimals(token0Decimals) + normalizeDecimals(token1Decimals)) / 2,
-  )
-}
-
 export function formatPairLpAmountDown(
   value: bigint | undefined,
-  token0Decimals: number,
-  token1Decimals: number,
   fractionDigits = 6,
 ): string {
-  return formatBigIntAmountDown(
-    value,
-    getPairLpDisplayDecimals(token0Decimals, token1Decimals),
-    fractionDigits,
-  )
+  // FluxSwap Pair 本身就是固定 18 位精度的 LP ERC-20；不能用底层代币精度推导 LP 精度。
+  return formatBigIntAmountDown(value, 18, fractionDigits)
 }
 
 export function parseAmount(

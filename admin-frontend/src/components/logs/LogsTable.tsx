@@ -44,7 +44,7 @@ export function LogsTable({ loading, logs }: LogsTableProps) {
         <PanelToolbar
           icon={<ScrollText size={20} />}
           title="最近操作"
-          description="合并展示管理后端审计日志，以及最近 20,000 个区块内的农场与金库链上事件。"
+          description="合并展示管理后端审计日志，以及最近 1,000 个区块内的农场与金库链上事件。"
         />
       </div>
 

@@ -1456,12 +1456,7 @@ export default function PortfolioPage() {
         return {
           pairId: pair.id,
           pairLabel: `${token0Symbol} / ${token1Symbol}`,
-          lpBalanceLabel: `${formatPairLpAmountDown(
-            rawLpBalance,
-            pair.token0.decimals,
-            pair.token1.decimals,
-            6,
-          )} LP`,
+          lpBalanceLabel: `${formatPairLpAmountDown(rawLpBalance, 6)} LP`,
           poolShareLabel: formatPoolShare(rawLpBalance, pair.totalSupply),
           withdrawToken0Label: `${formatBigIntAmountDown(
             withdrawToken0,
@@ -1475,12 +1470,7 @@ export default function PortfolioPage() {
           )} ${token1Symbol}`,
           reserveToken0Label: `${formatBigIntAmountDown(pair.reserve0, pair.token0.decimals, 6)} ${token0Symbol}`,
           reserveToken1Label: `${formatBigIntAmountDown(pair.reserve1, pair.token1.decimals, 6)} ${token1Symbol}`,
-          totalLpLabel: `${formatPairLpAmountDown(
-            pair.totalSupply,
-            pair.token0.decimals,
-            pair.token1.decimals,
-            6,
-          )} LP`,
+          totalLpLabel: `${formatPairLpAmountDown(pair.totalSupply, 6)} LP`,
           token0Symbol,
           token1Symbol,
           token0Address: pair.token0.id,
@@ -1570,12 +1560,7 @@ export default function PortfolioPage() {
     Boolean(removePosition && removeLiquidityAmount > ZERO_BIGINT && publicClient && routerAddress && address) &&
     removeLpAllowanceLoading;
   const removeLiquidityAmountLabel = removePosition
-    ? `${formatPairLpAmountDown(
-        removeLiquidityAmount,
-        removePosition.token0Decimals,
-        removePosition.token1Decimals,
-        6,
-      )} LP`
+    ? `${formatPairLpAmountDown(removeLiquidityAmount, 6)} LP`
     : '';
   const removeEstimatedToken0Label = removePosition
     ? `${formatBigIntAmountDown(removeEstimatedToken0, removePosition.token0Decimals, 6)} ${removePosition.token0Symbol}`

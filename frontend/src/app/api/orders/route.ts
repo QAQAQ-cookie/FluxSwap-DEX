@@ -141,6 +141,7 @@ type LimitOrderRecord = {
 type ExecutorGrpcClient = grpc.Client & {
   CreateOrder: (
     payload: CreateOrderPayload,
+    options: grpc.CallOptions,
     callback: (error: grpc.ServiceError | null, response: GrpcCreateOrderResponse) => void,
   ) => void;
   CancelOrders: (
@@ -163,6 +164,7 @@ type ExecutorGrpcConstructor = new (
 ) => ExecutorGrpcClient;
 
 const DEFAULT_BACKEND_GRPC_URL = '127.0.0.1:9001';
+const GRPC_CALL_TIMEOUT_MS = 15_000;
 
 function getBackendGrpcUrl() {
   return process.env.BACKEND_GRPC_URL ?? DEFAULT_BACKEND_GRPC_URL;
@@ -195,7 +197,10 @@ function createOrder(payload: CreateOrderPayload) {
   const client = getExecutorClient();
 
   return new Promise<GrpcCreateOrderResponse>((resolve, reject) => {
-    client.CreateOrder(payload, (error, response) => {
+    client.CreateOrder(
+      payload,
+      { deadline: new Date(Date.now() + GRPC_CALL_TIMEOUT_MS) },
+      (error, response) => {
       client.close();
 
       if (error) {
@@ -204,7 +209,8 @@ function createOrder(payload: CreateOrderPayload) {
       }
 
       resolve(response);
-    });
+      },
+    );
   });
 }
 
@@ -377,6 +383,33 @@ function readString(value: unknown, fallback = '') {
   return fallback;
 }
 
+function buildCreateOrderProxyFailureNotice(error: unknown) {
+  const message = error instanceof Error ? error.message : 'Backend gRPC request failed';
+  const timedOut =
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === grpc.status.DEADLINE_EXCEEDED;
+
+  if (timedOut) {
+    return {
+      success: false,
+      code: 'CREATE_ORDER_PROXY_FAILED',
+      message: '后端处理请求超时。',
+      hint: '链上 RPC 响应较慢，请稍后重试。',
+      stage: 'frontend_api_proxy',
+    };
+  }
+
+  return {
+    success: false,
+    code: 'CREATE_ORDER_PROXY_FAILED',
+    message,
+    hint: '请确认后端 gRPC 服务已启动，并且 BACKEND_GRPC_URL 配置正确。',
+    stage: 'frontend_api_proxy',
+  };
+}
+
 function mapGrpcOrderToLimitOrderRecord(order: GrpcLimitOrder, fallbackChainId: number): LimitOrderRecord | null {
   const orderHash = readString(order.orderHash);
   if (!orderHash) {
@@ -458,17 +491,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json(response, { status });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Create order request failed';
-
     return NextResponse.json(
       {
-        notice: {
-          success: false,
-          code: 'CREATE_ORDER_PROXY_FAILED',
-          message,
-          hint: '请确认后端 gRPC 服务已启动，并且 BACKEND_GRPC_URL 配置正确。',
-          stage: 'frontend_api_proxy',
-        },
+        notice: buildCreateOrderProxyFailureNotice(error),
       },
       { status: 500 },
     );

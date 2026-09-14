@@ -1197,12 +1197,7 @@ export default function PoolDetailPage() {
       },
       {
         label: isZh ? '总 LP' : 'Total LP',
-        value: formatPairLpAmountDown(
-          poolDetail.totalSupply,
-          poolDetail.token0.decimals,
-          poolDetail.token1.decimals,
-          6,
-        ),
+        value: formatPairLpAmountDown(poolDetail.totalSupply, 6),
         icon: ArrowDownUp,
       },
       {

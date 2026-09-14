@@ -1,5 +1,7 @@
 Name: fluxswap-backend.rpc
 ListenOn: 0.0.0.0:9001
+# Sepolia 的区块与 gas 报价偶尔需要数秒；默认 2 秒会在限价单落库前取消请求。
+Timeout: 10000
 
 App:
   Name: fluxswap-backend

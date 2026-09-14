@@ -17,32 +17,46 @@ import { formatErrorMessage } from '@/lib/errors';
 import { shortAddress } from '@/components/AdminPrimitives';
 import { listAdminOperationLogs } from '@/lib/admin-api';
 
+// The default public Sepolia RPC limits a single log request to 1,000 blocks.
+// The range is inclusive, so this value keeps each request within that limit.
+const EVENT_LOOKBACK_BLOCKS = BigInt(999);
+
 export function useLogsPageController() {
   const environment = useLogsPageEnvironment();
   const pageState = useLogsPageState();
+  const {
+    chainId,
+    publicClient,
+    supportedChain,
+    factoryAddress,
+    managerAddress,
+    treasuryAddress,
+    rewardTokenAddress,
+  } = environment;
+  const { setLogs, setLoading, setError } = pageState;
 
   const loadLogs = useCallback(async () => {
-    if (!environment.publicClient || !environment.supportedChain) {
-      pageState.setLogs([]);
-      pageState.setError(
-        environment.supportedChain
+    if (!publicClient || !supportedChain) {
+      setLogs([]);
+      setError(
+        supportedChain
           ? 'RPC 连接尚未就绪，请稍后刷新重试。'
           : '当前网络还未接入 FluxSwap 管理端。',
       );
       return;
     }
 
-    pageState.setLoading(true);
-    pageState.setError(null);
+    setLoading(true);
+    setError(null);
 
     try {
-      const latestBlock = await environment.publicClient.getBlockNumber();
-      const fromBlock = latestBlock > BigInt(20_000) ? latestBlock - BigInt(20_000) : BigInt(0);
+      const latestBlock = await publicClient.getBlockNumber();
+      const fromBlock = latestBlock > EVENT_LOOKBACK_BLOCKS ? latestBlock - EVENT_LOOKBACK_BLOCKS : BigInt(0);
       const rows: LogRow[] = [];
       let rewardTokenDecimals = 18;
       let rewardTokenSymbol = 'FLUX';
       const backendLogs = await listAdminOperationLogs({
-        chainId: environment.chainId,
+        chainId,
         pageSize: 80,
       }).catch(() => null);
 
@@ -58,15 +72,15 @@ export function useLogsPageController() {
         });
       }
 
-      if (environment.rewardTokenAddress) {
+      if (rewardTokenAddress) {
         const [decimals, symbol] = await Promise.all([
-          environment.publicClient.readContract({
-            address: environment.rewardTokenAddress,
+          publicClient.readContract({
+            address: rewardTokenAddress,
             abi: fluxSwapErc20Abi,
             functionName: 'decimals',
           }),
-          environment.publicClient.readContract({
-            address: environment.rewardTokenAddress,
+          publicClient.readContract({
+            address: rewardTokenAddress,
             abi: fluxSwapErc20Abi,
             functionName: 'symbol',
           }),
@@ -75,17 +89,17 @@ export function useLogsPageController() {
         rewardTokenSymbol = symbol;
       }
 
-      if (environment.factoryAddress) {
+      if (factoryAddress) {
         const [lpCreatedLogs, singleCreatedLogs] = await Promise.all([
-          environment.publicClient.getContractEvents({
-            address: environment.factoryAddress,
+          publicClient.getContractEvents({
+            address: factoryAddress,
             abi: fluxPoolFactoryAbi,
             eventName: 'LPPoolCreated',
             fromBlock,
             toBlock: latestBlock,
           }),
-          environment.publicClient.getContractEvents({
-            address: environment.factoryAddress,
+          publicClient.getContractEvents({
+            address: factoryAddress,
             abi: fluxPoolFactoryAbi,
             eventName: 'SingleTokenPoolCreated',
             fromBlock,
@@ -116,17 +130,17 @@ export function useLogsPageController() {
         }
       }
 
-      if (environment.managerAddress) {
+      if (managerAddress) {
         const [poolUpdatedLogs, rewardsDistributedLogs] = await Promise.all([
-          environment.publicClient.getContractEvents({
-            address: environment.managerAddress,
+          publicClient.getContractEvents({
+            address: managerAddress,
             abi: fluxMultiPoolManagerAbi,
             eventName: 'PoolUpdated',
             fromBlock,
             toBlock: latestBlock,
           }),
-          environment.publicClient.getContractEvents({
-            address: environment.managerAddress,
+          publicClient.getContractEvents({
+            address: managerAddress,
             abi: fluxMultiPoolManagerAbi,
             eventName: 'RewardsDistributed',
             fromBlock,
@@ -157,31 +171,31 @@ export function useLogsPageController() {
         }
       }
 
-      if (environment.treasuryAddress) {
+      if (treasuryAddress) {
         const [spenderApprovedLogs, dailyCapLogs, pausedLogs, unpausedLogs] = await Promise.all([
-          environment.publicClient.getContractEvents({
-            address: environment.treasuryAddress,
+          publicClient.getContractEvents({
+            address: treasuryAddress,
             abi: fluxSwapTreasuryAbi,
             eventName: 'SpenderApproved',
             fromBlock,
             toBlock: latestBlock,
           }),
-          environment.publicClient.getContractEvents({
-            address: environment.treasuryAddress,
+          publicClient.getContractEvents({
+            address: treasuryAddress,
             abi: fluxSwapTreasuryAbi,
             eventName: 'DailySpendCapUpdated',
             fromBlock,
             toBlock: latestBlock,
           }),
-          environment.publicClient.getContractEvents({
-            address: environment.treasuryAddress,
+          publicClient.getContractEvents({
+            address: treasuryAddress,
             abi: fluxSwapTreasuryAbi,
             eventName: 'Paused',
             fromBlock,
             toBlock: latestBlock,
           }),
-          environment.publicClient.getContractEvents({
-            address: environment.treasuryAddress,
+          publicClient.getContractEvents({
+            address: treasuryAddress,
             abi: fluxSwapTreasuryAbi,
             eventName: 'Unpaused',
             fromBlock,
@@ -234,13 +248,24 @@ export function useLogsPageController() {
         }
       }
 
-      pageState.setLogs(rows.sort(compareLogsByBlockDesc).slice(0, 80));
+      setLogs(rows.sort(compareLogsByBlockDesc).slice(0, 80));
     } catch (loadError) {
-      pageState.setError(formatErrorMessage(loadError));
+      setError(formatErrorMessage(loadError));
     } finally {
-      pageState.setLoading(false);
+      setLoading(false);
     }
-  }, [environment, pageState]);
+  }, [
+    chainId,
+    factoryAddress,
+    managerAddress,
+    publicClient,
+    rewardTokenAddress,
+    setError,
+    setLoading,
+    setLogs,
+    supportedChain,
+    treasuryAddress,
+  ]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {

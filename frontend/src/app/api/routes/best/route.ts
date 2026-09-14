@@ -57,6 +57,7 @@ type GrpcGetBestRouteResponse = {
 type ExecutorGrpcClient = grpc.Client & {
   GetBestRoute: (
     payload: GetBestRoutePayload,
+    options: grpc.CallOptions,
     callback: (
       error: grpc.ServiceError | null,
       response: GrpcGetBestRouteResponse,
@@ -70,6 +71,7 @@ type ExecutorGrpcConstructor = new (
 ) => ExecutorGrpcClient;
 
 const DEFAULT_BACKEND_GRPC_URL = "127.0.0.1:9001";
+const GRPC_CALL_TIMEOUT_MS = 15_000;
 
 function getBackendGrpcUrl() {
   return process.env.BACKEND_GRPC_URL ?? DEFAULT_BACKEND_GRPC_URL;
@@ -111,7 +113,10 @@ function getBestRoute(payload: GetBestRoutePayload) {
   const client = getExecutorClient();
 
   return new Promise<GrpcGetBestRouteResponse>((resolve, reject) => {
-    client.GetBestRoute(payload, (error, response) => {
+    client.GetBestRoute(
+      payload,
+      { deadline: new Date(Date.now() + GRPC_CALL_TIMEOUT_MS) },
+      (error, response) => {
       client.close();
 
       if (error) {
@@ -120,7 +125,8 @@ function getBestRoute(payload: GetBestRoutePayload) {
       }
 
       resolve(response);
-    });
+      },
+    );
   });
 }
 
