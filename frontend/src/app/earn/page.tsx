@@ -16,7 +16,7 @@ export default function EarnPage() {
   } = useEarnPageController();
 
   return (
-    <div className="min-h-[calc(100vh-80px)] bg-gray-50 px-4 py-8 transition-colors dark:bg-gray-950 lg:py-10">
+    <div className="min-h-[calc(100vh-80px)] px-4 py-8 transition-colors lg:py-10">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-5">
         <EarnHero isZh={isZh} viewModel={heroViewModel} />
 

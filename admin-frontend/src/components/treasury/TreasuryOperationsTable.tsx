@@ -156,7 +156,7 @@ export function TreasuryOperationsTable({
         <PanelToolbar
           icon={<Settings2 size={20} />}
           title="待处理治理操作"
-          description="最近 20,000 个区块内已排队、未执行的金库操作。"
+          description="显示管理后端已记录的待处理操作，并补充最近 999 个区块的链上排队事件。"
           actions={
             <>
               <StatChip label="总数" value={operations.length} />

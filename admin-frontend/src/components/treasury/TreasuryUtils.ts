@@ -6,7 +6,9 @@ import type { AdminTreasuryOperation } from '@/lib/admin-api';
 import type { TreasuryOperationMetadata, TreasuryOperationRow, TreasuryTokenRow } from './TreasuryTypes';
 
 export const ZERO_BIGINT = BigInt(0);
-export const EVENT_LOOKBACK_BLOCKS = BigInt(20_000);
+// 公共 Sepolia RPC 通常会限制 eth_getLogs 的单次区块范围；待处理操作已由管理后端持久化，
+// 这里仅补充最近链上事件，不需要使用过大的历史窗口。
+export const EVENT_LOOKBACK_BLOCKS = BigInt(999);
 
 const TREASURY_OPERATION_STORAGE_PREFIX = 'fluxswap-admin:treasury-operations';
 

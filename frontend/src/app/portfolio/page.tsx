@@ -182,7 +182,9 @@ type WalletTokenRow = {
 type PositionDisplayRow = {
   pairId: string;
   pairLabel: string;
-  lpBalanceLabel: string;
+  walletLpBalanceLabel: string;
+  stakedLpBalanceLabel: string;
+  totalLpBalanceLabel: string;
   poolShareLabel: string;
   withdrawToken0Label: string;
   withdrawToken1Label: string;
@@ -197,7 +199,10 @@ type PositionDisplayRow = {
   token1Decimals: number;
   addLiquidityHref: string;
   poolHref: string;
+  farmHref?: string;
   rawLpBalance: bigint;
+  rawStakedLpBalance: bigint;
+  rawTotalLpBalance: bigint;
   totalSupply: bigint;
   reserve0: bigint;
   reserve1: bigint;
@@ -717,6 +722,8 @@ function getLimitOrderStatusLabel(status: string, isZh: boolean) {
   switch (status.trim().toLowerCase()) {
     case 'open':
       return isZh ? '待执行' : 'Open';
+    case 'submitting_execute':
+      return isZh ? '执行提交中' : 'Submitting execution';
     case 'pending_execute':
       return isZh ? '执行中' : 'Pending';
     case 'executed':
@@ -728,7 +735,7 @@ function getLimitOrderStatusLabel(status: string, isZh: boolean) {
     case 'expired':
       return isZh ? '已过期' : 'Expired';
     default:
-      return status || '--';
+      return isZh ? '状态更新中' : 'Updating';
   }
 }
 
@@ -742,6 +749,7 @@ function getLimitOrderStatusBadgeClass(status: string) {
       return 'bg-gray-100 text-gray-700 dark:bg-white/[0.06] dark:text-gray-300';
     case 'pending_execute':
     case 'pending_cancel':
+    case 'submitting_execute':
       return 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300';
     default:
       return 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300';
@@ -1417,21 +1425,36 @@ export default function PortfolioPage() {
     };
   }, [publicClient, trades]);
 
-  const activePositionCount = useMemo(
-    () => Object.values(lpBalances).filter((balance) => balance > ZERO_BIGINT).length,
-    [lpBalances],
-  );
-
   const fluxDisplay = isConnected
     ? formatDisplayAmount(fluxBalance?.formatted)
     : '--';
 
-  const lpDisplay = isConnected ? String(activePositionCount) : '--';
-  const showLpHint = isConnected && activePositionCount > 0;
+  const stakedLpPositionsByPair = useMemo(() => {
+    const positions = new Map<string, { amount: bigint; farmAddress: Address }>();
+
+    for (const farm of farms) {
+      if (!farm.isLp || farm.stakedBalance <= ZERO_BIGINT) {
+        continue;
+      }
+
+      const pairId = farm.stakingToken.toLowerCase();
+      const current = positions.get(pairId);
+      positions.set(pairId, {
+        amount: (current?.amount ?? ZERO_BIGINT) + farm.stakedBalance,
+        farmAddress: current?.farmAddress ?? farm.poolAddress,
+      });
+    }
+
+    return positions;
+  }, [farms]);
+
   const positionRows = useMemo<PositionDisplayRow[]>(() => {
     return pairs
       .map((pair) => {
         const rawLpBalance = lpBalances[pair.id.toLowerCase()] ?? ZERO_BIGINT;
+        const stakedLpPosition = stakedLpPositionsByPair.get(pair.id.toLowerCase());
+        const rawStakedLpBalance = stakedLpPosition?.amount ?? ZERO_BIGINT;
+        const rawTotalLpBalance = rawLpBalance + rawStakedLpBalance;
         const token0Symbol = normalizeTokenSymbol(
           pair.token0.symbol,
           pair.token0.id,
@@ -1456,8 +1479,10 @@ export default function PortfolioPage() {
         return {
           pairId: pair.id,
           pairLabel: `${token0Symbol} / ${token1Symbol}`,
-          lpBalanceLabel: `${formatPairLpAmountDown(rawLpBalance, 6)} LP`,
-          poolShareLabel: formatPoolShare(rawLpBalance, pair.totalSupply),
+          walletLpBalanceLabel: `${formatPairLpAmountDown(rawLpBalance, 6)} LP`,
+          stakedLpBalanceLabel: `${formatPairLpAmountDown(rawStakedLpBalance, 6)} LP`,
+          totalLpBalanceLabel: `${formatPairLpAmountDown(rawTotalLpBalance, 6)} LP`,
+          poolShareLabel: formatPoolShare(rawTotalLpBalance, pair.totalSupply),
           withdrawToken0Label: `${formatBigIntAmountDown(
             withdrawToken0,
             pair.token0.decimals,
@@ -1479,21 +1504,27 @@ export default function PortfolioPage() {
           token1Decimals: pair.token1.decimals,
           addLiquidityHref: `/portfolio/liquidity?tokenA=${pair.token0.id}&tokenB=${pair.token1.id}`,
           poolHref: `/pool/${pair.id}`,
+          farmHref: stakedLpPosition ? `/earn?pool=${stakedLpPosition.farmAddress}` : undefined,
           rawLpBalance,
+          rawStakedLpBalance,
+          rawTotalLpBalance,
           totalSupply: pair.totalSupply,
           reserve0: pair.reserve0,
           reserve1: pair.reserve1,
         };
       })
-      .filter((row) => row.rawLpBalance > ZERO_BIGINT)
+      .filter((row) => row.rawTotalLpBalance > ZERO_BIGINT)
       .sort((left, right) => {
-        if (left.rawLpBalance === right.rawLpBalance) {
+        if (left.rawTotalLpBalance === right.rawTotalLpBalance) {
           return left.pairLabel.localeCompare(right.pairLabel);
         }
 
-        return left.rawLpBalance > right.rawLpBalance ? -1 : 1;
+        return left.rawTotalLpBalance > right.rawTotalLpBalance ? -1 : 1;
       });
-  }, [lpBalances, pairs, wrappedNativeAddress]);
+  }, [lpBalances, pairs, stakedLpPositionsByPair, wrappedNativeAddress]);
+  const activePositionCount = positionRows.length;
+  const lpDisplay = isConnected ? String(activePositionCount) : '--';
+  const showLpHint = isConnected && activePositionCount > 0;
   const stakingRows = useMemo<StakingDisplayRow[]>(() => {
     return farms
       .filter(
@@ -2773,9 +2804,9 @@ export default function PortfolioPage() {
                 </div>
 
                 <div className="flex min-h-0 flex-1 flex-col px-5 pb-5 pt-1">
-                  <div className="grid grid-cols-[minmax(0,1fr)_128px] items-center gap-x-4 border-b border-black/5 px-3 py-3 text-[13px] font-semibold text-gray-500 dark:border-white/10 dark:text-gray-400">
-                    <div className="min-w-0 whitespace-nowrap">{isZh ? '交易对' : 'Pair'}</div>
-                    <div className="whitespace-nowrap text-right">{isZh ? 'LP 余额' : 'LP Balance'}</div>
+                    <div className="grid grid-cols-[minmax(0,1fr)_128px] items-center gap-x-4 border-b border-black/5 px-3 py-3 text-[13px] font-semibold text-gray-500 dark:border-white/10 dark:text-gray-400">
+                      <div className="min-w-0 whitespace-nowrap">{isZh ? '交易对' : 'Pair'}</div>
+                      <div className="whitespace-nowrap text-right">{isZh ? '总 LP' : 'Total LP'}</div>
                   </div>
 
                   <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1 [scrollbar-gutter:stable]">
@@ -2792,7 +2823,7 @@ export default function PortfolioPage() {
                           </div>
                         </div>
                         <div className="min-w-0 truncate text-right text-[14px] font-semibold tabular-nums text-gray-800 dark:text-gray-200">
-                          {row.lpBalanceLabel}
+                          {row.totalLpBalanceLabel}
                         </div>
                       </button>
                     ))}
@@ -3299,7 +3330,7 @@ export default function PortfolioPage() {
                     {isZh ? '主要指标' : 'Key metric'}
                   </div>
                   <div className="mt-2 text-sm font-semibold text-gray-900 dark:text-white">
-                    {isZh ? '按 LP 份额估算可取回数量' : 'Withdrawable amounts estimated by LP share'}
+                    {isZh ? '钱包内 LP 可直接移除；质押中 LP 需先解除质押' : 'Wallet LP can be removed directly; staked LP must be withdrawn first'}
                   </div>
                 </div>
                 <div className="rounded-[1.25rem] border border-black/5 bg-gray-50/80 px-4 py-3 dark:border-white/10 dark:bg-white/[0.04]">
@@ -3316,10 +3347,10 @@ export default function PortfolioPage() {
                 <div className="hidden h-full overflow-y-auto overflow-x-hidden xl:block">
                   <div className="sticky top-0 z-10 grid grid-cols-[1.05fr_1.05fr_0.78fr_1.15fr_1.15fr_1fr] items-center gap-x-3 border-b border-black/5 bg-white/95 px-5 py-3 text-xs font-bold tracking-[0.08em] text-gray-500 backdrop-blur-sm dark:border-white/10 dark:bg-[#0f1726]/95 dark:text-gray-400">
                     <div>{isZh ? '交易对' : 'Pair'}</div>
-                    <div className="text-right">{isZh ? 'LP 余额' : 'LP Balance'}</div>
+                    <div className="text-right">{isZh ? 'LP 份额' : 'LP Holdings'}</div>
                     <div className="text-right">{isZh ? '池子份额' : 'Pool Share'}</div>
-                    <div className="text-right">{isZh ? '可取回代币一' : 'Token A'}</div>
-                    <div className="text-right">{isZh ? '可取回代币二' : 'Token B'}</div>
+                    <div className="text-right">{isZh ? '钱包可取回代币一' : 'Wallet Token A'}</div>
+                    <div className="text-right">{isZh ? '钱包可取回代币二' : 'Wallet Token B'}</div>
                     <div className="text-right">{isZh ? '操作' : 'Action'}</div>
                   </div>
 
@@ -3337,18 +3368,35 @@ export default function PortfolioPage() {
                             {truncateAddress(row.pairId)}
                           </div>
                         </Link>
-                        <div className="min-w-0 truncate text-right font-semibold tabular-nums">{row.lpBalanceLabel}</div>
+                        <div className="min-w-0 text-right tabular-nums">
+                          <div className="truncate font-semibold">{row.totalLpBalanceLabel}</div>
+                          <div className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
+                            {isZh
+                              ? `钱包 ${row.walletLpBalanceLabel} · 质押 ${row.stakedLpBalanceLabel}`
+                              : `Wallet ${row.walletLpBalanceLabel} · Staked ${row.stakedLpBalanceLabel}`}
+                          </div>
+                        </div>
                         <div className="text-right font-semibold tabular-nums">{row.poolShareLabel}</div>
                         <div className="min-w-0 truncate text-right font-semibold tabular-nums">{row.withdrawToken0Label}</div>
                         <div className="min-w-0 truncate text-right font-semibold tabular-nums">{row.withdrawToken1Label}</div>
                         <div className="flex justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => openRemoveLiquidityModal(row)}
-                            className="inline-flex h-9 items-center justify-center rounded-full border border-rose-200 px-3 text-xs font-semibold text-rose-600 transition-colors hover:border-rose-300 hover:bg-rose-50 dark:border-rose-400/25 dark:text-rose-300 dark:hover:bg-rose-400/10"
-                          >
-                            {isZh ? '移除' : 'Remove'}
-                          </button>
+                          {row.rawLpBalance > ZERO_BIGINT ? (
+                            <button
+                              type="button"
+                              onClick={() => openRemoveLiquidityModal(row)}
+                              className="inline-flex h-9 items-center justify-center rounded-full border border-rose-200 px-3 text-xs font-semibold text-rose-600 transition-colors hover:border-rose-300 hover:bg-rose-50 dark:border-rose-400/25 dark:text-rose-300 dark:hover:bg-rose-400/10"
+                            >
+                              {isZh ? '移除' : 'Remove'}
+                            </button>
+                          ) : null}
+                          {row.rawStakedLpBalance > ZERO_BIGINT && row.farmHref ? (
+                            <Link
+                              href={row.farmHref}
+                              className="inline-flex h-9 items-center justify-center rounded-full border border-amber-200 px-3 text-xs font-semibold text-amber-700 transition-colors hover:border-amber-300 hover:bg-amber-50 dark:border-amber-400/25 dark:text-amber-200 dark:hover:bg-amber-400/10"
+                            >
+                              {isZh ? '解除质押' : 'Unstake'}
+                            </Link>
+                          ) : null}
                           <Link
                             href={row.addLiquidityHref}
                             className="inline-flex h-9 items-center justify-center rounded-full bg-gray-900 px-3 text-xs font-semibold text-white transition-colors hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
@@ -3383,27 +3431,45 @@ export default function PortfolioPage() {
 
                       <div className="mt-4 grid gap-2.5 text-sm">
                         <div className="flex items-center justify-between gap-4">
-                          <span className="text-gray-500 dark:text-gray-400">{isZh ? 'LP 余额' : 'LP Balance'}</span>
-                          <span className="font-semibold tabular-nums text-gray-900 dark:text-white">{row.lpBalanceLabel}</span>
+                          <span className="text-gray-500 dark:text-gray-400">{isZh ? '总 LP' : 'Total LP'}</span>
+                          <span className="font-semibold tabular-nums text-gray-900 dark:text-white">{row.totalLpBalanceLabel}</span>
                         </div>
                         <div className="flex items-center justify-between gap-4">
-                          <span className="text-gray-500 dark:text-gray-400">{row.token0Symbol}</span>
+                          <span className="text-gray-500 dark:text-gray-400">{isZh ? '钱包 LP' : 'Wallet LP'}</span>
+                          <span className="font-semibold tabular-nums text-gray-900 dark:text-white">{row.walletLpBalanceLabel}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-gray-500 dark:text-gray-400">{isZh ? '质押中 LP' : 'Staked LP'}</span>
+                          <span className="font-semibold tabular-nums text-gray-900 dark:text-white">{row.stakedLpBalanceLabel}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-gray-500 dark:text-gray-400">{isZh ? `钱包可取回 ${row.token0Symbol}` : `Wallet ${row.token0Symbol}`}</span>
                           <span className="font-semibold tabular-nums text-gray-900 dark:text-white">{row.withdrawToken0Label}</span>
                         </div>
                         <div className="flex items-center justify-between gap-4">
-                          <span className="text-gray-500 dark:text-gray-400">{row.token1Symbol}</span>
+                          <span className="text-gray-500 dark:text-gray-400">{isZh ? `钱包可取回 ${row.token1Symbol}` : `Wallet ${row.token1Symbol}`}</span>
                           <span className="font-semibold tabular-nums text-gray-900 dark:text-white">{row.withdrawToken1Label}</span>
                         </div>
                       </div>
 
                       <div className="mt-4 flex justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openRemoveLiquidityModal(row)}
-                          className="inline-flex h-9 items-center justify-center rounded-full border border-rose-200 px-3 text-xs font-semibold text-rose-600 transition-colors hover:border-rose-300 hover:bg-rose-50 dark:border-rose-400/25 dark:text-rose-300 dark:hover:bg-rose-400/10"
-                        >
-                          {isZh ? '移除流动性' : 'Remove liquidity'}
-                        </button>
+                        {row.rawLpBalance > ZERO_BIGINT ? (
+                          <button
+                            type="button"
+                            onClick={() => openRemoveLiquidityModal(row)}
+                            className="inline-flex h-9 items-center justify-center rounded-full border border-rose-200 px-3 text-xs font-semibold text-rose-600 transition-colors hover:border-rose-300 hover:bg-rose-50 dark:border-rose-400/25 dark:text-rose-300 dark:hover:bg-rose-400/10"
+                          >
+                            {isZh ? '移除流动性' : 'Remove liquidity'}
+                          </button>
+                        ) : null}
+                        {row.rawStakedLpBalance > ZERO_BIGINT && row.farmHref ? (
+                          <Link
+                            href={row.farmHref}
+                            className="inline-flex h-9 items-center justify-center rounded-full border border-amber-200 px-3 text-xs font-semibold text-amber-700 transition-colors hover:border-amber-300 hover:bg-amber-50 dark:border-amber-400/25 dark:text-amber-200 dark:hover:bg-amber-400/10"
+                          >
+                            {isZh ? '去解除质押' : 'Unstake'}
+                          </Link>
+                        ) : null}
                         <Link
                           href={row.addLiquidityHref}
                           className="inline-flex h-9 items-center justify-center rounded-full bg-gray-900 px-3 text-xs font-semibold text-white transition-colors hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
@@ -3455,18 +3521,18 @@ export default function PortfolioPage() {
               <div className="mt-5 grid gap-3 sm:grid-cols-2">
                 <div className="rounded-[1.2rem] bg-gray-50/90 px-4 py-3 dark:bg-white/[0.04]">
                   <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                    {isZh ? 'LP 余额' : 'LP Balance'}
+                    {isZh ? '可移除 LP' : 'Removable LP'}
                   </div>
                   <div className="mt-1 truncate text-base font-black tabular-nums text-gray-900 dark:text-white">
-                    {removePosition.lpBalanceLabel}
+                    {removePosition.walletLpBalanceLabel}
                   </div>
                 </div>
                 <div className="rounded-[1.2rem] bg-gray-50/90 px-4 py-3 dark:bg-white/[0.04]">
                   <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                    {isZh ? '池子份额' : 'Pool Share'}
+                    {isZh ? '钱包份额' : 'Wallet Share'}
                   </div>
                   <div className="mt-1 text-base font-black tabular-nums text-gray-900 dark:text-white">
-                    {removePosition.poolShareLabel}
+                    {formatPoolShare(removePosition.rawLpBalance, removePosition.totalSupply)}
                   </div>
                 </div>
               </div>

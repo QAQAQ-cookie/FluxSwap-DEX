@@ -151,13 +151,15 @@ export function useTreasuryData({
           functionName: 'spentToday',
           args: [zeroAddress],
         }),
-        publicClient.getContractEvents({
-          address: treasuryAddress,
-          abi: fluxSwapTreasuryAbi,
-          eventName: 'OperationScheduled',
-          fromBlock,
-          toBlock: latestBlock,
-        }),
+        publicClient
+          .getContractEvents({
+            address: treasuryAddress,
+            abi: fluxSwapTreasuryAbi,
+            eventName: 'OperationScheduled',
+            fromBlock,
+            toBlock: latestBlock,
+          })
+          .catch(() => []),
         listAdminTreasuryOperations({
           chainId,
           treasuryAddress,
@@ -165,6 +167,7 @@ export function useTreasuryData({
         }).catch(() => null),
       ]);
 
+      const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
       const backendMetadataById = (backendOperationsResult?.items ?? []).reduce<Record<Hex, TreasuryOperationMetadata>>(
         (metadataById, operation) => {
           metadataById[operation.operationId] = treasuryMetadataFromAdminOperation(operation);
@@ -173,6 +176,27 @@ export function useTreasuryData({
         {},
       );
       const scheduledById = new Map<Hex, TreasuryOperationRow>();
+
+      for (const operation of backendOperationsResult?.items ?? []) {
+        if (operation.statusCode === 'executed' || operation.statusCode === 'cancelled') {
+          continue;
+        }
+
+        const readyAtMilliseconds = operation.readyAt ? Date.parse(operation.readyAt) : Number.NaN;
+        const executeAfter = Number.isFinite(readyAtMilliseconds)
+          ? BigInt(Math.floor(readyAtMilliseconds / 1000))
+          : ZERO_BIGINT;
+
+        scheduledById.set(operation.operationId, {
+          operationId: operation.operationId,
+          executeAfter,
+          scheduler: operation.proposerAddress,
+          status: executeAfter > ZERO_BIGINT && executeAfter <= nowSeconds ? 'ready' : 'pending',
+          blockNumber: ZERO_BIGINT,
+          metadata: backendMetadataById[operation.operationId],
+          source: 'backend',
+        });
+      }
 
       for (const log of scheduledLogs) {
         const operationId = log.args.operationId;
@@ -190,21 +214,36 @@ export function useTreasuryData({
         scheduledById.set(operationId, {
           operationId,
           executeAfter: log.args.executeAfter ?? ZERO_BIGINT,
-          scheduler: log.args.scheduler,
+          scheduler: log.args.scheduler ?? current?.scheduler,
           status: 'pending',
           blockNumber,
+          metadata: current?.metadata,
+          source: current?.source === 'backend' ? 'backend' : 'chain',
         });
       }
 
-      const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
       const operationCandidates = await Promise.all(
         Array.from(scheduledById.values()).map(async (operation): Promise<TreasuryOperationRow | null> => {
-          const readyAt = await publicClient.readContract({
-            address: treasuryAddress,
-            abi: fluxSwapTreasuryAbi,
-            functionName: 'operationReadyAt',
-            args: [operation.operationId],
-          });
+          let readyAt: bigint;
+
+          try {
+            readyAt = await publicClient.readContract({
+              address: treasuryAddress,
+              abi: fluxSwapTreasuryAbi,
+              functionName: 'operationReadyAt',
+              args: [operation.operationId],
+            });
+          } catch {
+            if (operation.source !== 'backend' || operation.executeAfter <= ZERO_BIGINT) {
+              return null;
+            }
+
+            return {
+              ...operation,
+              status: operation.executeAfter <= nowSeconds ? 'ready' : 'pending',
+              metadata: backendMetadataById[operation.operationId] ?? operation.metadata ?? operationMetadataById[operation.operationId],
+            };
+          }
 
           if (readyAt <= ZERO_BIGINT) {
             return null;
@@ -214,7 +253,7 @@ export function useTreasuryData({
             ...operation,
             executeAfter: readyAt,
             status: readyAt <= nowSeconds ? 'ready' : 'pending',
-            metadata: backendMetadataById[operation.operationId] ?? operationMetadataById[operation.operationId],
+            metadata: backendMetadataById[operation.operationId] ?? operation.metadata ?? operationMetadataById[operation.operationId],
           };
         }),
       );
