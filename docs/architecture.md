@@ -5,12 +5,24 @@
 | 文件名 | 内容 |
 | --- | --- |
 | `system-overview.png` | 前端、合约、子图、业务后端、管理后端之间的关系 |
+| `contract-relations.png` | FluxCore 部署的核心合约之间的调用、地址依赖和资金流向 |
 | `limit-order-flow.png` | 限价单从签名、后端接收、执行器执行到索引器回写的流程 |
 | `liquidity-flow.png` | 添加/移除流动性、LP 份额变化以及子图同步流程 |
 
 ## 系统总览
 
 ![FluxSwap 系统架构](images/architecture/system-overview.png)
+
+## 合约关系
+
+![FluxSwap 合约关系图](images/architecture/contract-relations.png)
+
+合约关系可以按四条主链路理解：
+
+1. AMM 链路：`FluxSwapFactory` 创建 `FluxSwapPair`，`FluxSwapRouter` 负责兑换和流动性操作。
+2. 限价单链路：`FluxSignedOrderSettlement` 校验订单签名和执行条件，再通过 `FluxSwapRouter` 调用 Pair 完成结算；后端 Executor 只负责提交执行交易。
+3. 质押奖励链路：`FluxPoolFactory` 创建 LP 池或单币池，`FluxMultiPoolManager` 维护池权重和奖励累计值，具体质押池负责用户份额和奖励领取。
+4. 金库收入链路：`FluxSwapTreasury` 管理协议资产和治理权限，`FluxRevenueDistributor` 分配收入，`FluxBuybackExecutor` 从金库取资金并通过 Router 执行回购，奖励资产由 `FluxToken` 承载。
 
 ## 限价单流程
 

@@ -68,6 +68,10 @@ FluxSwap 是一个面向 EVM 网络的去中心化交易所练习项目，围绕
 
 完整的架构说明、关键数据流和中文流程图见：[docs/architecture.md](docs/architecture.md)
 
+### 合约关系图
+
+![FluxSwap 合约关系图](docs/images/architecture/contract-relations.png)
+
 ### 限价单流程
 
 ![限价单流程](docs/images/architecture/limit-order-flow.png)
