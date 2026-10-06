@@ -399,6 +399,28 @@ npm run init:post-deploy:execute:sepolia
 
 Sepolia 的治理延迟仅适合联调。正式环境上线前，应改为符合安全要求的延迟，并确认多签、守护者、操作员和限价单执行器地址不是同一个临时账户。
 
+### Sepolia 合约地址
+
+以下地址对应当前部署在 Sepolia（Chain ID：`11155111`）上的核心合约，源码已在 Etherscan 完成验证。
+
+| 合约 | 地址 |
+| --- | --- |
+| FluxSwapFactory | [`0x4081e489309CF890838fa6Ce7b563Bc198d5B715`](https://sepolia.etherscan.io/address/0x4081e489309CF890838fa6Ce7b563Bc198d5B715#code) |
+| FluxSwapTreasury | [`0xc993b497f1E7f997130B8BD1Db8EFb5169faEf48`](https://sepolia.etherscan.io/address/0xc993b497f1E7f997130B8BD1Db8EFb5169faEf48#code) |
+| FluxToken | [`0x5171c0FEc2F9C4413a9AAe39F3D3739Aa30b1110`](https://sepolia.etherscan.io/address/0x5171c0FEc2F9C4413a9AAe39F3D3739Aa30b1110#code) |
+| FluxSwapRouter | [`0x85ba499C5E8DD41C2BeF7571BE68AaD4c82Bf6DF`](https://sepolia.etherscan.io/address/0x85ba499C5E8DD41C2BeF7571BE68AaD4c82Bf6DF#code) |
+| FluxSignedOrderSettlement | [`0x53fCB3a81398F2f7c429A3471E44D411e360594a`](https://sepolia.etherscan.io/address/0x53fCB3a81398F2f7c429A3471E44D411e360594a#code) |
+| FluxMultiPoolManager | [`0x8faf75D83DA098Eb9795D251707201eB80Da3F05`](https://sepolia.etherscan.io/address/0x8faf75D83DA098Eb9795D251707201eB80Da3F05#code) |
+| FluxPoolFactory | [`0x6E6B4E527ea8e5c8a3c4789A502182656A291E96`](https://sepolia.etherscan.io/address/0x6E6B4E527ea8e5c8a3c4789A502182656A291E96#code) |
+| FluxBuybackExecutor | [`0xBF2adc65825217329813BE599c6785bA4f07c409`](https://sepolia.etherscan.io/address/0xBF2adc65825217329813BE599c6785bA4f07c409#code) |
+| FluxRevenueDistributor | [`0x119261fD7CF64A336312A41BF5da682241F2849b`](https://sepolia.etherscan.io/address/0x119261fD7CF64A336312A41BF5da682241F2849b#code) |
+| MockWETH | [`0xf881723bEF047DA1CD494795a797835241D3be29`](https://sepolia.etherscan.io/address/0xf881723bEF047DA1CD494795a797835241D3be29#code) |
+| Mock USDT | [`0xf4fc2De27781B6401609732e0aa7f7c354BdE388`](https://sepolia.etherscan.io/address/0xf4fc2De27781B6401609732e0aa7f7c354BdE388#code) |
+| Mock USDC | [`0xA4049489D8689A55154c35f9809B1382B0972A79`](https://sepolia.etherscan.io/address/0xA4049489D8689A55154c35f9809B1382B0972A79#code) |
+| Mock WBTC | [`0xC97de7b464a4dB1910c16ce7835b918B4440C42C`](https://sepolia.etherscan.io/address/0xC97de7b464a4dB1910c16ce7835b918B4440C42C#code) |
+
+`Pair` 合约由 `FluxSwapFactory` 按交易对动态创建，不属于这份核心部署清单。
+
 ### 5. 更新前端配置
 
 将 Sepolia 的链 ID、子图地址和部署后的合约地址写入各自本地环境文件：
