@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
 </p>
 
-FluxSwap 是一个面向 EVM 网络的去中心化交易所练习项目，围绕“链上协议 + 业务后端 + 子图索引 + 客户端 + 管理端”完整实现一套 DEX 产品。项目重点不只是完成页面，而是把交易、流动性、限价单执行、质押奖励和协议治理串成可运行的业务闭环。
+FluxSwap 是一个面向 EVM 网络的去中心化交易所项目，围绕“链上协议 + 业务后端 + 子图索引 + 客户端 + 管理端”完整实现一套 DEX 产品。项目重点不只是完成页面，而是把交易、流动性、限价单执行、质押奖励和协议治理串成可运行的业务闭环。
 
 ## 项目亮点
 
@@ -29,14 +29,14 @@ FluxSwap 是一个面向 EVM 网络的去中心化交易所练习项目，围绕
 
 ### 客户端
 
-| 页面 | 说明 |
-| --- | --- |
-| 首页 / 交易 | 连接钱包、选择代币、查看报价并发起兑换 |
-| 市场 | 查看交易对、TVL、交易量、流动性和资金池年利率 |
-| 资金池详情 | 查看价格、交易量、流动性和深度图表 |
-| 资产 | 查看代币余额、LP 仓位和限价单 |
-| 农场 | 切换 LP 质押和单币质押，查看奖励并进行质押操作 |
-| 限价单 | 创建、查看、展开详情和撤销限价单 |
+| 页面        | 说明                                           |
+| ----------- | ---------------------------------------------- |
+| 首页 / 交易 | 连接钱包、选择代币、查看报价并发起兑换         |
+| 市场        | 查看交易对、TVL、交易量、流动性和资金池年利率  |
+| 资金池详情  | 查看价格、交易量、流动性和深度图表             |
+| 资产        | 查看代币余额、LP 仓位和限价单                  |
+| 农场        | 切换 LP 质押和单币质押，查看奖励并进行质押操作 |
+| 限价单      | 创建、查看、展开详情和撤销限价单               |
 
 ![客户端首页](docs/images/client/home.png)
 
@@ -48,13 +48,13 @@ FluxSwap 是一个面向 EVM 网络的去中心化交易所练习项目，围绕
 
 ### 管理端
 
-| 页面 | 说明 |
-| --- | --- |
-| 概览 | 查看协议健康度、奖励容量、农场权重和管理事件频率 |
+| 页面     | 说明                                               |
+| -------- | -------------------------------------------------- |
+| 概览     | 查看协议健康度、奖励容量、农场权重和管理事件频率   |
 | 农场管理 | 创建 LP / 单币质押池、调整权重、启停池子和分发奖励 |
-| 金库管理 | 管理资产白名单、授权、额度、治理队列和资金划拨 |
-| 代币管理 | 对比前端配置与链上 ERC20 信息，检查协议使用情况 |
-| 管理日志 | 查看近期农场和金库管理事件 |
+| 金库管理 | 管理资产白名单、授权、额度、治理队列和资金划拨     |
+| 代币管理 | 对比前端配置与链上 ERC20 信息，检查协议使用情况    |
+| 管理日志 | 查看近期农场和金库管理事件                         |
 
 ![管理端概览](docs/images/admin/overview.png)
 
@@ -82,7 +82,7 @@ FluxSwap 是一个面向 EVM 网络的去中心化交易所练习项目，围绕
 
 ## 目录结构
 
-~~~text
+```text
 FluxSwap-DEX/
 ├─ contracts/          Solidity 合约、Hardhat 配置、Ignition 部署脚本
 ├─ frontend/           用户客户端，Next.js
@@ -94,7 +94,7 @@ FluxSwap-DEX/
 ├─ .gitignore
 ├─ LICENSE
 └─ README.md
-~~~
+```
 
 ## 技术栈
 
@@ -189,7 +189,7 @@ FluxSwap-DEX/
 
 建议先安装依赖：
 
-~~~powershell
+```powershell
 cd contracts
 npm install
 cd ../frontend
@@ -202,7 +202,7 @@ cd ../backend
 go mod download
 cd ../admin-backend
 go mod download
-~~~
+```
 
 ### 本地链启动顺序
 
@@ -210,10 +210,10 @@ go mod download
 
 #### 1. 启动 Hardhat 节点
 
-~~~powershell
+```powershell
 cd contracts
 npm run node:local
-~~~
+```
 
 保持这个终端运行。它会提供本地 RPC，通常为 http://127.0.0.1:8545。
 
@@ -221,61 +221,61 @@ npm run node:local
 
 新开终端：
 
-~~~powershell
+```powershell
 cd contracts
 npm run deploy:core:localhost
-~~~
+```
 
 如果要使用 Hardhat 内置网络而不是独立节点，可以使用：
 
-~~~powershell
+```powershell
 npm run deploy:core:local
-~~~
+```
 
 本地链重启后链状态会重置，通常需要重新部署，并重新同步前端合约地址。
 
 #### 3. 初始化本地协议状态
 
-~~~powershell
+```powershell
 npm run init:post-deploy:all:local
-~~~
+```
 
 该步骤用于初始化代币、金库权限、奖励配置、限价单执行器和测试账户资产。若只想检查治理计划，可先使用：
 
-~~~powershell
+```powershell
 npm run init:post-deploy:plan:local
-~~~
+```
 
 #### 4. 同步客户端合约地址和 ABI
 
-~~~powershell
+```powershell
 cd ../frontend
 npm run contracts:refresh
-~~~
+```
 
 如果只需要重新生成 ABI / 类型：
 
-~~~powershell
+```powershell
 npm run codegen
-~~~
+```
 
 #### 5. 启动客户端和管理端
 
 客户端：
 
-~~~powershell
+```powershell
 cd ../frontend
 npm run dev
-~~~
+```
 
 默认地址：http://localhost:3000
 
 管理端新开终端：
 
-~~~powershell
+```powershell
 cd ../admin-frontend
 npm run dev
-~~~
+```
 
 默认地址：http://localhost:3001
 
@@ -283,70 +283,70 @@ npm run dev
 
 后端 Docker Compose 会同时启动 PostgreSQL、Redis、迁移、RPC、Executor、Indexer 和 Router Graph 服务：
 
-~~~powershell
+```powershell
 cd ../backend
 docker compose up -d --build
-~~~
+```
 
 查看服务状态：
 
-~~~powershell
+```powershell
 docker compose ps
-~~~
+```
 
 健康检查：
 
-~~~powershell
+```powershell
 Invoke-RestMethod http://localhost:9100/healthz
 Invoke-RestMethod http://localhost:9101/healthz
 Invoke-RestMethod http://localhost:9102/healthz
-~~~
+```
 
 停止后端：
 
-~~~powershell
+```powershell
 docker compose down
-~~~
+```
 
 #### 7. 启动管理后端
 
 先准备 admin-backend/.env，再启动：
 
-~~~powershell
+```powershell
 cd ../admin-backend
 docker compose up -d --build
-~~~
+```
 
 健康检查：
 
-~~~powershell
+```powershell
 Invoke-RestMethod http://localhost:8081/api/health
-~~~
+```
 
 停止管理后端：
 
-~~~powershell
+```powershell
 docker compose down
-~~~
+```
 
 ### 子图本地部署
 
 子图需要 Graph Node、IPFS 和 PostgreSQL。相关服务启动后，在 subgraph 目录执行：
 
-~~~powershell
+```powershell
 npm run codegen
 npm run build
 npm run create-local
 npm run deploy-local
-~~~
+```
 
 如果本地子图已经存在，需要先删除再创建：
 
-~~~powershell
+```powershell
 npm run remove-local
 npm run create-local
 npm run deploy-local
-~~~
+```
 
 deploy-local 上传失败时，优先检查 IPFS 是否能访问 http://localhost:5001，以及 Graph Node 是否能访问 http://localhost:8020。这类错误通常不是子图 TypeScript 编译问题，而是本地 IPFS / Graph Node 服务未启动或端口不可达。
 
@@ -358,27 +358,27 @@ Sepolia 按单链部署处理。本项目不会把本地链和 Sepolia 的合约
 
 在 contracts 目录创建本地 .env，填入自己的 RPC 和部署账户私钥。私钥只放在本机，不要提交到 Git，也不要写入 README、截图或公开仓库。
 
-~~~dotenv
+```dotenv
 SEPOLIA_RPC_URL=
 SEPOLIA_PRIVATE_KEY=
-~~~
+```
 
 SEPOLIA_PRIVATE_KEY 一般使用钱包导出的 0x 开头私钥格式。它不是公钥，必须使用专门的测试钱包，不能使用存放真实资产的钱包。
 
 ### 2. 生成 Sepolia 部署参数
 
-~~~powershell
+```powershell
 cd contracts
 npm run prepare:sepolia
-~~~
+```
 
 检查 ignition/parameters/FluxCore.sepolia.local.json5 和 post-deploy-init.sepolia.local.json5 中的角色地址、WETH / Mock 代币配置和测试账户地址。
 
 ### 3. 部署核心合约
 
-~~~powershell
+```powershell
 npm run deploy:core:sepolia
-~~~
+```
 
 记录部署输出中的合约地址，并确认部署账户有足够的 Sepolia ETH 支付 Gas。测试代币数量可以由初始化脚本铸造或分发，Sepolia ETH 主要用于交易手续费。
 
@@ -386,16 +386,16 @@ npm run deploy:core:sepolia
 
 可以先检查计划：
 
-~~~powershell
+```powershell
 npm run init:post-deploy:plan:sepolia
-~~~
+```
 
 然后按治理流程排期并执行：
 
-~~~powershell
+```powershell
 npm run init:post-deploy:schedule:sepolia
 npm run init:post-deploy:execute:sepolia
-~~~
+```
 
 Sepolia 的治理延迟仅适合联调。正式环境上线前，应改为符合安全要求的延迟，并确认多签、守护者、操作员和限价单执行器地址不是同一个临时账户。
 
@@ -403,21 +403,21 @@ Sepolia 的治理延迟仅适合联调。正式环境上线前，应改为符合
 
 以下地址对应当前部署在 Sepolia（Chain ID：`11155111`）上的核心合约，源码已在 Etherscan 完成验证。
 
-| 合约 | 地址 |
-| --- | --- |
-| FluxSwapFactory | [`0x4081e489309CF890838fa6Ce7b563Bc198d5B715`](https://sepolia.etherscan.io/address/0x4081e489309CF890838fa6Ce7b563Bc198d5B715#code) |
-| FluxSwapTreasury | [`0xc993b497f1E7f997130B8BD1Db8EFb5169faEf48`](https://sepolia.etherscan.io/address/0xc993b497f1E7f997130B8BD1Db8EFb5169faEf48#code) |
-| FluxToken | [`0x5171c0FEc2F9C4413a9AAe39F3D3739Aa30b1110`](https://sepolia.etherscan.io/address/0x5171c0FEc2F9C4413a9AAe39F3D3739Aa30b1110#code) |
-| FluxSwapRouter | [`0x85ba499C5E8DD41C2BeF7571BE68AaD4c82Bf6DF`](https://sepolia.etherscan.io/address/0x85ba499C5E8DD41C2BeF7571BE68AaD4c82Bf6DF#code) |
+| 合约                      | 地址                                                                                                                                  |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| FluxSwapFactory           | [`0x4081e489309CF890838fa6Ce7b563Bc198d5B715`](https://sepolia.etherscan.io/address/0x4081e489309CF890838fa6Ce7b563Bc198d5B715#code) |
+| FluxSwapTreasury          | [`0xc993b497f1E7f997130B8BD1Db8EFb5169faEf48`](https://sepolia.etherscan.io/address/0xc993b497f1E7f997130B8BD1Db8EFb5169faEf48#code) |
+| FluxToken                 | [`0x5171c0FEc2F9C4413a9AAe39F3D3739Aa30b1110`](https://sepolia.etherscan.io/address/0x5171c0FEc2F9C4413a9AAe39F3D3739Aa30b1110#code) |
+| FluxSwapRouter            | [`0x85ba499C5E8DD41C2BeF7571BE68AaD4c82Bf6DF`](https://sepolia.etherscan.io/address/0x85ba499C5E8DD41C2BeF7571BE68AaD4c82Bf6DF#code) |
 | FluxSignedOrderSettlement | [`0x53fCB3a81398F2f7c429A3471E44D411e360594a`](https://sepolia.etherscan.io/address/0x53fCB3a81398F2f7c429A3471E44D411e360594a#code) |
-| FluxMultiPoolManager | [`0x8faf75D83DA098Eb9795D251707201eB80Da3F05`](https://sepolia.etherscan.io/address/0x8faf75D83DA098Eb9795D251707201eB80Da3F05#code) |
-| FluxPoolFactory | [`0x6E6B4E527ea8e5c8a3c4789A502182656A291E96`](https://sepolia.etherscan.io/address/0x6E6B4E527ea8e5c8a3c4789A502182656A291E96#code) |
-| FluxBuybackExecutor | [`0xBF2adc65825217329813BE599c6785bA4f07c409`](https://sepolia.etherscan.io/address/0xBF2adc65825217329813BE599c6785bA4f07c409#code) |
-| FluxRevenueDistributor | [`0x119261fD7CF64A336312A41BF5da682241F2849b`](https://sepolia.etherscan.io/address/0x119261fD7CF64A336312A41BF5da682241F2849b#code) |
-| MockWETH | [`0xf881723bEF047DA1CD494795a797835241D3be29`](https://sepolia.etherscan.io/address/0xf881723bEF047DA1CD494795a797835241D3be29#code) |
-| Mock USDT | [`0xf4fc2De27781B6401609732e0aa7f7c354BdE388`](https://sepolia.etherscan.io/address/0xf4fc2De27781B6401609732e0aa7f7c354BdE388#code) |
-| Mock USDC | [`0xA4049489D8689A55154c35f9809B1382B0972A79`](https://sepolia.etherscan.io/address/0xA4049489D8689A55154c35f9809B1382B0972A79#code) |
-| Mock WBTC | [`0xC97de7b464a4dB1910c16ce7835b918B4440C42C`](https://sepolia.etherscan.io/address/0xC97de7b464a4dB1910c16ce7835b918B4440C42C#code) |
+| FluxMultiPoolManager      | [`0x8faf75D83DA098Eb9795D251707201eB80Da3F05`](https://sepolia.etherscan.io/address/0x8faf75D83DA098Eb9795D251707201eB80Da3F05#code) |
+| FluxPoolFactory           | [`0x6E6B4E527ea8e5c8a3c4789A502182656A291E96`](https://sepolia.etherscan.io/address/0x6E6B4E527ea8e5c8a3c4789A502182656A291E96#code) |
+| FluxBuybackExecutor       | [`0xBF2adc65825217329813BE599c6785bA4f07c409`](https://sepolia.etherscan.io/address/0xBF2adc65825217329813BE599c6785bA4f07c409#code) |
+| FluxRevenueDistributor    | [`0x119261fD7CF64A336312A41BF5da682241F2849b`](https://sepolia.etherscan.io/address/0x119261fD7CF64A336312A41BF5da682241F2849b#code) |
+| MockWETH                  | [`0xf881723bEF047DA1CD494795a797835241D3be29`](https://sepolia.etherscan.io/address/0xf881723bEF047DA1CD494795a797835241D3be29#code) |
+| Mock USDT                 | [`0xf4fc2De27781B6401609732e0aa7f7c354BdE388`](https://sepolia.etherscan.io/address/0xf4fc2De27781B6401609732e0aa7f7c354BdE388#code) |
+| Mock USDC                 | [`0xA4049489D8689A55154c35f9809B1382B0972A79`](https://sepolia.etherscan.io/address/0xA4049489D8689A55154c35f9809B1382B0972A79#code) |
+| Mock WBTC                 | [`0xC97de7b464a4dB1910c16ce7835b918B4440C42C`](https://sepolia.etherscan.io/address/0xC97de7b464a4dB1910c16ce7835b918B4440C42C#code) |
 
 `Pair` 合约由 `FluxSwapFactory` 按交易对动态创建，不属于这份核心部署清单。
 
@@ -433,7 +433,7 @@ Sepolia 的治理延迟仅适合联调。正式环境上线前，应改为符合
 
 前端常用字段见各自 .env.example，包括：
 
-~~~dotenv
+```dotenv
 NEXT_PUBLIC_CHAIN_ID=
 NEXT_PUBLIC_SUBGRAPH_URL=
 NEXT_PUBLIC_FLUX_SWAP_FACTORY=
@@ -444,17 +444,17 @@ NEXT_PUBLIC_FLUX_POOL_FACTORY=
 NEXT_PUBLIC_FLUX_MULTI_POOL_MANAGER=
 NEXT_PUBLIC_FLUX_TOKEN=
 NEXT_PUBLIC_WETH=
-~~~
+```
 
 ### 6. 部署和验证子图
 
 先确认 subgraph/subgraph.yaml 中的 network、Factory 地址和 startBlock 都对应 Sepolia，然后执行：
 
-~~~powershell
+```powershell
 cd subgraph
 npm run codegen
 npm run build
-~~~
+```
 
 之后根据使用的 Graph Node / Studio 部署方式执行对应部署命令。部署完成后，把 GraphQL 查询地址配置到客户端所需的环境变量中。
 
@@ -475,7 +475,7 @@ npm run build
 
 在 contracts 目录：
 
-~~~powershell
+```powershell
 npm test
 npm run test:unit
 npm run test:integration
@@ -485,45 +485,45 @@ npm run test:economic-security
 npm run test:fuzz
 npm run test:invariant
 npm run test:static-analysis
-~~~
+```
 
 ### Go 后端
 
 在 backend 或 admin-backend 目录：
 
-~~~powershell
+```powershell
 go test ./...
 go vet ./...
-~~~
+```
 
 ### 客户端和管理端
 
 客户端：
 
-~~~powershell
+```powershell
 cd frontend
 npm run lint
 npm run build
-~~~
+```
 
 管理端：
 
-~~~powershell
+```powershell
 cd admin-frontend
 npm run lint
 npm run typecheck
 npm run build
-~~~
+```
 
 ### 子图
 
 在 subgraph 目录：
 
-~~~powershell
+```powershell
 npm run codegen
 npm run build
 npm test
-~~~
+```
 
 ## 常见问题
 
